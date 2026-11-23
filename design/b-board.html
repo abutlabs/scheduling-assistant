@@ -1,0 +1,123 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Direction B: Planning board</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+:root { --ui: "Figtree", system-ui, sans-serif; --disp: "Bricolage Grotesque", var(--ui); --data: "IBM Plex Mono", monospace;
+  --bg: #f3f1ec; --surface: #fffdf9; --s2: #ebe7de; --line: #ddd7ca; --fg: #1f1c17; --muted: #6b6457; --faint: #9a9284;
+  --accent: #1d5c4d; --acc-soft: #d8e8e2; --av: #1d5c4d; --av-soft: #b9d6cc; --warn: #b55d00; --warn-soft: #f7e2c8; --bad: #b3261e; --bad-soft: #f5d9d6;
+  --TM: #3459a8; --PM: #a8432f; --CP: #7a4fa0; --OM: #2f8a5c; --PC: #8a6d1f; }
+</style>
+<link rel="stylesheet" href="base.css">
+<style>
+.top { display: flex; align-items: center; gap: 24px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.top .brand { font: 700 18px var(--disp); letter-spacing: -.02em; }
+.top nav { display: flex; gap: 4px; } .top nav a { padding: 6px 12px; border-radius: 99px; font-weight: 600; font-size: 13.5px; color: var(--muted); }
+.top nav a.on { background: var(--fg); color: var(--bg); }
+.top .camp { margin-left: auto; font-size: 13px; color: var(--muted); } .top .camp b { color: var(--fg); }
+.body { padding: 18px 24px; display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+h1 { font: 700 26px var(--disp); letter-spacing: -.02em; margin: 0; }
+.send { display: flex; gap: 10px; align-items: center; background: var(--fg); color: var(--bg); border-radius: 10px; padding: 10px 14px; font-size: 13.5px; }
+.send b { font-weight: 700; } .send .x { background: #3a352d; border-radius: 6px; padding: 4px 10px; font-size: 12.5px; }
+.send button { margin-left: auto; background: var(--bg); color: var(--fg); border: 0; border-radius: 6px; padding: 6px 12px; font-weight: 700; }
+.kan { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; flex: 1; min-height: 0; }
+.col { background: var(--s2); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.col h3 { margin: 0 4px 4px; font: 700 13px var(--ui); display: flex; justify-content: space-between; } .col h3 span { font-family: var(--data); color: var(--faint); }
+.card { background: var(--surface); border-radius: 8px; padding: 10px 12px; box-shadow: 0 1px 0 var(--line); display: flex; flex-direction: column; gap: 6px; font-size: 13px; border-left: 4px solid transparent; }
+.card.overdue { border-left-color: var(--bad); } .card.urgent { border-left-color: var(--warn); } .card.today { border-left-color: var(--accent); }
+.card b { font-size: 14px; } .card p { margin: 0; color: var(--muted); }
+.card .nx { font-weight: 600; color: var(--fg); }
+.ring { display: flex; align-items: center; gap: 8px; font: 600 11.5px var(--data); color: var(--muted); }
+.ring i { flex: 1; height: 5px; border-radius: 3px; background: var(--s2); position: relative; overflow: hidden; } .ring i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--p); background: var(--c, var(--accent)); }
+/* week calendar availability */
+.weeks { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.day { background: var(--surface); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); }
+.day.fri { border: 2px solid var(--accent); }
+.day h4 { margin: 0; font: 700 14px var(--disp); display: flex; justify-content: space-between; } .day h4 span { font: 500 11px var(--data); color: var(--faint); }
+.half { border-radius: 8px; padding: 8px; background: var(--s2); display: flex; flex-direction: column; gap: 6px; }
+.half.ok { background: var(--acc-soft); }
+.half .lbl { font-size: 11px; font-weight: 700; color: var(--muted); display: flex; justify-content: space-between; text-transform: uppercase; letter-spacing: .05em; }
+.half.ok .lbl em { color: var(--accent); font-style: normal; }
+.ppl { display: flex; flex-wrap: wrap; gap: 4px; }
+.pp { font-size: 11.5px; font-weight: 600; padding: 1px 7px 1px 5px; border-radius: 99px; background: var(--surface); display: inline-flex; gap: 4px; align-items: center; }
+.pp::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--tc); }
+.pp.w { outline: 1.5px dashed var(--warn); }
+.legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); align-items: center; flex-wrap: wrap; }
+.legend .pp { background: var(--surface); }
+.rbar { display: flex; gap: 10px; align-items: center; background: var(--warn-soft); border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+.rbar button { border: 0; border-radius: 6px; padding: 5px 10px; font-weight: 700; background: var(--fg); color: var(--bg); } .rbar button.l { background: transparent; color: var(--fg); border: 1px solid var(--fg); }
+/* stepper */
+.stepper { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; }
+.st { display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; color: var(--faint); font-weight: 600; }
+.st i { height: 8px; border-radius: 4px; background: var(--s2); } .st.done i { background: var(--accent); } .st.done { color: var(--fg); } .st.next i { background: repeating-linear-gradient(90deg, var(--warn) 0 6px, var(--warn-soft) 6px 10px); } .st.next { color: var(--warn); }
+.rounds { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.rnd { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; }
+.rnd.cur { border: 2px solid var(--warn); }
+.rnd h3 { margin: 0; font: 700 16px var(--disp); display: flex; justify-content: space-between; } .rnd h3 span { font: 600 11.5px var(--data); color: var(--muted); }
+.kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 10px; } .kv dt { color: var(--muted); } .kv dd { margin: 0; font-weight: 600; }
+.pair { display: flex; gap: 8px; } .who { flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 2px; } .who small { color: var(--muted); }
+.ok { color: var(--accent); font-weight: 700; }
+.b { border: 0; border-radius: 6px; padding: 7px 12px; font-weight: 700; background: var(--fg); color: var(--bg); } .b.l { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.log { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.log div { display: grid; grid-template-columns: 70px 1fr; gap: 10px; } .log span { font: 500 11.5px var(--data); color: var(--faint); }
+</style></head>
+<body>
+<div class="board-title">Direction B · Planning board<small>A visual board. Candidates move across stage columns with a 7-day bar on each card, and availability reads like a week planner showing who is free per half-day, coloured by team. Better for seeing the whole campaign at a glance; less of a step-by-step to-do list.</small></div>
+
+<div class="art-label">B1 · Run view</div>
+<div class="art">
+  <div class="top"><span class="brand">Flux interviews</span><nav><a class="on">Board</a><a>Holds</a><a>Availability</a><a>Roster</a><a>Metrics</a></nav><span class="camp">Campaign <b>Trainee hiring ▾</b> · 1 of 10 hired</span></div>
+  <div class="body">
+    <div class="send"><b>Ready to send · 3</b><span class="x">Sanne's invite</span><span class="x">Release Bart (PM), 4 days' notice</span><span class="x">New hold Fri 4 Dec 14:00</span><button>Review and send</button></div>
+    <div class="kan" id="kan"></div>
+  </div>
+</div>
+
+<div class="art-label">B2 · Availability as a week planner</div>
+<div class="art">
+  <div class="top"><span class="brand">Flux interviews</span><nav><a>Board</a><a>Holds</a><a class="on">Availability</a><a>Roster</a><a>Metrics</a></nav><span class="camp">Campaign <b>Trainee hiring ▾</b> · 1 of 10 hired</span></div>
+  <div class="body">
+    <div style="display:flex;justify-content:space-between;align-items:end"><div><h1>Advisors · week of 30 Nov</h1><div style="color:var(--muted);font-size:13.5px">From the poll of 6 Nov · 15 of 18 answered</div></div><div style="display:flex;gap:8px"><button class="b l">◀ 23 Nov</button><button class="b l">Team leads</button><button class="b">Import new poll</button></div></div>
+    <div class="rbar"><b>Claude read 4 remarks.</b> Bastiaan: Fri 4 Dec only 14:00 to 15:30. Pieter: Wednesdays until 12:00. <span style="color:var(--muted)">+2 more</span><span style="margin-left:auto;display:flex;gap:6px"><button class="l">Review one by one</button><button>Confirm all</button></span></div>
+    <div class="weeks" id="weeks"></div>
+    <div class="legend"><span class="pp" style="--tc:var(--TM)">TM</span><span class="pp" style="--tc:var(--PM)">PM</span><span class="pp" style="--tc:var(--CP)">CP</span><span class="pp" style="--tc:var(--OM)">OM</span><span class="pp w" style="--tc:var(--TM)">dashed = narrowed or tentative</span><span>Green half-day = a pair from different teams is possible</span></div>
+  </div>
+</div>
+
+<div class="art-label">B3 · Candidate, by round</div>
+<div class="art">
+  <div class="top"><span class="brand">Flux interviews</span><nav><a class="on">Board</a><a>Holds</a><a>Availability</a><a>Roster</a><a>Metrics</a></nav><span class="camp">Campaign <b>Trainee hiring ▾</b> · 1 of 10 hired</span></div>
+  <div class="body">
+    <div style="display:flex;justify-content:space-between;align-items:end"><div><h1>Sanne de Vries</h1><div style="color:var(--muted);font-size:13.5px">sanne@example.nl · 06 1234 5678 · applied via website</div></div><div style="display:flex;gap:8px"><button class="b l">Withdraw</button><button class="b">Send Sanne's invite</button></div></div>
+    <div class="stepper" id="stepper"></div>
+    <div style="display:grid;grid-template-columns:1fr 300px;gap:12px">
+      <div class="rounds">
+        <div class="rnd"><h3>HR interview <span>✓ Thu 19 Nov</span></h3><div class="kv"><dt>Result</dt><dd class="ok">Passed</dd><dt>By</dt><dd>Natalie</dd></div><p style="margin:0;color:var(--muted)">Strong on tender writing. Available from January.</p></div>
+        <div class="rnd cur"><h3>Advisor round <span style="color:var(--warn)">day 5 of 7</span></h3><div class="kv"><dt>Availability</dt><dd>Wed 25 pm, Thu 26, Fri 27 am</dd><dt>Slot</dt><dd>Fri 27 Nov 10:00 · room 1</dd></div>
+          <div class="pair"><div class="who"><b>Koen B</b><small>TM · accepted Sat</small></div><div class="who"><b>Max T</b><small>PM · accepted Mon</small></div></div>
+          <div style="display:flex;gap:6px"><button class="b">Mark invite sent</button><button class="b l">Change slot</button></div></div>
+        <div class="rnd" style="opacity:.6"><h3>Team lead deep dive <span>not started</span></h3><div class="kv"><dt>Deadline</dt><dd>1 week after result call</dd><dt>Pool</dt><dd>6 team leads + Eveline</dd></div></div>
+      </div>
+      <div class="log"><b>Calls and notes</b><div><span>23 Nov</span>Availability received by email</div><div><span>20 Nov</span>Asked for next week's availability</div><div><span>19 Nov</span>HR interview: passed</div><button class="b l">+ Log a call</button></div>
+    </div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const cols = [['HR interview', 'hr'], ['Advisor round', 'advisor'], ['Deep dive', 'deepdive'], ['Hired', 'hired'], ['Closed', 'closed']];
+const kan = document.getElementById('kan');
+for (const [t, k] of cols) {
+  const cs = CANDS.filter(c => c.stage === k);
+  kan.insertAdjacentHTML('beforeend', `<div class="col"><h3>${t}<span>${cs.length}</span></h3>${cs.map(c => `<div class="card ${c.urgency}"><b>${c.n}</b>${c.next ? `<p class="nx">${c.next}</p>` : ''}<p>${c.detail}</p>${c.day ? `<div class="ring" style="--p:${c.day/7*100}%;--c:${c.day>=6?'var(--bad)':c.day>=5?'var(--warn)':'var(--accent)'}"><i></i>day ${c.day}/7</div>` : ''}</div>`).join('')}${k==='closed'?'<p style="color:var(--faint);font-size:12.5px;margin:4px">2 rejected after HR, 1 withdrew</p>':''}</div>`);
+}
+const A = AV.advisor; const weeks = document.getElementById('weeks');
+const nice = ['Mon 30 Nov', 'Tue 1 Dec', 'Wed 2 Dec', 'Thu 3 Dec', 'Fri 4 Dec'];
+const narrowed = { 'Bastiaan': [9], 'Pieter': [7], 'Jesse ': [5,6,7,8,9] };
+for (let j = 0; j < 5; j++) {
+  const i = j + 5; const half = (h) => A.people.filter(p => p.c[i] === 'all' || p.c[i] === h);
+  const blk = (h, label) => { const l = half(h); const ok = new Set(l.map(p => p.t)).size >= 2; return `<div class="half ${ok?'ok':''}"><span class="lbl">${label}<em>${ok ? 'pair possible' : l.length ? 'one team only' : 'nobody'}</em></span><div class="ppl">${l.map(p => `<span class="pp ${(narrowed[p.n]||[]).includes(i)?'w':''}" style="--tc:var(--${p.t})">${p.n.trim()}</span>`).join('')}</div></div>`; };
+  weeks.insertAdjacentHTML('beforeend', `<div class="day ${j===4?'fri':''}"><h4>${nice[j]}<span>${new Set([...half('am'), ...half('pm')]).size} free</span></h4>${blk('am', 'Morning')}${blk('pm', 'Afternoon')}</div>`);
+}
+document.getElementById('stepper').innerHTML = TIMELINE.map(s => `<div class="st ${s.s}"><i></i>${s.n}. ${s.label.replace(' (final)', '')}</div>`).join('');
+</script>
+</body></html>

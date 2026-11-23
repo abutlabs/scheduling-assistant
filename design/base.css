@@ -1,0 +1,9 @@
+/* Shared base for the three design directions (mockups only). */
+* { box-sizing: border-box; }
+body { margin: 0; background: #d9dce3; font-family: var(--ui); color: var(--fg); padding: 32px; display: flex; flex-direction: column; gap: 40px; align-items: center; }
+.board-title { width: 1280px; font: 600 22px/1.2 var(--ui); color: #1c2230; }
+.board-title small { display: block; font-weight: 400; font-size: 14px; color: #4a5263; margin-top: 4px; max-width: 900px; }
+.art { width: 1280px; min-height: 620px; background: var(--bg); border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px rgba(20,30,50,.18); position: relative; display: flex; flex-direction: column; }
+.art-label { width: 1280px; font: 600 13px var(--ui); color: #4a5263; text-transform: uppercase; letter-spacing: .08em; margin-bottom: -28px; }
+.num { font-family: var(--data); font-variant-numeric: tabular-nums; }
+button { font: inherit; cursor: pointer; }
