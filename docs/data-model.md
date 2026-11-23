@@ -60,3 +60,37 @@ has a doc here.
 | lang | `en` or `nl` | Language the card was shown in |
 | mock | bool | Set by the mock sidecar; removed by "Clear mock data" |
 
+## inbox/{userId}
+
+What one advisor or team lead sees, written by Natalie's page whenever data
+changes (only for people whose `accountId` is a real Claude account). Readable
+only by that person and editors.
+
+| Field | Notes |
+| --- | --- |
+| personId, name, team, role | Roster entry |
+| requests | Pending invites: id, round, slotDate, time, room, candidate first name |
+| interviews | Interviews they sit on (last 4 weeks and upcoming): candidate name, round, slot, partners, feedbackSent, `record` (the brief input: timeline and colleague notes) |
+| availability | Next 20 weekdays: `all`, `am`, `pm`, `no` or null |
+| scores | Per campaign: their own points, stats, badges, rank overall and in team, nudge |
+
+## replies/{userId}
+
+Written by the interviewer. `invites: {inviteId: {status, reason, at}}` and
+`feedback: {key: {candidateId, round, text, at}}`. Natalie's page applies
+answers to pending invites (`via: "app"`) and adds feedback as notes with
+`replyKey` so nothing is applied twice.
+
+## stats/{campaignId}
+
+Readable by everyone. Campaign name, dates, targets, pipeline counts per stage
+(no names), interviews done and in the next 7 days, fair share per person, and
+the team board (points per member, interviews, fair share, average reply time,
+feedback on time). Individual scores are never in here.
+
+## Scoring
+
+10 points per interview held, 3 for answering a request within 24 hours, 3 for
+feedback within a day of the interview. Ties share a rank. Teams are ranked by
+points per member.
+

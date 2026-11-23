@@ -245,6 +245,44 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
 .welcome h2 { margin: 0; font-size: 20px; }
 .welcome p { margin: 0; line-height: 1.5; }
 
+/* View switch and interviewer page */
+.viewas { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.viewas select { max-width: 190px; }
+.banner.preview { background: var(--accent-soft); color: var(--accent); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.iv-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .iv-grid { grid-template-columns: minmax(0, 1fr); } }
+.iv-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.iv-card { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.iv-card h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.iv-item { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.iv-card h2 + .iv-item, .iv-card h2 + p + .iv-item { border-top: 0; padding-top: 0; }
+.brief-box { display: flex; flex-direction: column; gap: 6px; background: var(--s1); border-radius: 6px; padding: 8px 10px; }
+.brief-out { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.score .big { font-size: 34px; font-weight: 700; font-family: var(--font-data); line-height: 1; color: var(--accent); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.kpi { display: flex; flex-direction: column; gap: 1px; background: var(--s1); border-radius: 6px; padding: 8px 10px; }
+.kpi b { font-size: 20px; font-family: var(--font-data); }
+.meter { height: 8px; background: var(--s2); border-radius: 99px; overflow: hidden; margin-top: 4px; }
+.meter i { display: block; height: 100%; background: var(--avail); border-radius: 99px; }
+.meter.thin { height: 6px; margin: 0; }
+.meter.thin i { background: var(--accent); }
+.bars { display: flex; flex-direction: column; gap: 6px; }
+.bar-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) 28px; gap: 8px; align-items: center; }
+.avail-strip td.v { min-width: 44px; font-size: 11px; }
+.avail-strip th.wk { border-left: 2px solid var(--grid); }
+.warn-t { color: var(--warn); }
+@media (max-width: 700px) {
+  .bar .camp { flex-wrap: wrap; margin-left: 0; width: 100%; }
+  .viewas > span { display: none; }
+  .viewas select { max-width: 150px; }
+}
+@media (max-width: 600px) { .wide-only { display: none; } }
+.seg { display: inline-flex; border: 1px solid var(--grid); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 4px 10px; background: var(--bg); font-weight: 600; font-size: 12.5px; }
+.seg button + button { border-left: 1px solid var(--grid); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg, #fff); }
+.sim-log { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; max-height: 260px; overflow-y: auto; }
+
 </style>
 <div id="app"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -877,8 +915,9 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
    * Work out where a candidate is: which steps are done, which one is
    * next, which round they're in, and the 1-week clock for that round.
    */
-  function candidateState(cand, today) {
+  function candidateState(cand, today, limits) {
     today = today || todayIso();
+    const lim = limits || {};
     const done = latestByStep(cand.timeline);
     const name = (cand.name || 'candidate').split(' ')[0];
     let rejectedAt = null;
@@ -924,9 +963,9 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     if (!closed && !rejectedAt) {
       if (stage === 'advisor') {
         const start = (done.avail_asked_r2 || done.hr_done).at;
-        clock = makeClock('advisor', start, done.advisor_booked, done.advisor_done, today);
+        clock = makeClock('advisor', start, done.advisor_booked, done.advisor_done, today, lim.advisor);
       } else if (stage === 'deepdive' && done.result_call_r2) {
-        clock = makeClock('deepdive', done.result_call_r2.at, done.deepdive_booked, done.deepdive_done, today);
+        clock = makeClock('deepdive', done.result_call_r2.at, done.deepdive_booked, done.deepdive_done, today, lim.deepdive);
       }
     }
 
@@ -944,16 +983,17 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     };
   }
 
-  function makeClock(round, start, booked, held, today) {
-    const deadline = addDays(start.slice(0, 10), 7);
+  function makeClock(round, start, booked, held, today, maxDays) {
+    const max = maxDays || 7;
+    const deadline = addDays(start.slice(0, 10), max);
     const interviewDate = booked && booked.data && booked.data.slotDate ? booked.data.slotDate : null;
-    if (held) return { round, start, deadline, state: 'met', interviewDate: held.at.slice(0, 10), late: held.at.slice(0, 10) > deadline };
+    if (held) return { round, start, deadline, max, state: 'met', interviewDate: held.at.slice(0, 10), late: held.at.slice(0, 10) > deadline };
     const day = daysBetween(start.slice(0, 10), today);
     if (interviewDate) {
-      return { round, start, deadline, state: interviewDate > deadline ? 'booked_late' : 'booked', interviewDate, day, daysLeft: daysBetween(today, deadline) };
+      return { round, start, deadline, max, state: interviewDate > deadline ? 'booked_late' : 'booked', interviewDate, day, daysLeft: daysBetween(today, deadline) };
     }
     const daysLeft = daysBetween(today, deadline);
-    return { round, start, deadline, day, daysLeft, state: daysLeft < 0 ? 'overdue' : daysLeft <= 2 ? 'urgent' : 'running' };
+    return { round, start, deadline, max, day, daysLeft, state: daysLeft < 0 ? 'overdue' : daysLeft <= 2 ? 'urgent' : 'running' };
   }
 
   /** Funnel counts for a campaign. */
@@ -1065,6 +1105,142 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     rescheduled: 'the interview was rescheduled',
   };
 
+
+  // ------------------------------------------------------------------
+  // Interviews and the scoreboard
+  // ------------------------------------------------------------------
+  const POINTS = { interview: 10, quickReply: 3, quickFeedback: 3 };
+
+  /**
+   * Every interview a person sits on: from booked steps (interviewers on the
+   * booking) plus accepted requests that aren't booked yet. One row per
+   * candidate, round and person.
+   */
+  function interviewsOf(cands, invites) {
+    const rows = new Map();
+    for (const c of cands) {
+      const done = latestByStep(c.timeline);
+      for (const [round, key] of [['advisor', 'advisor_booked'], ['deepdive', 'deepdive_booked']]) {
+        const e = done[key];
+        const d = (e && e.data) || {};
+        if (!e || !d.slotDate) continue;
+        for (const pid of d.interviewers || []) rows.set(`${c.id}|${round}|${pid}`, { candidateId: c.id, campaignId: c.campaignId, round, personId: pid, slotDate: d.slotDate, time: d.time || '', room: d.room || '', partners: (d.interviewers || []).filter((x) => x !== pid), booked: true });
+      }
+    }
+    const byCand = new Map(cands.map((c) => [c.id, c]));
+    for (const i of invites) {
+      if (i.status !== 'accepted' || !byCand.has(i.candidateId)) continue;
+      const k = `${i.candidateId}|${i.round}|${i.personId}`;
+      if (rows.has(k)) continue;
+      // A booking for that round with other people means this hold wasn't used.
+      const booked = [...rows.values()].some((r) => r.candidateId === i.candidateId && r.round === i.round);
+      if (booked) continue;
+      const partners = invites.filter((x) => x.candidateId === i.candidateId && x.round === i.round && x.status === 'accepted' && x.personId !== i.personId).map((x) => x.personId);
+      rows.set(k, { candidateId: i.candidateId, campaignId: byCand.get(i.candidateId).campaignId, round: i.round, personId: i.personId, slotDate: i.slotDate, time: i.time || '', room: i.room || '', partners, booked: false });
+    }
+    return [...rows.values()].sort((a, b) => (a.slotDate || '').localeCompare(b.slotDate || '') || (a.time || '').localeCompare(b.time || ''));
+  }
+
+  const hoursBetween = (a, b) => (Date.parse(b) - Date.parse(a)) / 36e5;
+
+  /**
+   * Points and stats per interviewer and per team for one campaign.
+   * notes must carry `personId` (the author's roster id) for feedback to count.
+   */
+  function scoreboard({ cands, invites, notes, people, today }) {
+    today = today || todayIso();
+    const ivs = interviewsOf(cands, invites);
+    const interviewers = people.filter((p) => p.active !== false && (p.roles || []).some((r) => r === 'advisor' || r === 'teamlead' || r === 'joker'));
+    const per = {};
+    for (const p of interviewers) per[p.id] = { personId: p.id, team: p.team, done: 0, upcoming: 0, replies: 0, quickReplies: 0, replyHours: [], feedbackDue: 0, feedbackOnTime: 0, feedbackLate: 0, points: 0, badges: [] };
+    for (const r of ivs) {
+      const x = per[r.personId];
+      if (!x) continue;
+      if (r.slotDate <= today) {
+        x.done++;
+        const fb = notes.filter((n) => n.kind === 'feedback' && n.personId === r.personId && n.candidateId === r.candidateId && n.round === r.round);
+        if (r.slotDate < today || fb.length) x.feedbackDue++;
+        if (fb.length) {
+          const first = fb.map((n) => (n.createdAt || '').slice(0, 10)).sort()[0];
+          if (daysBetween(r.slotDate, first) <= 1) x.feedbackOnTime++;
+          else x.feedbackLate++;
+        }
+      } else x.upcoming++;
+    }
+    for (const i of invites) {
+      const x = per[i.personId];
+      if (!x || !i.respondedAt || !i.sentAt || i.status === 'pending') continue;
+      if (i.status === 'released' && !i.respondedAt) continue;
+      const hrs = Math.max(0, hoursBetween(i.sentAt, i.respondedAt));
+      x.replies++;
+      x.replyHours.push(hrs);
+      if (hrs <= 24) x.quickReplies++;
+    }
+    const totalDone = Object.values(per).reduce((n, x) => n + x.done, 0);
+    const fairEach = interviewers.length ? totalDone / interviewers.length : 0;
+    for (const x of Object.values(per)) {
+      x.points = x.done * POINTS.interview + x.quickReplies * POINTS.quickReply + x.feedbackOnTime * POINTS.quickFeedback;
+      x.avgReplyHours = x.replyHours.length ? x.replyHours.reduce((a, b) => a + b, 0) / x.replyHours.length : null;
+      x.fairShare = fairEach;
+      if (x.done >= 1) x.badges.push('First interview');
+      if (x.quickReplies >= 3 && x.quickReplies === x.replies) x.badges.push('Quick replier');
+      if (x.feedbackOnTime >= 2 && !x.feedbackLate) x.badges.push('Feedback within a day');
+      if (totalDone >= interviewers.length && x.done >= Math.ceil(fairEach)) x.badges.push('Fair share');
+      delete x.replyHours;
+    }
+    const teams = {};
+    for (const x of Object.values(per)) {
+      const t = (teams[x.team] = teams[x.team] || { team: x.team, members: 0, done: 0, upcoming: 0, points: 0, replies: 0, quickReplies: 0, feedbackDue: 0, feedbackOnTime: 0, replyHoursSum: 0, replyCount: 0 });
+      t.members++;
+      t.done += x.done;
+      t.upcoming += x.upcoming;
+      t.points += x.points;
+      t.replies += x.replies;
+      t.quickReplies += x.quickReplies;
+      t.feedbackDue += x.feedbackDue;
+      t.feedbackOnTime += x.feedbackOnTime;
+      if (x.avgReplyHours !== null) {
+        t.replyHoursSum += x.avgReplyHours * x.replies;
+        t.replyCount += x.replies;
+      }
+    }
+    const teamList = Object.values(teams).map((t) => ({
+      team: t.team,
+      members: t.members,
+      done: t.done,
+      upcoming: t.upcoming,
+      points: t.points,
+      pointsPerMember: t.members ? Math.round((t.points / t.members) * 10) / 10 : 0,
+      fairShare: Math.round(fairEach * t.members * 10) / 10,
+      avgReplyHours: t.replyCount ? Math.round((t.replyHoursSum / t.replyCount) * 10) / 10 : null,
+      feedbackOnTimePct: t.feedbackDue ? Math.round((t.feedbackOnTime / t.feedbackDue) * 100) : null,
+    }));
+    teamList.sort((a, b) => b.pointsPerMember - a.pointsPerMember || b.done - a.done || a.team.localeCompare(b.team));
+    // Ties share a rank (1, 1, 3), so a level start doesn't put anyone last.
+    teamList.forEach((t) => (t.rank = 1 + teamList.filter((u) => u.pointsPerMember > t.pointsPerMember).length));
+    const personList = Object.values(per).sort((a, b) => b.points - a.points || b.done - a.done);
+    personList.forEach((x) => {
+      x.rank = 1 + personList.filter((y) => y.points > x.points).length;
+      x.of = personList.length;
+      const mates = personList.filter((y) => y.team === x.team);
+      x.teamRank = 1 + mates.filter((y) => y.points > x.points).length;
+      x.teamOf = mates.length;
+    });
+    return { totalDone, fairEach: Math.round(fairEach * 10) / 10, teams: teamList, people: personList };
+  }
+
+  /** Counts per stage for the campaign overview (no names). */
+  function pipelineCounts(cands, today) {
+    const out = { total: cands.length, hr: 0, advisor: 0, deepdive: 0, hired: 0, closed: 0 };
+    for (const c of cands) {
+      const s = candidateState(c, today);
+      if (s.stage === 'hired') out.hired++;
+      else if (s.status !== 'open') out.closed++;
+      else out[s.stage] = (out[s.stage] || 0) + 1;
+    }
+    return out;
+  }
+
   const api = {
     TEAMS,
     TEAM_CODES,
@@ -1111,6 +1287,10 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     INVITE_STATUS,
     RELEASE_REASONS,
     inviteState,
+    POINTS,
+    interviewsOf,
+    scoreboard,
+    pipelineCounts,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -1136,11 +1316,16 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
  *   availability/{personId}  half-day availability Natalie (or the person) set by hand; newest answer wins
  *   notes/{id}       a note or interview feedback on a candidate, by Natalie or an interviewer
  *   members/{userId} a team member said "I'm in" on the welcome card (each person writes their own)
+ *   inbox/{userId}   what one interviewer sees: their requests, interviews, briefs, own scores (written by Natalie's page)
+ *   replies/{userId} an interviewer's answers and feedback, applied to invites and notes by Natalie's page
+ *   stats/{campaignId} campaign overview and team scoreboard everyone can read
  */
 (function (root) {
   'use strict';
 
-  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes', 'invites', 'availability', 'members'];
+  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes', 'invites', 'availability', 'members', 'inbox', 'replies', 'stats'];
+  // What an advisor or team lead's page loads; the rest is Natalie's.
+  const VIEWER_COLLECTIONS = ['campaigns', 'stats'];
   const LOCAL_KEY = 'flux-scheduling-local-v1';
 
   function uid(prefix) {
@@ -1173,6 +1358,11 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
         (listeners[coll] = listeners[coll] || []).push(fn);
         setTimeout(() => emit(coll), 0);
       },
+      watchDoc(coll, id, fn) {
+        const send = () => fn(data[coll][id] ? { id, ...data[coll][id] } : null);
+        (listeners[coll] = listeners[coll] || []).push(send);
+        setTimeout(send, 0);
+      },
       async set(coll, id, doc) {
         data[coll][id] = JSON.parse(JSON.stringify(doc));
         persist();
@@ -1202,6 +1392,19 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
           (snap) => fn(snap.docs.filter((d) => d.exists).map((d) => ({ id: d.id, ...d.data() }))),
           (err) => onError && onError(coll, err),
         );
+      },
+      watchDoc(coll, id, fn, onError) {
+        const ref = db.collection(coll).doc(id);
+        if (typeof ref.onSnapshot === 'function') {
+          ref.onSnapshot(
+            (d) => fn(d.exists ? { id: d.id, ...d.data() } : null),
+            (err) => onError && onError(coll, err),
+          );
+          return;
+        }
+        const poll = () => ref.get().then((d) => fn(d.exists ? { id: d.id, ...d.data() } : null), (err) => onError && onError(coll, err));
+        poll();
+        setInterval(poll, 30000);
       },
       set(coll, id, doc) {
         return db.collection(coll).doc(id).set(strip(doc));
@@ -1242,9 +1445,40 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
       backend = null;
     }
     if (!backend) backend = createLocalBackend();
-    const state = { loaded: {} };
+    // Editors (Natalie) get the whole app; everyone else gets the interviewer page.
+    let admin = true;
+    if (user && typeof user.canEdit === 'function') {
+      try {
+        admin = (await user.canEdit()) !== false;
+      } catch (e) {
+        admin = true;
+      }
+    }
+    let myId = null;
+    if (user && typeof user.id === 'function') {
+      try {
+        myId = await user.id();
+      } catch (e) {
+        myId = null;
+      }
+    }
+    const state = { loaded: {}, mine: { inbox: undefined, replies: undefined } };
     for (const c of COLLECTIONS) state[c] = [];
-    for (const c of COLLECTIONS) {
+    if (!admin) {
+      const key = myId || 'local';
+      for (const coll of ['inbox', 'replies']) {
+        backend.watchDoc(
+          coll,
+          key,
+          (doc) => {
+            state.mine[coll] = doc;
+            onChange(coll);
+          },
+          onError,
+        );
+      }
+    }
+    for (const c of admin ? COLLECTIONS : VIEWER_COLLECTIONS) {
       backend.subscribe(
         c,
         (docs) => {
@@ -1257,6 +1491,8 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     }
     return {
       mode: backend.mode,
+      admin,
+      myId,
       user,
       state,
       uid,
@@ -1271,7 +1507,7 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     };
   }
 
-  root.FluxStore = { connect, uid, COLLECTIONS };
+  root.FluxStore = { connect, uid, COLLECTIONS, VIEWER_COLLECTIONS };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -1317,7 +1553,14 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     }
     return el;
   }
-  const cstate = (c) => M.candidateState(c, TODAY);
+  // Max days per round come from the candidate's campaign settings.
+  function roundLimits(campId) {
+    const camp = S && S.state.campaigns.find((x) => x.id === campId);
+    const out = {};
+    for (const r of (camp && camp.rounds) || []) out[r.key] = r.maxDaysAfterPrevious;
+    return out;
+  }
+  const cstate = (c) => M.candidateState(c, TODAY, roundLimits(c.campaignId));
   // replaceChildren() turns null and arrays into text; flatten and drop empties first.
   const fill = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
   const short = (iso) => (iso ? `${Number(iso.slice(8, 10))}-${Number(iso.slice(5, 7))}` : '');
@@ -1346,6 +1589,7 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     snapId: null,
     sheetIdx: 0,
     rosterEdit: null, // person id or 'new'
+    viewAs: store('flux.viewAs') || null, // Natalie previewing an interviewer's page
     toast: null,
     busy: {},
     error: null,
@@ -1412,7 +1656,8 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     const root = document.getElementById('app');
     const scroll = { x: window.scrollX, y: window.scrollY };
     const drawerScroll = document.querySelector('.drawer') ? document.querySelector('.drawer').scrollTop : 0;
-    root.replaceChildren(...[topBar(), banner(), h('main', {}, view()), drawer(), sidecar(), welcomeCard(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
+    const iv = ivContext();
+    root.replaceChildren(...[iv ? ivTopBar(iv) : topBar(), iv ? ivBanner(iv) : null, banner(), h('main', {}, iv ? interviewerView(iv) : view()), iv ? null : drawer(), sidecar(), welcomeCard(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
     window.scrollTo(scroll.x, scroll.y);
     const d = document.querySelector('.drawer');
     if (d) d.scrollTop = drawerScroll;
@@ -1456,6 +1701,7 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
               campaigns().map((x) => h('option', { value: x.id, selected: x.id === c.id }, x.name)),
             ),
             h('span', {}, `${f.hired} of ${c.targetHires || '?'} hired`),
+            viewSwitch(),
             h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, title: 'Test tool: act as colleagues, fake replies, change the date', onclick: () => ((ui.mockOpen = !ui.mockOpen), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock'),
           )
         : null,
@@ -1521,11 +1767,11 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
         group = 'overdue';
         k = 'Overdue';
         t = 'bad';
-        reason = `Day ${s.clock.day} of 7: the ${s.clock.round === 'advisor' ? 'advisor interview' : 'deep dive'} deadline was ${M.formatDay(s.clock.deadline)}.`;
+        reason = `Day ${s.clock.day} of ${s.clock.max}: the ${s.clock.round === 'advisor' ? 'advisor interview' : 'deep dive'} deadline was ${M.formatDay(s.clock.deadline)}.`;
       } else if (s.clock && (s.clock.state === 'urgent' || s.clock.state === 'booked_late')) {
         group = 'today';
         t = 'warn';
-        reason = s.clock.state === 'booked_late' ? `Booked for ${M.formatDay(s.clock.interviewDate)}, after the 7-day deadline (${M.formatDay(s.clock.deadline)}).` : `Day ${s.clock.day} of 7, deadline ${M.formatDay(s.clock.deadline)}.`;
+        reason = s.clock.state === 'booked_late' ? `Booked for ${M.formatDay(s.clock.interviewDate)}, after the ${s.clock.max}-day deadline (${M.formatDay(s.clock.deadline)}).` : `Day ${s.clock.day} of ${s.clock.max}, deadline ${M.formatDay(s.clock.deadline)}.`;
       } else if (s.clock && s.clock.state === 'booked' && s.clock.interviewDate <= TODAY) {
         group = 'today';
         reason = s.clock.interviewDate === TODAY ? 'The interview is today.' : `The interview was on ${M.formatDay(s.clock.interviewDate)}.`;
@@ -1534,13 +1780,13 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
         reason = `Interview booked for ${M.formatDay(s.clock.interviewDate)}.`;
       } else if (/call|avail_asked|reject/.test(s.next)) {
         group = 'today';
-        reason = s.clock ? `Day ${s.clock.day} of 7.` : 'Every candidate hears back, and the call is logged.';
+        reason = s.clock ? `Day ${s.clock.day} of ${s.clock.max}.` : 'Every candidate hears back, and the call is logged.';
       } else if (s.next === 'hr_done') {
         const d = c.hrDate;
         group = d && d <= TODAY ? 'today' : 'later';
         reason = d ? `HR interview ${d === TODAY ? 'today' : d < TODAY ? `was on ${M.formatDay(d)}` : `on ${M.formatDay(d)}`}.` : 'No HR interview date yet.';
       } else {
-        reason = s.clock ? `Day ${s.clock.day} of 7, deadline ${M.formatDay(s.clock.deadline)}.` : '';
+        reason = s.clock ? `Day ${s.clock.day} of ${s.clock.max}, deadline ${M.formatDay(s.clock.deadline)}.` : '';
       }
       const inv = roundInvites(c);
       if (inv.state.complete && s.next.endsWith('_booked')) continue;
@@ -1823,7 +2069,7 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     const header = h(
       'div',
       { style: 'display:flex;flex-direction:column;gap:4px;padding-right:30px' },
-      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', {}, c.name), clk ? h('span', { class: `chip ${clk.state === 'overdue' ? 'bad' : clk.daysLeft <= 2 ? 'warn' : 'accent'}` }, clk.state === 'booked' ? `booked ${M.formatDay(clk.interviewDate)}` : `day ${Math.max(0, clk.day)} of 7`) : h('span', { class: `chip ${s.status === 'hired' ? 'good' : s.status === 'open' ? 'accent' : ''}` }, s.status === 'open' ? 'Open' : M.OUTCOME_LABELS[s.status] || s.status)),
+      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', {}, c.name), clk ? h('span', { class: `chip ${clk.state === 'overdue' ? 'bad' : clk.daysLeft <= 2 ? 'warn' : 'accent'}` }, clk.state === 'booked' ? `booked ${M.formatDay(clk.interviewDate)}` : `day ${Math.max(0, clk.day)} of ${clk.max}`) : h('span', { class: `chip ${s.status === 'hired' ? 'good' : s.status === 'open' ? 'accent' : ''}` }, s.status === 'open' ? 'Open' : M.OUTCOME_LABELS[s.status] || s.status)),
       h('div', { class: 'contact' }, c.email ? h('span', {}, c.email) : null, c.phone ? h('span', {}, c.phone) : null, c.hrDate ? h('em', {}, `HR interview ${M.formatDay(c.hrDate)}`) : null),
       c.notes ? h('p', { class: 'small muted', style: 'white-space:pre-wrap' }, c.notes) : null,
     );
@@ -2330,6 +2576,7 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
         items.push({ group: 'today', kind: 'Send', tone: 'accent', who: c.name, text: `Pair complete for ${when}: ${state.pair.map(pname).join(' + ')}. Book it and send ${first(c)}'s invite.`, btn: 'Book', cand: c.id, step: bookedKey, prefill: true, sortKey: 5 });
       }
       for (const r of state.toRelease) {
+        if (r.invite.slotDate < TODAY) continue;
         const notice = M.daysBetween(TODAY, r.invite.slotDate);
         items.push({ group: 'today', kind: 'Release', tone: 'accent', who: pname(r.invite.personId), text: `Release from ${first(c)}'s ${when} slot: ${M.RELEASE_REASONS[r.why]}. Notice: ${plural(notice, 'day')}.`, btn: 'Release', invite: r.invite, why: r.why, sortKey: 6 });
       }
@@ -2578,24 +2825,38 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
   // ------------------------------------------------------------------
   // Mock sidecar: a test tool to feel the flow end to end
   // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // Mock: fast-forward the flow. You play Natalie; colleagues and
+  // candidates answer on their own as the simulated days pass. Only mock
+  // data (demo candidates and their requests) is touched.
+  // ------------------------------------------------------------------
+  const sim = (ui.sim = ui.sim || { replies: true, candidates: true, feedback: true, log: [], busy: false });
+  function simLog(day, text) {
+    sim.log.unshift({ day, text });
+    sim.log.length = Math.min(sim.log.length, 80);
+  }
+
   function sidecar() {
     if (!ui.mockOpen || !campaign()) return null;
-    const ps = people().filter((p) => p.active !== false);
-    const asId = ui.actAs && personById(ui.actAs) ? ui.actAs : null;
-    const me2 = asId ? personById(asId) : null;
-    const panel = h(
+    const mockCands = S.state.candidates.filter((c) => c.mock);
+    const toggle = (k, label, hint) =>
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', id: `sim-${k}`, checked: sim[k], onchange: (e) => (sim[k] = e.target.checked) }), h('span', {}, label, h('span', { class: 'small faint' }, ` · ${hint}`)));
+    return h(
       'aside',
       { class: 'sidecar', 'aria-label': 'Mock sidecar' },
-      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', {}, 'Mock sidecar'), h('button', { class: 'x', 'aria-label': 'Close mock sidecar', onclick: () => ((ui.mockOpen = false), rerender()) }, '×')),
-      h('p', { class: 'small muted' }, 'A test tool. Act as a colleague, answer requests, leave feedback and move the date, to see how the flow feels. Everything it creates is marked as mock.'),
+      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', {}, 'Mock: fast-forward'), h('button', { class: 'x', 'aria-label': 'Close mock sidecar', onclick: () => ((ui.mockOpen = false), rerender()) }, '×')),
+      h('p', { class: 'small muted' }, 'You play Natalie. Move the days forward and the colleagues and candidates answer on their own, so you can watch an interview go from request to feedback. Only demo candidates are touched, and everything is marked as mock.'),
+      mockCands.length
+        ? null
+        : h('div', { class: 'mock-card' }, h('p', { class: 'small' }, 'Start with demo candidates. They come with interview requests already out.'), h('button', { class: 'p', style: 'align-self:flex-start', onclick: loadDemo }, 'Load demo candidates')),
       h(
         'section',
         { class: 'mock-sec' },
-        h('h3', {}, 'Date'),
+        h('h3', {}, 'Time'),
         h(
           'div',
           { class: 'row' },
-          h('span', { class: 'small' }, 'Pretend today is'),
+          h('span', { class: 'small' }, 'Today is'),
           h('input', {
             type: 'date',
             id: 'mock-today',
@@ -2606,36 +2867,39 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
               rerender();
             },
           }),
-          h('button', { onclick: () => shiftDay(1) }, '+1 day'),
-          TODAY !== REAL_TODAY ? h('button', { class: 'link', onclick: () => shiftDay(0) }, 'Back to today') : null,
+          TODAY !== REAL_TODAY ? h('button', { class: 'link', onclick: () => shiftDay(0) }, 'Back to real today') : null,
         ),
-      ),
-      h(
-        'section',
-        { class: 'mock-sec' },
-        h('h3', {}, 'Act as a colleague'),
         h(
-          'select',
-          { id: 'mock-actas', onchange: (e) => ((ui.actAs = e.target.value || null), rerender()) },
-          h('option', { value: '' }, 'Choose someone…'),
-          ps.map((p) => h('option', { value: p.id, selected: p.id === asId }, `${p.name} (${p.team}, ${roleLabel(p)})${p.accountId ? '' : ' · no account linked'}`)),
+          'div',
+          { class: 'row' },
+          h('button', { class: 'p', disabled: sim.busy, onclick: () => fastForward(1) }, 'Next day ▸'),
+          h('button', { disabled: sim.busy, onclick: () => fastForward(7) }, 'Skip a week ▸▸'),
+          h('button', { disabled: sim.busy, onclick: () => fastForward(0) }, 'Replies now'),
         ),
-        me2 ? actAsPanel(me2) : null,
       ),
       h(
         'section',
         { class: 'mock-sec' },
-        h('h3', {}, 'Everyone at once'),
-        h('div', { class: 'row' }, h('button', { onclick: simulateReplies }, 'Answer all waiting requests'), h('span', { class: 'small muted' }, 'Accepts when the poll says they’re free, declines otherwise.')),
+        h('h3', {}, 'Who answers on their own'),
+        toggle('replies', 'Colleagues answer requests', 'accept if the poll says they’re free'),
+        toggle('candidates', 'Candidates send availability', 'the day after you ask'),
+        toggle('feedback', 'Interviewers write feedback', 'the day after the interview'),
+      ),
+      h(
+        'section',
+        { class: 'mock-sec' },
+        h('h3', {}, 'What happened'),
+        sim.log.length
+          ? h('ul', { class: 'sim-log' }, sim.log.map((x) => h('li', {}, h('span', { class: 'mono faint' }, short(x.day)), ' ', x.text)))
+          : h('p', { class: 'small muted' }, 'Nothing yet. Press “Next day”, then check the to-do list.'),
       ),
       h(
         'section',
         { class: 'mock-sec' },
         h('h3', {}, 'Demo data'),
-        h('div', { class: 'row' }, h('button', { onclick: loadDemo }, 'Load demo candidates'), h('button', { class: 'danger', onclick: clearMock }, 'Clear mock data'), h('button', { onclick: linkAllMock }, 'Give everyone a mock account')),
+        h('div', { class: 'row' }, mockCands.length ? h('button', { onclick: loadDemo }, 'Add demo candidates') : null, h('button', { class: 'danger', onclick: clearMock }, 'Clear mock data')),
       ),
     );
-    return panel;
   }
 
   function shiftDay(n) {
@@ -2644,101 +2908,110 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     rerender();
   }
 
-  function actAsPanel(p) {
-    const mine = S.state.invites.filter((i) => i.personId === p.id);
-    const cand = (i) => S.state.candidates.find((c) => c.id === i.candidateId);
-    const pending = mine.filter((i) => i.status === 'pending' && cand(i));
-    const accepted = mine.filter((i) => i.status === 'accepted' && cand(i));
-    const released = mine.filter((i) => i.status === 'released');
-    const reasons = (ui.mockReasons = ui.mockReasons || {});
-    return h(
-      'div',
-      { style: 'display:flex;flex-direction:column;gap:8px' },
-      !p.accountId ? h('p', { class: 'warn-line' }, `${p.name} has no Claude account linked yet, so in real life they would only get the Outlook invite.`) : null,
-      p.accountId
-        ? memberOf(p.accountId)
-          ? h('span', { class: 'chip good', style: 'align-self:flex-start' }, '✓ Joined the app')
-          : h('button', { style: 'align-self:flex-start', onclick: () => ((ui.welcome = { memberId: p.accountId, name: p.name, mock: true }), rerender()) }, 'Open the app as them (welcome card)')
-        : null,
-      h('b', { class: 'small' }, `Requests for ${p.name}`),
-      pending.length
-        ? pending.map((i) =>
-            h(
-              'div',
-              { class: 'mock-card' },
-              h('div', { class: 'small' }, h('b', {}, `${M.formatDay(i.slotDate)} ${i.time || ''}`), ` · ${i.room || ''} · ${i.round === 'deepdive' ? 'deep dive' : 'advisor interview'} with ${first(cand(i))}`),
-              h('input', { id: `mock-reason-${i.id}`, placeholder: 'Reason if declining (optional)', value: reasons[i.id] || '', oninput: (e) => (reasons[i.id] = e.target.value) }),
-              h('div', { class: 'row' }, h('button', { class: 'p', onclick: () => answerInvite(i, 'accepted', 'mock') }, 'Accept'), h('button', { onclick: () => answerInvite(i, 'declined', 'mock', reasons[i.id]) }, 'Decline')),
-            ),
-          )
-        : h('p', { class: 'small muted' }, 'Nothing waiting.'),
-      accepted.length ? h('b', { class: 'small' }, 'Interviews') : null,
-      accepted.map((i) => {
-        const c = cand(i);
-        const k = `fb:${i.id}`;
-        const f = (ui.forms = ui.forms || {})[k] || (ui.forms[k] = { text: '', lean: 'pass' });
-        const done = i.slotDate <= TODAY;
-        const sent = S.state.notes.filter((n) => n.candidateId === c.id && n.authorPersonId === p.id && n.round === i.round).length;
-        return h(
-          'div',
-          { class: 'mock-card' },
-          h('div', { class: 'row small', style: 'justify-content:space-between' }, h('span', {}, h('b', {}, c.name), ` · ${M.formatDay(i.slotDate)} ${i.time || ''}`), h('button', { class: 'link', onclick: () => openCandidate(c.id) }, 'Open brief')),
-          sent ? h('span', { class: 'chip good', style: 'align-self:flex-start' }, `✓ ${plural(sent, 'feedback note')} sent`) : null,
-          done
-            ? [
-                h('textarea', { id: `mock-fb-${i.id}`, placeholder: `Feedback from ${p.name} after the interview`, value: f.text, oninput: (e) => (f.text = e.target.value) }),
-                h(
-                  'div',
-                  { class: 'row' },
-                  h('select', { id: `mock-lean-${i.id}`, onchange: (e) => (f.lean = e.target.value) }, [['pass', 'Leaning pass'], ['unsure', 'Unsure'], ['reject', 'Leaning no']].map(([v, l]) => h('option', { value: v, selected: f.lean === v }, l))),
-                  h(
-                    'button',
-                    {
-                      class: 'p',
-                      onclick: () => {
-                        if (!f.text.trim()) return;
-                        const lean = { pass: 'Leaning pass', unsure: 'Unsure', reject: 'Leaning no' }[f.lean];
-                        act(async () => {
-                          await S.add('notes', { candidateId: c.id, campaignId: c.campaignId, round: i.round, kind: 'feedback', text: `${lean}. ${f.text.trim()}`, authorId: null, authorPersonId: p.id, authorLabel: p.name, mock: true, createdAt: nowIso() });
-                          ui.forms[k] = { text: '', lean: 'pass' };
-                          rerender();
-                        }, 'Feedback added');
-                      },
-                    },
-                    'Send feedback',
-                  ),
-                ),
-              ]
-            : h('p', { class: 'small muted' }, `Feedback opens on the interview day. Use “+1 day” above to get there.`),
-        );
-      }),
-      released.length ? h('p', { class: 'small muted' }, `Released from ${plural(released.length, 'slot')}: ${released.map((i) => M.RELEASE_REASONS[i.releaseReason] || 'released').join('; ')}.`) : null,
-    );
+  async function fastForward(days) {
+    if (sim.busy) return;
+    sim.busy = true;
+    rerender();
+    try {
+      if (!days) await simulateDay();
+      for (let i = 0; i < days; i++) {
+        TODAY = M.addDays(TODAY, 1);
+        store('flux.mockToday', TODAY === REAL_TODAY ? '' : TODAY);
+        await simulateDay();
+      }
+    } catch (e) {
+      toast(`Simulation stopped: ${(e && e.message) || 'error'}`);
+    } finally {
+      sim.busy = false;
+      rerender();
+    }
   }
 
-  function simulateReplies() {
-    const snaps = availSources();
-    act(async () => {
-      let n = 0;
-      for (const i of S.state.invites.filter((x) => x.status === 'pending')) {
-        const c = S.state.candidates.find((x) => x.id === i.candidateId);
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const FEEDBACK = {
+    pass: [
+      'Structured answers and asked sharp questions about how we run tenders. Would like the deep dive to test planning under pressure.',
+      'Calm, clear communicator. Gave a strong example of managing a difficult stakeholder at university. Go.',
+      'Good analytical thinking on the case. A bit modest about own role; probe ownership in the next round.',
+    ],
+    unsure: [
+      'Friendly and motivated, but examples stayed general. Not sure about client-facing confidence yet.',
+      'Solid on content, hesitant when we pushed back. Would want a second opinion.',
+    ],
+    reject: [
+      'Struggled to structure the case and didn’t ask any questions about the role. Not convinced.',
+      'Motivation seemed to be mainly about the salary; little interest in the work itself.',
+    ],
+  };
+  const LEAN_LABEL = { pass: 'Leaning yes', unsure: 'Unsure', reject: 'Leaning no' };
+  const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  function candidateAvailabilityText() {
+    const days = [];
+    for (let d = M.addDays(TODAY, 2); days.length < 6; d = M.addDays(d, 1)) if (M.weekdayOf(d) >= 1 && M.weekdayOf(d) <= 5) days.push(d);
+    const chosen = [...new Set([pick(days.slice(0, 3)), pick(days.slice(2)), days.find((d) => M.weekdayOf(d) === 5) || days[5]])].sort();
+    const part = () => pick(['all day', 'in the morning', 'in the afternoon', 'all day']);
+    return chosen.map((d) => `${WEEKDAY[M.weekdayOf(d)]} ${Number(d.slice(8))} ${M.formatDay(d).split(' ').pop()} ${part()}`).join(', ');
+  }
+
+  async function simulateDay() {
+    const day = TODAY;
+    const srcs = availSources();
+    const byId = new Map(S.state.candidates.map((c) => [c.id, c]));
+    let n = 0;
+    // 1. Colleagues answer requests sent before today.
+    if (sim.replies) {
+      for (const i of S.state.invites.filter((x) => x.status === 'pending' && x.mock && (x.sentAt || '').slice(0, 10) < day)) {
+        const c = byId.get(i.candidateId);
         if (!c) continue;
         const role = i.round === 'deepdive' ? 'teamlead' : 'advisor';
-        const a = M.availabilityOn(snaps, i.personId, role, i.slotDate);
+        const a = M.availabilityOn(srcs, i.personId, role, i.slotDate);
         const half = Number((i.time || '10').slice(0, 2)) < 12 ? 'am' : 'pm';
         const free = a && (a.value === 'all' || a.value === half);
         const yes = free ? Math.random() < 0.85 : a && a.value === 'no' ? false : Math.random() < 0.4;
-        await S.update('invites', i.id, { status: yes ? 'accepted' : 'declined', respondedAt: nowIso(), via: 'mock', declineReason: yes ? '' : free ? 'Client meeting came up' : 'Not available then' });
+        const reason = yes ? '' : free ? pick(['Client meeting came up', 'On a client site that day', 'Project deadline']) : 'Not available then';
+        await S.update('invites', i.id, { status: yes ? 'accepted' : 'declined', respondedAt: `${day}T${pick(['08:40', '10:15', '13:05', '16:30'])}:00.000Z`, via: 'mock', declineReason: reason });
+        simLog(day, `${pname(i.personId)} ${yes ? 'accepted' : `declined (${reason.toLowerCase()})`} ${first(c)}’s ${M.formatDay(i.slotDate)} request.`);
         n++;
       }
-      toast(n ? `${plural(n, 'request')} answered` : 'No requests waiting');
-    });
-  }
-
-  function linkAllMock() {
-    act(async () => {
-      for (const p of S.state.people) if (!p.accountId) await S.update('people', p.id, { accountId: `mock:${p.id}` });
-    }, 'Everyone has a mock account');
+    }
+    // 2. Candidates send availability the day after Natalie asks.
+    if (sim.candidates) {
+      for (const c of S.state.candidates.filter((x) => x.mock)) {
+        const s = cstate(c);
+        const trigger = s.next === 'avail_received_r2' ? s.done.avail_asked_r2 : s.next === 'avail_received_final' ? s.done.result_call_r2 : null;
+        if (!trigger || trigger.at.slice(0, 10) >= day) continue;
+        const text = candidateAvailabilityText();
+        const ev = { id: S.uid('e'), step: s.next, at: day, outcome: null, recordedAt: nowIso(), note: '', data: { availability: text }, mock: true };
+        await S.set('candidates', c.id, withSummary({ ...c, timeline: [...(c.timeline || []), ev] }));
+        simLog(day, `${first(c)} sent availability: ${text}.`);
+        n++;
+      }
+    }
+    // 3. Interviews that happened yesterday or earlier get feedback.
+    if (sim.feedback) {
+      const notes = notesWithPerson();
+      for (const iv of M.interviewsOf(S.state.candidates.filter((c) => c.mock), S.state.invites)) {
+        if (iv.slotDate >= day) continue;
+        if (notes.some((x) => x.kind === 'feedback' && x.personId === iv.personId && x.candidateId === iv.candidateId && x.round === iv.round)) continue;
+        const p = personById(iv.personId);
+        if (!p) continue;
+        const lean = pick(['pass', 'pass', 'pass', 'unsure', 'reject']);
+        // Feedback usually lands the day after, sometimes later.
+        if (M.daysBetween(iv.slotDate, day) === 1 && Math.random() < 0.2) continue;
+        await S.add('notes', { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text: `${LEAN_LABEL[lean]}. ${pick(FEEDBACK[lean])}`, authorId: null, authorPersonId: p.id, authorLabel: p.name, mock: true, createdAt: `${day}T09:30:00.000Z` });
+        simLog(day, `${p.name} sent feedback on ${first(byId.get(iv.candidateId))} (${LEAN_LABEL[lean].toLowerCase()}).`);
+        n++;
+      }
+    }
+    // Interviews happening today.
+    for (const c of S.state.candidates.filter((x) => x.mock)) {
+      for (const [round, key] of [['advisor', 'advisor_booked'], ['deepdive', 'deepdive_booked']]) {
+        const b = cstate(c).done[key];
+        if (b && b.data && b.data.slotDate === day) simLog(day, `${first(c)}’s ${ROUND_LABEL[round].toLowerCase()} takes place today${b.data.time ? ` at ${b.data.time}` : ''}. Record the result when the feedback is in.`);
+      }
+    }
+    if (!n) simLog(day, M.weekdayOf(day) === 0 || M.weekdayOf(day) === 6 ? 'Weekend. Nobody answered.' : 'No replies today.');
   }
 
   function clearMock() {
@@ -2924,6 +3197,9 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
   }
 
   function buildBriefPrompt(c, round, focus) {
+    return briefPromptFrom(briefRecord(c), round, focus);
+  }
+  function briefRecord(c) {
     const s = cstate(c);
     const timeline = (c.timeline || [])
       .filter((e) => !e.voided)
@@ -2937,6 +3213,19 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
       .reverse()
       .map((n) => `- ${(n.createdAt || '').slice(0, 10)} ${authorName(n)} [${n.kind === 'feedback' ? 'interview feedback' : 'note'}, ${(NOTE_ROUNDS.find((r) => r[0] === n.round) || ['', 'general'])[1]}]: ${n.text}`)
       .join('\n');
+    return [
+      `Candidate: ${c.name}`,
+      `Current stage: ${s.stage}; next step: ${s.prompt || 'none'}`,
+      c.notes ? `Natalie's intake notes: ${c.notes}` : '',
+      'Timeline:',
+      timeline || '- nothing recorded yet',
+      'Notes and feedback:',
+      notes || '- none yet',
+    ]
+      .filter((x) => x !== '')
+      .join('\n');
+  }
+  function briefPromptFrom(record, round, focus) {
     const roundText = round === 'deepdive' ? 'the final-round deep dive with two team leads (1 hour, in person)' : 'the advisor interview with two advisors from different teams (1 hour, in person)';
     return [
       'You help interviewers at Flux Partners, a Dutch consultancy that hires trainees into tender, project, contract and stakeholder management teams.',
@@ -2949,13 +3238,7 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
       'Base everything on the record below. Attribute colleague observations to their author. Do not invent facts; if the record is thin, say so in one bullet and suggest what to find out. Keep it under 250 words. Plain text, no Markdown symbols other than "- " bullets. Notes may be in Dutch; write the brief in English.',
       focus ? `The interviewer wants to focus on: ${focus}` : '',
       '',
-      `Candidate: ${c.name}`,
-      `Current stage: ${s.stage}; next step: ${s.prompt || 'none'}`,
-      c.notes ? `Natalie's intake notes: ${c.notes}` : '',
-      'Timeline:',
-      timeline || '- nothing recorded yet',
-      'Notes and feedback:',
-      notes || '- none yet',
+      record,
     ]
       .filter((x) => x !== '')
       .join('\n');
@@ -3718,49 +4001,145 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
   // ------------------------------------------------------------------
   // Campaign
   // ------------------------------------------------------------------
-  function campaignView() {
-    const c = campaign();
-    const s = c.settings || M.DEFAULT_SETTINGS;
-    const settingRows = [
-      ['Invites per slot', s.invitesPerSlot],
-      ['Top up after a decline', s.topUpAfterDecline ? 'On' : 'Off'],
-      ['Reply window for interviewers', `${s.replyWindowWorkingDays} working days`],
-      ['Hold slots before a candidate exists', s.holdBeforeCandidate ? 'On' : 'Off'],
-      ['How far ahead to hold', `${s.holdAheadWorkingDays} working days`],
-      ['Holds per week', `Advisor ${s.holdsPerWeek.advisor}, deep dive ${s.holdsPerWeek.deepdive}`],
-      ['Release an unfilled hold', `${s.releaseUnfilledWorkingDays} working days before`],
-      ['Cancellation notice warning', `Under ${s.cancellationWarningWorkingDays} working days`],
-      ['Holds per member per month', s.holdsPerMemberPerMonth],
-      ['Prefer Fridays', s.preferFridays ? 'On' : 'Off'],
-    ];
-    return [
-      h('div', { class: 'section gutter' }, h('div', { class: 'head' }, h('div', {}, h('h1', {}, c.name), h('p', {}, 'Name, dates and targets for this hiring drive. Rounds and scheduling settings are used by matching from phase 2.')), h('button', { onclick: () => ((ui.newCampaign = !ui.newCampaign), rerender()) }, ui.newCampaign ? 'Close' : '+ New campaign')), ui.newCampaign ? campaignForm(null) : campaignForm(c)),
+  // ------------------------------------------------------------------
+  // Rounds and scheduling settings: everyone reads, Natalie edits
+  // ------------------------------------------------------------------
+  // [key, label, kind, unit, live] — live: used by the app today; else from phase 2 (holds and matching)
+  const SETTING_FIELDS = [
+    ['invitesPerSlot', 'Invites per slot', 'num', '', false],
+    ['topUpAfterDecline', 'Top up after a decline', 'bool', '', true],
+    ['replyWindowWorkingDays', 'Reply window for interviewers', 'num', 'working days', true],
+    ['holdBeforeCandidate', 'Hold slots before a candidate exists', 'bool', '', false],
+    ['holdAheadWorkingDays', 'How far ahead to hold', 'num', 'working days', false],
+    ['holdsPerWeek.advisor', 'Advisor holds per week', 'num', '', false],
+    ['holdsPerWeek.deepdive', 'Deep dive holds per week', 'num', '', false],
+    ['releaseUnfilledWorkingDays', 'Release an unfilled hold', 'num', 'working days before', false],
+    ['cancellationWarningWorkingDays', 'Cancellation notice warning', 'num', 'working days', false],
+    ['holdsPerMemberPerMonth', 'Holds per member per month', 'num', '', false],
+    ['preferFridays', 'Prefer Fridays', 'bool', '', false],
+  ];
+  const getPath = (o, k) => k.split('.').reduce((x, part) => (x == null ? x : x[part]), o);
+  function setPath(o, k, v) {
+    const parts = k.split('.');
+    let x = o;
+    for (const part of parts.slice(0, -1)) x = x[part] = x[part] || {};
+    x[parts[parts.length - 1]] = v;
+  }
+  const fmtSetting = (v, kind, unit) => (kind === 'bool' ? (v ? 'On' : 'Off') : `${v ?? '–'}${unit ? ` ${unit}` : ''}`);
+
+  function rulesSection(c, editable) {
+    const editing = editable && ui.editRules === c.id;
+    const settings = c.settings || M.DEFAULT_SETTINGS;
+    const rounds = c.rounds || M.DEFAULT_ROUNDS;
+    const f = editing ? (ui.rulesDraft = ui.rulesDraft || { settings: JSON.parse(JSON.stringify(settings)), rounds: JSON.parse(JSON.stringify(rounds)) }) : null;
+    const err = h('p', { class: 'err-line' });
+    const numIn = (id, val, onv) => h('input', { type: 'number', min: 0, max: 60, id, value: val, style: 'width:70px', oninput: (e) => onv(Number(e.target.value)) });
+    const boolIn = (id, val, onv) => h('input', { type: 'checkbox', id, checked: !!val, onchange: (e) => onv(e.target.checked) });
+    const roundCols = ['Round', 'Interviewers', 'Different teams', 'Length (min)', 'Max days after previous', 'Fallbacks'];
+    return h(
+      'div',
+      { class: 'section gutter', 'aria-label': 'Rounds and scheduling settings' },
       h(
         'div',
-        { class: 'section gutter' },
-        h('h2', {}, 'Rounds'),
+        { class: 'head' },
+        h('div', {}, h('h2', {}, 'Rounds and scheduling rules'), h('p', {}, editable ? 'Everyone in the campaign can read these. Only you can change them.' : 'How interviews are planned in this campaign. Natalie sets these.')),
+        editable && !editing ? h('button', { onclick: () => ((ui.editRules = c.id), (ui.rulesDraft = null), rerender()) }, 'Edit') : null,
+      ),
+      h(
+        'div',
+        { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:6px' },
         h(
-          'div',
-          { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:6px' },
+          'table',
+          { class: 'x' },
+          h('thead', {}, h('tr', {}, roundCols.map((x) => h('th', {}, x)))),
           h(
-            'table',
-            { class: 'x' },
-            h('thead', {}, h('tr', {}, ['Round', 'Interviewers', 'Different teams', 'Length', 'Max days after previous', 'Fallbacks'].map((x) => h('th', {}, x)))),
-            h(
-              'tbody',
-              {},
-              c.rounds.map((r) => h('tr', {}, h('td', { class: 'name' }, r.name), h('td', {}, `${r.interviewers} ${r.role === 'teamlead' ? 'team leads' : 'advisors'}`), h('td', {}, r.differentTeams ? 'Yes' : 'No'), h('td', {}, `${r.durationMin} min`), h('td', {}, `${r.maxDaysAfterPrevious} days`), h('td', {}, r.fallbacks.map((x) => (x === 'joker' ? 'HR joker' : 'Natalie')).join(', ')))),
+            'tbody',
+            {},
+            (editing ? f.rounds : rounds).map((r, i) =>
+              h(
+                'tr',
+                {},
+                h('td', { class: 'name' }, r.name),
+                h('td', {}, editing ? numIn(`r-int-${i}`, r.interviewers, (v) => (r.interviewers = v)) : `${r.interviewers} ${r.role === 'teamlead' ? 'team leads' : 'advisors'}`),
+                h('td', {}, editing ? boolIn(`r-diff-${i}`, r.differentTeams, (v) => (r.differentTeams = v)) : r.differentTeams ? 'Yes' : 'No'),
+                h('td', {}, editing ? numIn(`r-len-${i}`, r.durationMin, (v) => (r.durationMin = v)) : `${r.durationMin} min`),
+                h('td', {}, editing ? numIn(`r-max-${i}`, r.maxDaysAfterPrevious, (v) => (r.maxDaysAfterPrevious = v)) : `${r.maxDaysAfterPrevious} days`),
+                h(
+                  'td',
+                  {},
+                  editing
+                    ? h(
+                        'div',
+                        { class: 'row' },
+                        [['joker', 'HR joker'], ['natalie', 'Natalie']].map(([k, l]) =>
+                          h('label', { class: 'check' }, boolIn(`r-fb-${i}-${k}`, (r.fallbacks || []).includes(k), (v) => (r.fallbacks = v ? [...new Set([...(r.fallbacks || []), k])] : (r.fallbacks || []).filter((x) => x !== k))), l),
+                        ),
+                      )
+                    : (r.fallbacks || []).map((x) => (x === 'joker' ? 'HR joker' : 'Natalie')).join(', ') || '–',
+                ),
+              ),
             ),
           ),
         ),
       ),
       h(
         'div',
-        { class: 'section gutter' },
-        h('h2', {}, 'Scheduling settings'),
-        h('p', { class: 'small muted' }, 'Defaults from the plan. They become adjustable when holds and matching arrive.'),
-        h('div', { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:6px' }, h('table', { class: 'x' }, h('tbody', {}, settingRows.map(([k, v]) => h('tr', {}, h('td', {}, k), h('td', { class: 'mono' }, v)))))),
+        { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:6px' },
+        h(
+          'table',
+          { class: 'x' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Setting'), h('th', {}, 'Value'), h('th', { class: 'wide-only' }, ''))),
+          h(
+            'tbody',
+            {},
+            SETTING_FIELDS.map(([k, label, kind, unit, live]) => {
+              const v = getPath(editing ? f.settings : settings, k);
+              return h(
+                'tr',
+                {},
+                h('td', {}, label),
+                h('td', { class: 'mono' }, editing ? h('span', { class: 'row' }, kind === 'bool' ? boolIn(`s-${k}`, v, (x) => setPath(f.settings, k, x)) : numIn(`s-${k}`, v, (x) => setPath(f.settings, k, x)), unit ? h('span', { class: 'small muted' }, unit) : null) : fmtSetting(v, kind, unit)),
+                h('td', { class: 'small faint wide-only' }, live ? 'In use now' : 'Used when holds and matching arrive'),
+              );
+            }),
+          ),
+        ),
       ),
+      editing
+        ? h(
+            'div',
+            { class: 'row end' },
+            err,
+            h('button', { onclick: () => ((ui.editRules = null), (ui.rulesDraft = null), rerender()) }, 'Cancel'),
+            h(
+              'button',
+              {
+                class: 'p',
+                onclick: () => {
+                  const bad = f.rounds.find((r) => !(r.interviewers >= 1) || !(r.durationMin >= 15) || !(r.maxDaysAfterPrevious >= 1));
+                  if (bad) return (err.textContent = `${bad.name}: at least 1 interviewer, 15 minutes and 1 day.`);
+                  if (!(f.settings.replyWindowWorkingDays >= 1)) return (err.textContent = 'The reply window needs at least 1 working day.');
+                  act(async () => {
+                    await S.update('campaigns', c.id, { settings: f.settings, rounds: f.rounds });
+                    ui.editRules = null;
+                    ui.rulesDraft = null;
+                    rerender();
+                  }, 'Rules saved');
+                },
+              },
+              'Save rules',
+            ),
+          )
+        : null,
+    );
+  }
+
+  function campaignView() {
+    const c = campaign();
+    return [
+      h('div', { class: 'section gutter' }, h('div', { class: 'head' }, h('div', {}, h('h1', {}, c.name), h('p', {}, 'Name, dates and targets for this hiring drive.')), h('button', { onclick: () => ((ui.newCampaign = !ui.newCampaign), rerender()) }, ui.newCampaign ? 'Close' : '+ New campaign')), ui.newCampaign ? campaignForm(null) : campaignForm(c)),
+      rulesSection(c, true),
+      adminScoreboard(c),
     ];
   }
 
@@ -3801,6 +4180,562 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
     );
   }
 
+
+  // ------------------------------------------------------------------
+  // Advisor / team lead view
+  //
+  // Interviewers can't read candidates, notes or invites. Natalie's page
+  // writes each linked person an inbox/{accountId} doc holding only their
+  // own requests, interviews (with the brief record) and scores, plus a
+  // stats/{campaignId} doc with the campaign overview and team board.
+  // Interviewers write answers and feedback to replies/{their id}; Natalie's
+  // page applies them to invites and notes.
+  // ------------------------------------------------------------------
+  const ROUND_LABEL = { advisor: 'Advisor interview', deepdive: 'Deep dive' };
+  const LEANS = [['pass', 'Leaning yes'], ['unsure', 'Unsure'], ['reject', 'Leaning no']];
+  const interviewerPeople = () => people().filter((p) => p.active !== false && (p.roles || []).some((r) => r === 'advisor' || r === 'teamlead' || r === 'joker'));
+  function notesWithPerson() {
+    return S.state.notes.map((n) => {
+      if (n.authorPersonId) return { ...n, personId: n.authorPersonId };
+      const p = n.authorId && S.state.people.find((x) => x.accountId && x.accountId === n.authorId);
+      return { ...n, personId: p ? p.id : null };
+    });
+  }
+  const campCands = (campId) => S.state.candidates.filter((c) => c.campaignId === campId);
+  const campInvites = (campId) => S.state.invites.filter((i) => i.campaignId === campId);
+
+  function scoresFor(camp) {
+    return M.scoreboard({ cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().filter((n) => n.campaignId === camp.id), people: S.state.people, today: TODAY });
+  }
+
+  function statsFor(camp) {
+    const cands = campCands(camp.id);
+    const ivs = M.interviewsOf(cands, campInvites(camp.id));
+    const slots = new Map();
+    for (const r of ivs) slots.set(`${r.candidateId}|${r.round}`, r.slotDate);
+    const dates = [...slots.values()];
+    const sb = scoresFor(camp);
+    return {
+      campaignId: camp.id,
+      name: camp.name,
+      startDate: camp.startDate || '',
+      endDate: camp.endDate || '',
+      targetHires: camp.targetHires || 0,
+      targetInterviews: camp.targetInterviews || 0,
+      pipeline: M.pipelineCounts(cands, TODAY),
+      interviewsDone: dates.filter((d) => d <= TODAY).length,
+      interviewsNext7: dates.filter((d) => d > TODAY && d <= M.addDays(TODAY, 7)).length,
+      fairEach: sb.fairEach,
+      teams: sb.teams,
+      asOf: TODAY,
+    };
+  }
+
+  function nudgeFor(row, list) {
+    if (!row) return '';
+    if (row.rank === 1) return !row.points ? 'Everyone starts level. Your first interview puts you on top.' : list.filter((x) => x.points === row.points).length > 1 ? 'You share the top spot.' : 'You’re top of the board. Nice work.';
+    const above = list.filter((x) => x.points > row.points).sort((a, b) => a.points - b.points)[0];
+    const newRank = 1 + list.filter((x) => x.points > above.points).length;
+    const gap = above.points - row.points + 1;
+    const n = Math.ceil(gap / M.POINTS.interview);
+    return `${plural(n, 'more interview')} moves you up to #${newRank}.`;
+  }
+
+  function inboxFor(p) {
+    const allCands = S.state.candidates;
+    const open = new Set(allCands.filter((c) => cstate(c).status === 'open').map((c) => c.id));
+    const byId = new Map(allCands.map((c) => [c.id, c]));
+    const notes = notesWithPerson();
+    const requests = S.state.invites
+      .filter((i) => i.personId === p.id && i.status === 'pending' && open.has(i.candidateId) && i.slotDate >= TODAY)
+      .sort((a, b) => a.slotDate.localeCompare(b.slotDate))
+      .map((i) => ({ id: i.id, campaignId: i.campaignId, round: i.round, slotDate: i.slotDate, time: i.time || '', room: i.room || '', candidate: first(byId.get(i.candidateId)), sentAt: i.sentAt || '' }));
+    const interviews = M.interviewsOf(allCands, S.state.invites)
+      .filter((r) => r.personId === p.id && r.slotDate >= M.addDays(TODAY, -28))
+      .map((r) => {
+        const c = byId.get(r.candidateId);
+        return {
+          key: `${r.candidateId}:${r.round}`,
+          candidateId: r.candidateId,
+          campaignId: r.campaignId,
+          name: c.name,
+          round: r.round,
+          slotDate: r.slotDate,
+          time: r.time,
+          room: r.room,
+          booked: r.booked,
+          partners: r.partners.map((id) => pname(id)),
+          feedbackSent: notes.filter((n) => n.kind === 'feedback' && n.personId === p.id && n.candidateId === r.candidateId && n.round === r.round).length,
+          record: briefRecord(c),
+        };
+      });
+    const role = (p.roles || []).includes('teamlead') ? 'teamlead' : 'advisor';
+    const srcs = availSources();
+    const availability = {};
+    for (let d = TODAY, n = 0; n < 20; d = M.addDays(d, 1)) {
+      const wd = M.weekdayOf(d);
+      if (wd < 1 || wd > 5) continue;
+      const a = M.availabilityOn(srcs, p.id, role, d);
+      availability[d] = a ? a.value || null : null;
+      n++;
+    }
+    const scores = {};
+    for (const camp of campaigns()) {
+      const sb = scoresFor(camp);
+      const row = sb.people.find((x) => x.personId === p.id);
+      if (row) scores[camp.id] = { ...row, nudge: nudgeFor(row, sb.people) };
+    }
+    return { personId: p.id, name: p.name, team: p.team, role: roleLabel(p), requests, interviews, availability, scores, asOf: TODAY };
+  }
+
+  // ---- Natalie's page keeps the shared docs current ----
+  const written = {};
+  const applied = new Set();
+  let syncTimer = null;
+  function scheduleSync() {
+    if (!S || !S.admin) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => syncShared().catch((e) => console.error('sync failed', e && e.message)), 1200);
+  }
+  async function writeIfChanged(coll, id, doc) {
+    const body = JSON.stringify(doc);
+    if (written[`${coll}/${id}`] === body) return;
+    written[`${coll}/${id}`] = body;
+    await S.set(coll, id, { ...doc, updatedAt: new Date().toISOString() });
+  }
+  async function syncShared() {
+    if (!window.FluxStore.COLLECTIONS.every((c) => S.state.loaded[c])) return;
+    await applyReplies();
+    for (const camp of campaigns()) await writeIfChanged('stats', camp.id, statsFor(camp));
+    const linked = S.state.people.filter((p) => p.accountId && !p.accountId.startsWith('mock:') && p.active !== false);
+    for (const p of linked) await writeIfChanged('inbox', p.accountId, inboxFor(p));
+    const keep = new Set(linked.map((p) => p.accountId));
+    for (const d of S.state.inbox) if (!keep.has(d.id)) await S.remove('inbox', d.id);
+  }
+  async function applyReplies() {
+    const notes = S.state.notes;
+    for (const r of S.state.replies) {
+      const p = S.state.people.find((x) => x.accountId === r.id);
+      if (!p) continue;
+      for (const [iid, a] of Object.entries(r.invites || {})) {
+        const inv = S.state.invites.find((i) => i.id === iid);
+        if (!inv || inv.personId !== p.id || inv.status !== 'pending' || applied.has(`i:${iid}`)) continue;
+        if (a.status !== 'accepted' && a.status !== 'declined') continue;
+        applied.add(`i:${iid}`);
+        await S.update('invites', iid, { status: a.status, respondedAt: a.at || nowIso(), via: 'app', declineReason: String(a.reason || '').slice(0, 300) });
+      }
+      const mine = M.interviewsOf(S.state.candidates, S.state.invites).filter((x) => x.personId === p.id);
+      for (const [k, fb] of Object.entries(r.feedback || {})) {
+        const key = `${r.id}:${k}`;
+        if (applied.has(key) || notes.some((n) => n.replyKey === key)) continue;
+        const iv = mine.find((x) => x.candidateId === fb.candidateId && x.round === fb.round);
+        if (!iv || !String(fb.text || '').trim()) continue;
+        applied.add(key);
+        await S.add('notes', { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text: String(fb.text).slice(0, 4000), authorId: r.id, authorPersonId: p.id, replyKey: key, createdAt: fb.at || new Date().toISOString() });
+      }
+    }
+  }
+
+  // ---- Which view to show ----
+  function ivContext() {
+    if (!S.admin) {
+      const stats = S.state.stats;
+      return { mode: 'viewer', inbox: S.state.mine.inbox, replies: S.state.mine.replies || null, stats, loading: S.state.mine.inbox === undefined };
+    }
+    const p = ui.viewAs && personById(ui.viewAs);
+    if (!p || !campaign()) return null;
+    return { mode: 'preview', person: p, inbox: inboxFor(p), replies: null, stats: campaigns().map(statsFor), loading: false };
+  }
+
+  // Top-bar switch: Admin (Natalie) / Advisor / Team lead. Picking a role
+  // shows the busiest person in that role; the small select changes who.
+  function busiest(role) {
+    const ps = interviewerPeople().filter((p) => roleLabel(p) === role);
+    const score = (p) => S.state.invites.filter((i) => i.personId === p.id).length;
+    return [...ps].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name))[0] || null;
+  }
+  function setViewAs(id) {
+    ui.viewAs = id || null;
+    store('flux.viewAs', ui.viewAs || '');
+    ui.forms = {};
+    ui.candId = null;
+    ui.openStep = null;
+    rerender();
+    window.scrollTo(0, 0);
+  }
+  function viewSwitch() {
+    if (!S.admin || !campaign()) return null;
+    const cur = ui.viewAs && personById(ui.viewAs);
+    const curRole = cur ? roleLabel(cur) : 'admin';
+    const seg = [
+      ['admin', 'Admin'],
+      ['advisor', 'Advisor'],
+      ['team lead', 'Team lead'],
+    ];
+    return h(
+      'div',
+      { class: 'viewas', role: 'group', 'aria-label': 'View the app as' },
+      h('span', {}, 'View'),
+      h(
+        'div',
+        { class: 'seg' },
+        seg.map(([r, label]) =>
+          h(
+            'button',
+            {
+              'aria-pressed': curRole === r || (r === 'team lead' && curRole === 'joker'),
+              onclick: () => {
+                if (r === 'admin') return setViewAs(null);
+                if (curRole === r) return;
+                const p = busiest(r);
+                if (p) setViewAs(p.id);
+                else toast(`No ${r}s on the roster yet.`);
+              },
+            },
+            label,
+          ),
+        ),
+      ),
+      cur
+        ? h(
+            'select',
+            { id: 'view-as', 'aria-label': 'Which colleague', onchange: (e) => setViewAs(e.target.value) },
+            interviewerPeople()
+              .filter((p) => roleLabel(p) === curRole)
+              .map((p) => h('option', { value: p.id, selected: p.id === cur.id }, `${p.name} (${p.team})`)),
+          )
+        : null,
+    );
+  }
+
+  function ivTopBar(ctx) {
+    const me2 = ctx.inbox;
+    return h(
+      'header',
+      { class: 'bar gutter' },
+      h('div', { class: 'brand' }, h('i'), 'Flux interviews'),
+      h('nav', {}, h('a', { href: '#run', 'aria-current': 'page' }, me2 ? `${me2.name.split(' ')[0]}’s interviews` : 'My interviews')),
+      h(
+        'div',
+        { class: 'camp' },
+        viewSwitch(),
+        S.admin ? h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, onclick: () => ((ui.mockOpen = !ui.mockOpen), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock') : null,
+      ),
+    );
+  }
+
+  function ivBanner(ctx) {
+    if (ctx.mode !== 'preview') return null;
+    return h(
+      'div',
+      { class: 'banner gutter preview' },
+      `This is what ${ctx.person.name} (${roleLabel(ctx.person)}, ${ctx.person.team}) sees. Anything you answer here is saved as mock. `,
+      h('button', { class: 'link', onclick: () => setViewAs(null) }, 'Back to the admin view'),
+    );
+  }
+
+  // ---- The page itself ----
+  function interviewerView(ctx) {
+    if (ctx.loading) return h('div', { class: 'section gutter' }, h('p', { class: 'muted' }, 'Loading…'));
+    const inbox = ctx.inbox;
+    const stats = ctx.stats || [];
+    const st = stats.find((x) => x.campaignId === ui.ivCampaign) || stats[0] || null;
+    if (!inbox)
+      return h(
+        'div',
+        { class: 'section gutter iv' },
+        h('h1', {}, 'Welcome'),
+        h('p', { class: 'muted' }, 'Natalie hasn’t linked your Claude account to the interview roster yet, so there’s nothing for you here yet. Ask her to add you, then reopen this page.'),
+        st ? campaignOverview(st) : null,
+      );
+    return h(
+      'div',
+      { class: 'section gutter iv' },
+      h('div', { class: 'head' }, h('div', {}, h('h1', {}, `Hi ${inbox.name.split(' ')[0]}`), h('p', {}, `${inbox.role[0].toUpperCase()}${inbox.role.slice(1)} · ${inbox.team}. Your interview requests, your interviews and how you and your team are doing.`))),
+      stats.length > 1 ? h('div', { class: 'row' }, stats.map((x) => h('button', { class: x === st ? 'p' : '', onclick: () => ((ui.ivCampaign = x.campaignId), rerender()) }, x.name))) : null,
+      h(
+        'div',
+        { class: 'iv-grid' },
+        h('div', { class: 'iv-col' }, ivRequests(ctx), ivInterviews(ctx), ivAvailability(inbox)),
+        h('div', { class: 'iv-col' }, st ? myScore(inbox, st) : null, st ? teamBoard(st, inbox.team) : null, st ? campaignOverview(st) : null),
+      ),
+      ivRules(st),
+    );
+  }
+
+  function ivRules(st) {
+    const camp = st && S.state.campaigns.find((x) => x.id === st.campaignId);
+    if (!camp) return null;
+    if (!ui.ivRulesOpen) return h('button', { class: 'link', style: 'align-self:flex-start', onclick: () => ((ui.ivRulesOpen = true), rerender()) }, 'How interviews are planned (rounds and rules)');
+    return h('div', { class: 'tpanel', style: 'padding:0' }, rulesSection(camp, false), h('div', { class: 'gutter', style: 'padding-bottom:12px' }, h('button', { class: 'link', onclick: () => ((ui.ivRulesOpen = false), rerender()) }, 'Hide rules')));
+  }
+  function replyFor(ctx, id) {
+    return ctx.replies && ctx.replies.invites && ctx.replies.invites[id];
+  }
+  async function saveReply(ctx, patch) {
+    const cur = ctx.replies || {};
+    const doc = { invites: { ...(cur.invites || {}), ...(patch.invites || {}) }, feedback: { ...(cur.feedback || {}), ...(patch.feedback || {}) } };
+    await S.set('replies', S.myId || 'local', doc);
+  }
+  function ivAnswer(ctx, req, status, reason) {
+    if (ctx.mode === 'preview') {
+      const inv = S.state.invites.find((i) => i.id === req.id);
+      return act(() => S.update('invites', req.id, { status, respondedAt: nowIso(), via: 'app', declineReason: reason || '', mock: true }), status === 'accepted' ? 'Accepted' : 'Declined').then(() => inv);
+    }
+    return act(() => saveReply(ctx, { invites: { [req.id]: { status, reason: reason || '', at: new Date().toISOString() } } }), status === 'accepted' ? 'Accepted. Natalie will confirm the pair.' : 'Declined. Thanks for letting us know.');
+  }
+  function ivFeedback(ctx, iv, text) {
+    if (ctx.mode === 'preview') {
+      const p = ctx.person;
+      return act(() => S.add('notes', { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text, authorId: null, authorPersonId: p.id, authorLabel: p.name, mock: true, createdAt: nowIso() }), 'Feedback sent');
+    }
+    const k = S.uid('fb_');
+    return act(() => saveReply(ctx, { feedback: { [k]: { candidateId: iv.candidateId, round: iv.round, text, at: new Date().toISOString() } } }), 'Feedback sent to Natalie');
+  }
+
+  function ivRequests(ctx) {
+    const reqs = ctx.inbox.requests || [];
+    const reasons = (ui.ivReasons = ui.ivReasons || {});
+    return h(
+      'section',
+      { class: 'tpanel iv-card', 'aria-label': 'Requests for you' },
+      h('h2', {}, 'Requests for you', reqs.length ? h('span', { class: 'chip accent' }, reqs.length) : null),
+      reqs.length
+        ? reqs.map((r) => {
+            const done = replyFor(ctx, r.id);
+            return h(
+              'div',
+              { class: 'iv-item' },
+              h('div', {}, h('b', {}, `${M.formatDay(r.slotDate)} ${r.time}`), h('span', { class: 'muted' }, ` · ${r.room || 'room tbc'}`)),
+              h('div', { class: 'small' }, `${ROUND_LABEL[r.round]} with ${r.candidate}. One hour, with a colleague from another team.`),
+              done
+                ? h('span', { class: `chip ${done.status === 'accepted' ? 'good' : ''}`, style: 'align-self:flex-start' }, done.status === 'accepted' ? '✓ You accepted. Natalie confirms the pair.' : 'You declined')
+                : [
+                    h('input', { id: `iv-reason-${r.id}`, placeholder: 'Reason if you decline (optional)', value: reasons[r.id] || '', oninput: (e) => (reasons[r.id] = e.target.value) }),
+                    h('div', { class: 'row' }, h('button', { class: 'p', onclick: () => ivAnswer(ctx, r, 'accepted') }, 'Accept'), h('button', { onclick: () => ivAnswer(ctx, r, 'declined', reasons[r.id]) }, 'Decline'), h('span', { class: 'small faint' }, 'or answer the Outlook invite')),
+                  ],
+            );
+          })
+        : h('p', { class: 'small muted' }, 'Nothing waiting for you. When Natalie asks you to interview, it shows up here and in Outlook.'),
+    );
+  }
+
+  function ivInterviews(ctx) {
+    const list = ctx.inbox.interviews || [];
+    const upcoming = list.filter((x) => x.slotDate >= TODAY);
+    const past = list.filter((x) => x.slotDate < TODAY || (x.slotDate === TODAY && !x.feedbackSent)).filter((x) => x.slotDate <= TODAY);
+    const pendingFb = (iv) => Object.values((ctx.replies && ctx.replies.feedback) || {}).filter((f) => f.candidateId === iv.candidateId && f.round === iv.round).length;
+    const card = (iv, isPast) => {
+      const sent = iv.feedbackSent + (ctx.mode === 'viewer' ? pendingFb(iv) : 0);
+      const fk = `ivfb:${iv.key}:${ctx.inbox.personId}`;
+      const f = (ui.forms = ui.forms || {})[fk] || (ui.forms[fk] = { text: '', lean: 'pass', open: false });
+      return h(
+        'div',
+        { class: 'iv-item' },
+        h('div', { class: 'row', style: 'justify-content:space-between' }, h('div', {}, h('b', {}, iv.name), h('span', { class: 'muted' }, ` · ${ROUND_LABEL[iv.round]}`)), sent ? h('span', { class: 'chip good' }, '✓ Feedback sent') : isPast ? h('span', { class: 'chip warn' }, 'Feedback due') : null),
+        h('div', { class: 'small' }, `${M.formatDay(iv.slotDate)} ${iv.time} · ${iv.room || 'room tbc'}${iv.partners.length ? ` · with ${iv.partners.join(', ')}` : ''}${iv.booked ? '' : ' · pair not confirmed yet'}`),
+        ivBrief(iv),
+        isPast && !sent
+          ? h(
+              'div',
+              { class: 'step-form', style: 'margin:0' },
+              h('textarea', { id: `iv-fb-${iv.key}`, placeholder: 'How did it go? What stood out, what should the next round dig into?', value: f.text, oninput: (e) => (f.text = e.target.value) }),
+              h(
+                'div',
+                { class: 'row' },
+                h('select', { id: `iv-lean-${iv.key}`, 'aria-label': 'Your verdict', onchange: (e) => (f.lean = e.target.value) }, LEANS.map(([v, l]) => h('option', { value: v, selected: f.lean === v }, l))),
+                h(
+                  'button',
+                  {
+                    class: 'p',
+                    onclick: () => {
+                      if (!f.text.trim()) return;
+                      const lean = LEANS.find((x) => x[0] === f.lean)[1];
+                      ivFeedback(ctx, iv, `${lean}. ${f.text.trim()}`).then(() => {
+                        ui.forms[fk] = { text: '', lean: 'pass' };
+                        rerender();
+                      });
+                    },
+                  },
+                  'Send feedback',
+                ),
+                h('span', { class: 'small faint' }, 'Within a day earns 3 points'),
+              ),
+            )
+          : null,
+      );
+    };
+    return h(
+      'section',
+      { class: 'tpanel iv-card', 'aria-label': 'Your interviews' },
+      h('h2', {}, 'Your interviews'),
+      upcoming.length || past.length ? null : h('p', { class: 'small muted' }, 'No interviews planned for you yet.'),
+      past.filter((x) => !x.feedbackSent).map((x) => card(x, true)),
+      upcoming.filter((x) => x.slotDate > TODAY || x.feedbackSent).map((x) => card(x, false)),
+      past.filter((x) => x.feedbackSent).length ? h('p', { class: 'small muted' }, `Earlier: ${past.filter((x) => x.feedbackSent).map((x) => `${x.name.split(' ')[0]} (${M.formatDay(x.slotDate)})`).join(', ')}`) : null,
+    );
+  }
+
+  function ivBrief(iv) {
+    if (!sample) return null;
+    const key = `iv:${iv.key}`;
+    const b = (briefs[key] = briefs[key] || { text: '', busy: false, error: '', focus: '', open: false });
+    if (!b.open) return h('button', { class: 'link', style: 'align-self:flex-start', onclick: () => ((b.open = true), rerender()) }, b.text ? 'Show brief' : 'Brief me before the interview');
+    const out = h('div', { class: 'small brief-out' }, b.text);
+    const status = h('p', { class: b.error ? 'err-line' : 'small muted' }, b.error || (b.busy ? 'Claude is writing the brief…' : ''));
+    async function run() {
+      b.busy = true;
+      b.error = '';
+      status.className = 'small muted';
+      status.textContent = 'Claude is writing the brief…';
+      out.textContent = '';
+      if (b.ctrl) b.ctrl.abort();
+      b.ctrl = new AbortController();
+      try {
+        const res = await sample(briefPromptFrom(iv.record, iv.round, b.focus), { modelTier: 'default', signal: b.ctrl.signal, onText: ({ text }) => ((b.text = text), (out.textContent = text)) });
+        b.text = res.text;
+        out.textContent = res.text;
+        status.textContent = res.truncated ? 'The brief was cut short.' : '';
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        b.error = e && e.code === 'not_granted' ? 'Claude isn’t allowed on this page.' : e && e.code === 'rate_limited' ? 'Claude is busy. Try again in a minute.' : 'Claude couldn’t write the brief. Try again.';
+        status.className = 'err-line';
+        status.textContent = b.error;
+      } finally {
+        b.busy = false;
+      }
+    }
+    return h(
+      'div',
+      { class: 'brief-box' },
+      h('div', { class: 'row' }, h('input', { id: `iv-focus-${iv.key}`, style: 'flex:1;min-width:160px', placeholder: 'Anything you want to dig into? (optional)', value: b.focus, oninput: (e) => (b.focus = e.target.value) }), h('button', { class: 'p', onclick: run }, b.text ? 'Brief me again' : 'Brief me'), h('button', { class: 'link', onclick: () => ((b.open = false), rerender()) }, 'Hide')),
+      status,
+      out,
+    );
+  }
+
+  function ivAvailability(inbox) {
+    const days = Object.keys(inbox.availability || {}).sort();
+    if (!days.length) return null;
+    return h(
+      'section',
+      { class: 'tpanel iv-card', 'aria-label': 'Your availability' },
+      h('h2', {}, 'Your availability'),
+      h('p', { class: 'small muted' }, 'What Natalie has for you, from the poll or what you told her. Something changed? Update the poll sheet or tell Natalie.'),
+      h(
+        'div',
+        { class: 'sheet-wrap' },
+        h(
+          'table',
+          { class: 'x avail-strip' },
+          h('thead', {}, h('tr', {}, days.map((d) => h('th', { class: M.weekdayOf(d) === 1 ? 'wk' : '' }, short(d))))),
+          h('tbody', {}, h('tr', {}, days.map((d) => h('td', { class: `v ${inbox.availability[d] || 'null'}`, title: NL[inbox.availability[d]] || 'No answer' }, inbox.availability[d] ? NL[inbox.availability[d]].split(' ')[0] : '')))),
+        ),
+      ),
+    );
+  }
+
+  const hrs = (x) => (x === null || x === undefined ? '–' : x < 1 ? '<1 h' : x < 48 ? `${Math.round(x)} h` : `${Math.round(x / 24)} d`);
+
+  function myScore(inbox, st) {
+    const s = inbox.scores && inbox.scores[st.campaignId];
+    if (!s) return null;
+    return h(
+      'section',
+      { class: 'tpanel iv-card score', 'aria-label': 'Your score' },
+      h('h2', {}, 'Your score'),
+      h('div', { class: 'row', style: 'align-items:baseline;gap:14px' }, h('span', { class: 'big' }, s.points), h('span', {}, 'points'), h('span', { class: 'chip accent' }, `#${s.rank} of ${s.of} overall`), h('span', { class: 'chip' }, `#${s.teamRank} of ${s.teamOf} in ${s.team}`)),
+      s.nudge ? h('p', { class: 'small' }, s.nudge) : null,
+      h('div', { class: 'kpis' }, kpi('Interviews done', s.done, s.upcoming ? `${s.upcoming} coming up` : ''), kpi('Fair share so far', st.fairEach, 'per person'), kpi('Avg reply time', hrs(s.avgReplyHours), `${s.quickReplies} within a day`), kpi('Feedback on time', s.feedbackDue ? `${s.feedbackOnTime}/${s.feedbackDue}` : '–', 'within a day')),
+      s.badges.length ? h('div', { class: 'row' }, s.badges.map((b) => h('span', { class: 'chip good' }, `★ ${b}`))) : null,
+      h('p', { class: 'small faint' }, `${M.POINTS.interview} points per interview, ${M.POINTS.quickReply} for answering a request within a day, ${M.POINTS.quickFeedback} for feedback within a day. Only you and Natalie see your own numbers.`),
+    );
+  }
+  function kpi(label, value, sub) {
+    return h('div', { class: 'kpi' }, h('span', { class: 'small muted' }, label), h('b', {}, String(value)), sub ? h('span', { class: 'small faint' }, sub) : null);
+  }
+
+  function teamBoard(st, myTeam) {
+    return h(
+      'section',
+      { class: 'tpanel iv-card', 'aria-label': 'Team board' },
+      h('h2', {}, 'Team board'),
+      h(
+        'div',
+        { class: 'sheet-wrap' },
+        h(
+          'table',
+          { class: 'x' },
+          h('thead', {}, h('tr', {}, ['#', 'Team', 'Points per person', 'Interviews', 'Fair share', 'Avg reply', 'Feedback on time'].map((x, i) => h('th', { class: i > 4 ? 'wide-only' : '' }, x)))),
+          h(
+            'tbody',
+            {},
+            (st.teams || []).map((t) =>
+              h(
+                'tr',
+                { class: t.team === myTeam ? 'sel' : '' },
+                h('td', { class: 'mono' }, t.rank),
+                h('td', { class: 'name' }, t.team, t.team === myTeam ? h('span', { class: 'faint' }, ' (you)') : null),
+                h('td', { class: 'mono' }, t.pointsPerMember),
+                h('td', { class: 'mono' }, t.done, t.upcoming ? h('span', { class: 'faint' }, ` +${t.upcoming}`) : null),
+                h('td', { class: `mono ${t.done < t.fairShare - 1 ? 'warn-t' : ''}` }, t.fairShare),
+                h('td', { class: 'mono wide-only' }, hrs(t.avgReplyHours)),
+                h('td', { class: 'mono wide-only' }, t.feedbackOnTimePct === null ? '–' : `${t.feedbackOnTimePct}%`),
+              ),
+            ),
+          ),
+        ),
+      ),
+      h('p', { class: 'small faint' }, 'Ranked by points per person, so small teams can win. Fair share is the interviews a team would have done if load were spread evenly.'),
+    );
+  }
+
+  function campaignOverview(st) {
+    const p = st.pipeline || {};
+    const bars = [['In HR round', p.hr], ['Advisor round', p.advisor], ['Deep dive', p.deepdive], ['Hired', p.hired], ['Closed', p.closed]];
+    const max = Math.max(1, ...bars.map((b) => b[1] || 0));
+    const pct = st.targetHires ? Math.min(100, Math.round(((p.hired || 0) / st.targetHires) * 100)) : 0;
+    return h(
+      'section',
+      { class: 'tpanel iv-card', 'aria-label': 'Campaign overview' },
+      h('h2', {}, st.name),
+      h('div', { class: 'row small muted' }, st.endDate ? `Runs until ${M.formatDay(st.endDate)}` : `Started ${M.formatDay(st.startDate)}`),
+      h('div', {}, h('div', { class: 'row', style: 'justify-content:space-between' }, h('b', {}, `${p.hired || 0} of ${st.targetHires || '?'} hired`), h('span', { class: 'small muted' }, `${pct}%`)), h('div', { class: 'meter' }, h('i', { style: `width:${pct}%` }))),
+      h('div', { class: 'kpis' }, kpi('Interviews done', st.interviewsDone, st.targetInterviews ? `of about ${st.targetInterviews}` : ''), kpi('Next 7 days', st.interviewsNext7, 'interviews'), kpi('Candidates', p.total || 0, 'in total')),
+      h('div', { class: 'bars' }, bars.map(([label, n]) => h('div', { class: 'bar-row' }, h('span', { class: 'small' }, label), h('div', { class: 'meter thin' }, h('i', { style: `width:${Math.round(((n || 0) / max) * 100)}%` })), h('span', { class: 'mono small' }, n || 0)))),
+      h('p', { class: 'small faint' }, 'Counts only. Candidate names are visible to their interviewers and HR.'),
+    );
+  }
+
+  // Natalie's full scoreboard on the Campaign page.
+  function adminScoreboard(camp) {
+    const sb = scoresFor(camp);
+    const st = statsFor(camp);
+    return h(
+      'div',
+      { class: 'section gutter' },
+      h('h2', {}, 'Scoreboard'),
+      h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row and rank. This full list is for you.'),
+      teamBoard(st, null),
+      h(
+        'div',
+        { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:6px' },
+        h(
+          'table',
+          { class: 'x' },
+          h('thead', {}, h('tr', {}, ['#', 'Name', 'Team', 'Points', 'Interviews', 'Coming up', 'Avg reply', 'Feedback on time', 'Badges', ''].map((x) => h('th', {}, x)))),
+          h(
+            'tbody',
+            {},
+            sb.people.map((x) => {
+              const p = personById(x.personId);
+              return h('tr', {}, h('td', { class: 'mono' }, x.rank), h('td', { class: 'name' }, p ? p.name : '?'), h('td', { class: 'mono' }, x.team), h('td', { class: 'mono' }, x.points), h('td', { class: 'mono' }, x.done), h('td', { class: 'mono' }, x.upcoming || ''), h('td', { class: 'mono' }, hrs(x.avgReplyHours)), h('td', { class: 'mono' }, x.feedbackDue ? `${x.feedbackOnTime}/${x.feedbackDue}` : '–'), h('td', { class: 'small' }, x.badges.join(', ')), h('td', {}, h('button', { class: 'link', onclick: () => setViewAs(x.personId) }, 'View as')));
+            }),
+          ),
+        ),
+      ),
+    );
+  }
 
   // ------------------------------------------------------------------
   // Welcome card: shown once per person; "I'm in" is saved to members/{userId}
@@ -3893,8 +4828,11 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
 
   async function boot() {
     S = await window.FluxStore.connect(
-      () => render(),
-      (coll, err) => coll !== 'members' && toast(`Couldn’t load ${coll}: ${err.code}`),
+      () => {
+        render();
+        scheduleSync();
+      },
+      (coll, err) => !['members', 'inbox', 'replies'].includes(coll) && toast(`Couldn’t load ${coll}: ${err.code}`),
     );
     try {
       if (window.claude && window.claude.use) sample = await window.claude.use('sample');

@@ -169,3 +169,46 @@ test('invite state finds a different-team pair and what to release', () => {
   assert.equal(st.shortBy, 1);
   assert.equal(st.overdue.length, 1);
 });
+
+test('scoreboard: points, ranks within team, fair share, feedback on time', () => {
+  const people = [
+    { id: 'a', name: 'A', team: 'TM', roles: ['advisor'] },
+    { id: 'b', name: 'B', team: 'TM', roles: ['advisor'] },
+    { id: 'c', name: 'C', team: 'PM', roles: ['advisor'] },
+    { id: 'n', name: 'Natalie', team: 'P&C', roles: [] },
+  ];
+  const ev = (step, at, data) => ({ id: step, step, at, recordedAt: at, data });
+  const cands = [
+    { id: 'k1', campaignId: 'c1', name: 'K One', timeline: [{ ...ev('hr_done', '2026-11-01'), outcome: 'pass' }, ev('advisor_booked', '2026-11-02', { slotDate: '2026-11-06', time: '10:00', interviewers: ['a', 'c'] })] },
+    { id: 'k2', campaignId: 'c1', name: 'K Two', timeline: [] },
+  ];
+  const invites = [
+    { id: 'i1', candidateId: 'k1', round: 'advisor', personId: 'a', status: 'accepted', sentAt: '2026-11-02T09:00:00Z', respondedAt: '2026-11-02T12:00:00Z', slotDate: '2026-11-06' },
+    { id: 'i2', candidateId: 'k1', round: 'advisor', personId: 'c', status: 'accepted', sentAt: '2026-11-02T09:00:00Z', respondedAt: '2026-11-05T09:00:00Z', slotDate: '2026-11-06' },
+    { id: 'i3', candidateId: 'k2', round: 'advisor', personId: 'b', status: 'accepted', sentAt: '2026-11-10T09:00:00Z', respondedAt: '2026-11-10T10:00:00Z', slotDate: '2026-11-30' },
+  ];
+  const notes = [{ kind: 'feedback', personId: 'a', candidateId: 'k1', round: 'advisor', createdAt: '2026-11-06T16:00:00Z' }];
+  const sb = M.scoreboard({ cands, invites, notes, people, today: '2026-11-20' });
+  const a = sb.people.find((x) => x.personId === 'a');
+  const c = sb.people.find((x) => x.personId === 'c');
+  const b = sb.people.find((x) => x.personId === 'b');
+  assert.equal(a.points, 10 + 3 + 3);
+  assert.equal(c.points, 10);
+  assert.equal(b.done, 0);
+  assert.equal(b.upcoming, 1);
+  assert.equal(a.rank, 1);
+  assert.equal(a.of, 3);
+  assert.equal(a.teamRank, 1);
+  assert.equal(b.teamRank, 2);
+  assert.equal(c.rank, 2);
+  assert.equal(b.teamOf, 2);
+  assert.equal(c.feedbackDue, 1);
+  assert.equal(c.feedbackOnTime, 0);
+  assert.equal(sb.totalDone, 2);
+  assert.equal(sb.people.length, 3, 'people without interviewer roles are left out');
+  const tm = sb.teams.find((t) => t.team === 'TM');
+  assert.equal(tm.pointsPerMember, 9.5);
+  assert.equal(sb.teams[0].team, 'PM');
+  assert.equal(M.interviewsOf(cands, invites).length, 3);
+  assert.deepEqual(M.pipelineCounts(cands, '2026-11-20'), { total: 2, hr: 1, advisor: 1, deepdive: 0, hired: 0, closed: 0 });
+});

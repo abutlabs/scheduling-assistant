@@ -18,6 +18,18 @@ first step toward running recruitment in-house with AI support: fair interview
 load across teams, fast turnaround for candidates, and fewer emails for
 everyone. It's built to improve through the feedback of the people who use it.
 
+## Trying it out
+
+- **View: Admin / Advisor / Team lead** (top bar, editors only) shows the page
+  as an advisor or team lead sees it. Picking a role opens the busiest person
+  in that role, and the small menu next to it switches person.
+- **Mock** fast-forwards the flow. Load demo candidates, then press *Next day*
+  or *Skip a week*: colleagues answer requests (accepting when the poll says
+  they're free), candidates send availability the day after they're asked, and
+  interviewers write feedback the day after the interview. A log shows what
+  happened. You play Natalie: book, call and record results from the to-do list.
+  Only demo data is touched.
+
 ## Phase 1 (this branch)
 
 - **Campaigns**: the first is Trainee hiring (target 10 hires, about 25 interviews).
@@ -85,13 +97,28 @@ Publish `dist/index.html` as a claude.ai artifact with these capabilities:
     { "path": "", "read": "view", "write": "admin" },
     { "path": "candidates", "read": "admin", "write": "admin" },
     { "path": "notes", "read": "admin", "write": "admin" },
+    { "path": "invites", "read": "admin", "write": "admin" },
+    { "path": "snapshots", "read": "admin", "write": "admin" },
+    { "path": "availability", "read": "admin", "write": "admin" },
     { "path": "members", "read": "admin", "write": "owner" },
-    { "path": "members/{self}", "read": "view", "write": "interact" }
+    { "path": "members/{self}", "read": "view", "write": "interact" },
+    { "path": "inbox", "read": "admin", "write": "admin" },
+    { "path": "inbox/{self}", "read": "view", "write": "admin" },
+    { "path": "replies", "read": "admin", "write": "owner" },
+    { "path": "replies/{self}", "read": "view", "write": "interact" }
   ] },
   "user": { "scopes": ["profile"] },
   "sample": {}
 }
 ```
+
+Two views share one page. Editors (Natalie) get the full app. Everyone else
+gets the advisor/team lead page: their own requests and interviews (with the
+brief), the campaign overview, the scoreboard and the rules. Candidates, notes,
+invites and availability are readable by editors only. Natalie's page copies
+each linked person's own slice into `inbox/{userId}` and the campaign overview
+into `stats/{campaignId}`. Interviewers' answers and feedback go to
+`replies/{userId}` and are applied when Natalie's page is next open.
 
 Candidate records and notes are readable by editors only. Each person writes
 only their own `members/{userId}` doc when they press "I'm in" on the welcome card. Interviewers get

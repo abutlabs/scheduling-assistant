@@ -15,11 +15,16 @@
  *   availability/{personId}  half-day availability Natalie (or the person) set by hand; newest answer wins
  *   notes/{id}       a note or interview feedback on a candidate, by Natalie or an interviewer
  *   members/{userId} a team member said "I'm in" on the welcome card (each person writes their own)
+ *   inbox/{userId}   what one interviewer sees: their requests, interviews, briefs, own scores (written by Natalie's page)
+ *   replies/{userId} an interviewer's answers and feedback, applied to invites and notes by Natalie's page
+ *   stats/{campaignId} campaign overview and team scoreboard everyone can read
  */
 (function (root) {
   'use strict';
 
-  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes', 'invites', 'availability', 'members'];
+  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes', 'invites', 'availability', 'members', 'inbox', 'replies', 'stats'];
+  // What an advisor or team lead's page loads; the rest is Natalie's.
+  const VIEWER_COLLECTIONS = ['campaigns', 'stats'];
   const LOCAL_KEY = 'flux-scheduling-local-v1';
 
   function uid(prefix) {
@@ -52,6 +57,11 @@
         (listeners[coll] = listeners[coll] || []).push(fn);
         setTimeout(() => emit(coll), 0);
       },
+      watchDoc(coll, id, fn) {
+        const send = () => fn(data[coll][id] ? { id, ...data[coll][id] } : null);
+        (listeners[coll] = listeners[coll] || []).push(send);
+        setTimeout(send, 0);
+      },
       async set(coll, id, doc) {
         data[coll][id] = JSON.parse(JSON.stringify(doc));
         persist();
@@ -81,6 +91,19 @@
           (snap) => fn(snap.docs.filter((d) => d.exists).map((d) => ({ id: d.id, ...d.data() }))),
           (err) => onError && onError(coll, err),
         );
+      },
+      watchDoc(coll, id, fn, onError) {
+        const ref = db.collection(coll).doc(id);
+        if (typeof ref.onSnapshot === 'function') {
+          ref.onSnapshot(
+            (d) => fn(d.exists ? { id: d.id, ...d.data() } : null),
+            (err) => onError && onError(coll, err),
+          );
+          return;
+        }
+        const poll = () => ref.get().then((d) => fn(d.exists ? { id: d.id, ...d.data() } : null), (err) => onError && onError(coll, err));
+        poll();
+        setInterval(poll, 30000);
       },
       set(coll, id, doc) {
         return db.collection(coll).doc(id).set(strip(doc));
@@ -121,9 +144,40 @@
       backend = null;
     }
     if (!backend) backend = createLocalBackend();
-    const state = { loaded: {} };
+    // Editors (Natalie) get the whole app; everyone else gets the interviewer page.
+    let admin = true;
+    if (user && typeof user.canEdit === 'function') {
+      try {
+        admin = (await user.canEdit()) !== false;
+      } catch (e) {
+        admin = true;
+      }
+    }
+    let myId = null;
+    if (user && typeof user.id === 'function') {
+      try {
+        myId = await user.id();
+      } catch (e) {
+        myId = null;
+      }
+    }
+    const state = { loaded: {}, mine: { inbox: undefined, replies: undefined } };
     for (const c of COLLECTIONS) state[c] = [];
-    for (const c of COLLECTIONS) {
+    if (!admin) {
+      const key = myId || 'local';
+      for (const coll of ['inbox', 'replies']) {
+        backend.watchDoc(
+          coll,
+          key,
+          (doc) => {
+            state.mine[coll] = doc;
+            onChange(coll);
+          },
+          onError,
+        );
+      }
+    }
+    for (const c of admin ? COLLECTIONS : VIEWER_COLLECTIONS) {
       backend.subscribe(
         c,
         (docs) => {
@@ -136,6 +190,8 @@
     }
     return {
       mode: backend.mode,
+      admin,
+      myId,
       user,
       state,
       uid,
@@ -150,5 +206,5 @@
     };
   }
 
-  root.FluxStore = { connect, uid, COLLECTIONS };
+  root.FluxStore = { connect, uid, COLLECTIONS, VIEWER_COLLECTIONS };
 })(typeof window !== 'undefined' ? window : globalThis);

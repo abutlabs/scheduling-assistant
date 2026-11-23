@@ -626,8 +626,9 @@
    * Work out where a candidate is: which steps are done, which one is
    * next, which round they're in, and the 1-week clock for that round.
    */
-  function candidateState(cand, today) {
+  function candidateState(cand, today, limits) {
     today = today || todayIso();
+    const lim = limits || {};
     const done = latestByStep(cand.timeline);
     const name = (cand.name || 'candidate').split(' ')[0];
     let rejectedAt = null;
@@ -673,9 +674,9 @@
     if (!closed && !rejectedAt) {
       if (stage === 'advisor') {
         const start = (done.avail_asked_r2 || done.hr_done).at;
-        clock = makeClock('advisor', start, done.advisor_booked, done.advisor_done, today);
+        clock = makeClock('advisor', start, done.advisor_booked, done.advisor_done, today, lim.advisor);
       } else if (stage === 'deepdive' && done.result_call_r2) {
-        clock = makeClock('deepdive', done.result_call_r2.at, done.deepdive_booked, done.deepdive_done, today);
+        clock = makeClock('deepdive', done.result_call_r2.at, done.deepdive_booked, done.deepdive_done, today, lim.deepdive);
       }
     }
 
@@ -693,16 +694,17 @@
     };
   }
 
-  function makeClock(round, start, booked, held, today) {
-    const deadline = addDays(start.slice(0, 10), 7);
+  function makeClock(round, start, booked, held, today, maxDays) {
+    const max = maxDays || 7;
+    const deadline = addDays(start.slice(0, 10), max);
     const interviewDate = booked && booked.data && booked.data.slotDate ? booked.data.slotDate : null;
-    if (held) return { round, start, deadline, state: 'met', interviewDate: held.at.slice(0, 10), late: held.at.slice(0, 10) > deadline };
+    if (held) return { round, start, deadline, max, state: 'met', interviewDate: held.at.slice(0, 10), late: held.at.slice(0, 10) > deadline };
     const day = daysBetween(start.slice(0, 10), today);
     if (interviewDate) {
-      return { round, start, deadline, state: interviewDate > deadline ? 'booked_late' : 'booked', interviewDate, day, daysLeft: daysBetween(today, deadline) };
+      return { round, start, deadline, max, state: interviewDate > deadline ? 'booked_late' : 'booked', interviewDate, day, daysLeft: daysBetween(today, deadline) };
     }
     const daysLeft = daysBetween(today, deadline);
-    return { round, start, deadline, day, daysLeft, state: daysLeft < 0 ? 'overdue' : daysLeft <= 2 ? 'urgent' : 'running' };
+    return { round, start, deadline, max, day, daysLeft, state: daysLeft < 0 ? 'overdue' : daysLeft <= 2 ? 'urgent' : 'running' };
   }
 
   /** Funnel counts for a campaign. */
@@ -814,6 +816,142 @@
     rescheduled: 'the interview was rescheduled',
   };
 
+
+  // ------------------------------------------------------------------
+  // Interviews and the scoreboard
+  // ------------------------------------------------------------------
+  const POINTS = { interview: 10, quickReply: 3, quickFeedback: 3 };
+
+  /**
+   * Every interview a person sits on: from booked steps (interviewers on the
+   * booking) plus accepted requests that aren't booked yet. One row per
+   * candidate, round and person.
+   */
+  function interviewsOf(cands, invites) {
+    const rows = new Map();
+    for (const c of cands) {
+      const done = latestByStep(c.timeline);
+      for (const [round, key] of [['advisor', 'advisor_booked'], ['deepdive', 'deepdive_booked']]) {
+        const e = done[key];
+        const d = (e && e.data) || {};
+        if (!e || !d.slotDate) continue;
+        for (const pid of d.interviewers || []) rows.set(`${c.id}|${round}|${pid}`, { candidateId: c.id, campaignId: c.campaignId, round, personId: pid, slotDate: d.slotDate, time: d.time || '', room: d.room || '', partners: (d.interviewers || []).filter((x) => x !== pid), booked: true });
+      }
+    }
+    const byCand = new Map(cands.map((c) => [c.id, c]));
+    for (const i of invites) {
+      if (i.status !== 'accepted' || !byCand.has(i.candidateId)) continue;
+      const k = `${i.candidateId}|${i.round}|${i.personId}`;
+      if (rows.has(k)) continue;
+      // A booking for that round with other people means this hold wasn't used.
+      const booked = [...rows.values()].some((r) => r.candidateId === i.candidateId && r.round === i.round);
+      if (booked) continue;
+      const partners = invites.filter((x) => x.candidateId === i.candidateId && x.round === i.round && x.status === 'accepted' && x.personId !== i.personId).map((x) => x.personId);
+      rows.set(k, { candidateId: i.candidateId, campaignId: byCand.get(i.candidateId).campaignId, round: i.round, personId: i.personId, slotDate: i.slotDate, time: i.time || '', room: i.room || '', partners, booked: false });
+    }
+    return [...rows.values()].sort((a, b) => (a.slotDate || '').localeCompare(b.slotDate || '') || (a.time || '').localeCompare(b.time || ''));
+  }
+
+  const hoursBetween = (a, b) => (Date.parse(b) - Date.parse(a)) / 36e5;
+
+  /**
+   * Points and stats per interviewer and per team for one campaign.
+   * notes must carry `personId` (the author's roster id) for feedback to count.
+   */
+  function scoreboard({ cands, invites, notes, people, today }) {
+    today = today || todayIso();
+    const ivs = interviewsOf(cands, invites);
+    const interviewers = people.filter((p) => p.active !== false && (p.roles || []).some((r) => r === 'advisor' || r === 'teamlead' || r === 'joker'));
+    const per = {};
+    for (const p of interviewers) per[p.id] = { personId: p.id, team: p.team, done: 0, upcoming: 0, replies: 0, quickReplies: 0, replyHours: [], feedbackDue: 0, feedbackOnTime: 0, feedbackLate: 0, points: 0, badges: [] };
+    for (const r of ivs) {
+      const x = per[r.personId];
+      if (!x) continue;
+      if (r.slotDate <= today) {
+        x.done++;
+        const fb = notes.filter((n) => n.kind === 'feedback' && n.personId === r.personId && n.candidateId === r.candidateId && n.round === r.round);
+        if (r.slotDate < today || fb.length) x.feedbackDue++;
+        if (fb.length) {
+          const first = fb.map((n) => (n.createdAt || '').slice(0, 10)).sort()[0];
+          if (daysBetween(r.slotDate, first) <= 1) x.feedbackOnTime++;
+          else x.feedbackLate++;
+        }
+      } else x.upcoming++;
+    }
+    for (const i of invites) {
+      const x = per[i.personId];
+      if (!x || !i.respondedAt || !i.sentAt || i.status === 'pending') continue;
+      if (i.status === 'released' && !i.respondedAt) continue;
+      const hrs = Math.max(0, hoursBetween(i.sentAt, i.respondedAt));
+      x.replies++;
+      x.replyHours.push(hrs);
+      if (hrs <= 24) x.quickReplies++;
+    }
+    const totalDone = Object.values(per).reduce((n, x) => n + x.done, 0);
+    const fairEach = interviewers.length ? totalDone / interviewers.length : 0;
+    for (const x of Object.values(per)) {
+      x.points = x.done * POINTS.interview + x.quickReplies * POINTS.quickReply + x.feedbackOnTime * POINTS.quickFeedback;
+      x.avgReplyHours = x.replyHours.length ? x.replyHours.reduce((a, b) => a + b, 0) / x.replyHours.length : null;
+      x.fairShare = fairEach;
+      if (x.done >= 1) x.badges.push('First interview');
+      if (x.quickReplies >= 3 && x.quickReplies === x.replies) x.badges.push('Quick replier');
+      if (x.feedbackOnTime >= 2 && !x.feedbackLate) x.badges.push('Feedback within a day');
+      if (totalDone >= interviewers.length && x.done >= Math.ceil(fairEach)) x.badges.push('Fair share');
+      delete x.replyHours;
+    }
+    const teams = {};
+    for (const x of Object.values(per)) {
+      const t = (teams[x.team] = teams[x.team] || { team: x.team, members: 0, done: 0, upcoming: 0, points: 0, replies: 0, quickReplies: 0, feedbackDue: 0, feedbackOnTime: 0, replyHoursSum: 0, replyCount: 0 });
+      t.members++;
+      t.done += x.done;
+      t.upcoming += x.upcoming;
+      t.points += x.points;
+      t.replies += x.replies;
+      t.quickReplies += x.quickReplies;
+      t.feedbackDue += x.feedbackDue;
+      t.feedbackOnTime += x.feedbackOnTime;
+      if (x.avgReplyHours !== null) {
+        t.replyHoursSum += x.avgReplyHours * x.replies;
+        t.replyCount += x.replies;
+      }
+    }
+    const teamList = Object.values(teams).map((t) => ({
+      team: t.team,
+      members: t.members,
+      done: t.done,
+      upcoming: t.upcoming,
+      points: t.points,
+      pointsPerMember: t.members ? Math.round((t.points / t.members) * 10) / 10 : 0,
+      fairShare: Math.round(fairEach * t.members * 10) / 10,
+      avgReplyHours: t.replyCount ? Math.round((t.replyHoursSum / t.replyCount) * 10) / 10 : null,
+      feedbackOnTimePct: t.feedbackDue ? Math.round((t.feedbackOnTime / t.feedbackDue) * 100) : null,
+    }));
+    teamList.sort((a, b) => b.pointsPerMember - a.pointsPerMember || b.done - a.done || a.team.localeCompare(b.team));
+    // Ties share a rank (1, 1, 3), so a level start doesn't put anyone last.
+    teamList.forEach((t) => (t.rank = 1 + teamList.filter((u) => u.pointsPerMember > t.pointsPerMember).length));
+    const personList = Object.values(per).sort((a, b) => b.points - a.points || b.done - a.done);
+    personList.forEach((x) => {
+      x.rank = 1 + personList.filter((y) => y.points > x.points).length;
+      x.of = personList.length;
+      const mates = personList.filter((y) => y.team === x.team);
+      x.teamRank = 1 + mates.filter((y) => y.points > x.points).length;
+      x.teamOf = mates.length;
+    });
+    return { totalDone, fairEach: Math.round(fairEach * 10) / 10, teams: teamList, people: personList };
+  }
+
+  /** Counts per stage for the campaign overview (no names). */
+  function pipelineCounts(cands, today) {
+    const out = { total: cands.length, hr: 0, advisor: 0, deepdive: 0, hired: 0, closed: 0 };
+    for (const c of cands) {
+      const s = candidateState(c, today);
+      if (s.stage === 'hired') out.hired++;
+      else if (s.status !== 'open') out.closed++;
+      else out[s.stage] = (out[s.stage] || 0) + 1;
+    }
+    return out;
+  }
+
   const api = {
     TEAMS,
     TEAM_CODES,
@@ -860,6 +998,10 @@
     INVITE_STATUS,
     RELEASE_REASONS,
     inviteState,
+    POINTS,
+    interviewsOf,
+    scoreboard,
+    pipelineCounts,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
