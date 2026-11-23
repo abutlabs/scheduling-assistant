@@ -1,0 +1,3112 @@
+<title>Flux Interviews</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a spreadsheet-familiar working tool. Tab bar on top; Run view is a
+   to-do list over a step matrix; candidate detail is a right-hand drawer;
+   the poll import looks like the xlsx it came from. */
+:root {
+  --bg: #ffffff;
+  --s1: #f7f8f9;
+  --s2: #eceff2;
+  --line: #e1e4e8;
+  --grid: #d4d8de;
+  --fg: #1b1f24;
+  --muted: #59626e;
+  --faint: #8b939e;
+  --accent: #0b6e99;
+  --accent-soft: #dff0f7;
+  --accent-fg: #ffffff;
+  --avail: #1e8e4e;
+  --avail-fg: #ffffff;
+  --avail-soft: #c8ebd5;
+  --avail-soft-fg: #145c33;
+  --no: #f1f2f4;
+  --warn: #a65c00;
+  --warn-soft: #fff1d6;
+  --bad: #b42318;
+  --bad-soft: #fde4e1;
+  --shadow: rgba(15, 23, 42, 0.12);
+  --font-ui: "Inter Tight", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-data: "Roboto Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171c; --s1: #1a1e25; --s2: #232832; --line: #2b313c; --grid: #363d4a; --fg: #e6e9ee; --muted: #a1a9b5; --faint: #6f7886;
+    --accent: #5fb4dc; --accent-soft: #15303d; --accent-fg: #0b1418; --avail: #2fa564; --avail-fg: #06140c; --avail-soft: #18392a; --avail-soft-fg: #8fdcae;
+    --no: #1d2129; --warn: #f0a94a; --warn-soft: #3a2a12; --bad: #f2877b; --bad-soft: #3d1d1a; --shadow: rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171c; --s1: #1a1e25; --s2: #232832; --line: #2b313c; --grid: #363d4a; --fg: #e6e9ee; --muted: #a1a9b5; --faint: #6f7886;
+  --accent: #5fb4dc; --accent-soft: #15303d; --accent-fg: #0b1418; --avail: #2fa564; --avail-fg: #06140c; --avail-soft: #18392a; --avail-soft-fg: #8fdcae;
+  --no: #1d2129; --warn: #f0a94a; --warn-soft: #3a2a12; --bad: #f2877b; --bad-soft: #3d1d1a; --shadow: rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--s1); }
+h1, h2, h3 { margin: 0; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: 20px; font-weight: 650; }
+h2 { font-size: 17px; font-weight: 650; }
+h3 { font-size: 14px; font-weight: 650; }
+p { margin: 0; }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 12px; }
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.small { font-size: 12.5px; }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Top bar */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 6; background: var(--s1); border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: stretch; column-gap: 4px; }
+.bar .brand { font-weight: 700; padding: 11px 14px 11px 0; margin-right: 4px; border-right: 1px solid var(--line); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.bar .brand i { width: 14px; height: 14px; border-radius: 3px; background: linear-gradient(180deg, var(--avail) 0 50%, var(--accent) 50% 100%); }
+.bar nav { display: flex; overflow-x: auto; scrollbar-width: none; }
+.bar nav a { padding: 11px 12px 9px; font-size: 13.5px; font-weight: 600; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
+.bar nav a:hover { color: var(--fg); }
+.bar nav a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); background: var(--bg); }
+.bar nav a .n { font-family: var(--font-data); font-size: 11px; color: var(--faint); margin-left: 5px; }
+.bar .camp { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); padding-block: 6px; }
+.bar .camp select { font-weight: 600; }
+.banner { background: var(--warn-soft); border-bottom: 1px solid var(--line); font-size: 12.5px; padding-block: 6px; }
+
+main { display: flex; flex-direction: column; }
+.section { padding-block: 14px; display: flex; flex-direction: column; gap: 12px; }
+.section + .section { border-top: 1px solid var(--line); }
+.band { background: var(--s1); border-bottom: 1px solid var(--line); }
+.head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 8px 16px; }
+.head p { color: var(--muted); margin-top: 2px; }
+
+/* Panels */
+.tpanel { background: var(--bg); border: 1px solid var(--grid); border-radius: 6px; overflow: hidden; min-width: 0; }
+.ph { padding: 8px 14px; border-bottom: 1px solid var(--line); font-weight: 650; font-size: 13.5px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.ph .faint { font-weight: 500; font-size: 12.5px; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; }
+@media (max-width: 900px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.grp { padding: 5px 14px; background: var(--s2); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
+.act { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--line); align-items: center; font-size: 13px; }
+.grp + .act { border-top: 0; }
+.act b { display: block; font-weight: 600; }
+.act p { color: var(--muted); }
+@media (max-width: 520px) { .act { grid-template-columns: minmax(0, 1fr) auto; } .act .kind { grid-column: 1 / -1; justify-self: start; padding-inline: 8px; } }
+.kind { font-size: 11px; font-weight: 700; padding: 3px 0; border-radius: 4px; text-align: center; background: var(--s2); color: var(--muted); }
+.k-bad { background: var(--bad-soft); color: var(--bad); }
+.k-accent { background: var(--accent-soft); color: var(--accent); }
+.k-warn { background: var(--warn-soft); color: var(--warn); }
+.empty { padding: 22px 16px; color: var(--muted); text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.stat { padding: 8px 14px; border-top: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; font-size: 12.5px; }
+.stat:first-of-type { border-top: 0; }
+.stat b { font-family: var(--font-data); font-weight: 600; }
+.bar-track { grid-column: 1 / -1; height: 4px; background: var(--s2); border-radius: 2px; overflow: hidden; }
+.bar-track i { display: block; height: 100%; background: var(--accent); }
+
+/* Controls */
+button { font: inherit; font-weight: 600; font-size: 12.5px; border: 1px solid var(--grid); background: var(--bg); color: var(--fg); border-radius: 4px; padding: 5px 10px; cursor: pointer; line-height: 1.3; white-space: nowrap; }
+button:hover { background: var(--s2); }
+button.p { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+button.p:hover { filter: brightness(1.07); }
+button.link { border: 0; background: none; color: var(--accent); padding: 0; text-decoration: underline; font-weight: 600; }
+button.danger { color: var(--bad); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input, select, textarea { font: inherit; font-size: 13.5px; color: var(--fg); background: var(--bg); border: 1px solid var(--grid); border-radius: 4px; padding: 5px 8px; min-width: 0; }
+textarea { width: 100%; min-height: 60px; resize: vertical; }
+label.f { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; font-weight: 600; color: var(--muted); min-width: 0; }
+.fg { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.fg .wide { grid-column: 1 / -1; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.row.end { justify-content: flex-end; }
+.check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border-radius: 99px; font-size: 11.5px; font-weight: 650; background: var(--s2); color: var(--muted); white-space: nowrap; }
+.chip.good { background: var(--avail-soft); color: var(--avail-soft-fg); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.chip.bad { background: var(--bad-soft); color: var(--bad); }
+.chip.accent { background: var(--accent-soft); color: var(--accent); }
+.team { font-family: var(--font-data); font-size: 11px; color: var(--muted); }
+.warn-line { color: var(--warn); font-size: 12.5px; }
+.err-line { color: var(--bad); font-size: 12.5px; }
+
+/* Sheet tables (step matrix, poll, roster) */
+.sheet-wrap { overflow-x: auto; border-top: 1px solid var(--grid); border-bottom: 1px solid var(--grid); }
+table.x { border-collapse: collapse; font-size: 12.5px; min-width: 100%; }
+table.x th, table.x td { border: 1px solid var(--grid); padding: 5px 8px; white-space: nowrap; }
+table.x tr > :first-child { border-left: 0; }
+table.x tr > :last-child { border-right: 0; }
+table.x tr:first-child > * { border-top: 0; }
+table.x tr:last-child > * { border-bottom: 0; }
+table.x th { background: var(--s1); font-weight: 600; color: var(--muted); text-align: left; font-size: 11.5px; position: sticky; top: 0; }
+table.x .rn { width: 30px; text-align: center; color: var(--faint); background: var(--s1); font-family: var(--font-data); font-size: 11px; }
+table.x td.name { font-weight: 600; }
+table.x td.name button { all: unset; cursor: pointer; font-weight: 600; }
+table.x td.name button:hover { color: var(--accent); text-decoration: underline; }
+table.x tr.sel td { background: var(--accent-soft); }
+table.x tr.group td { background: var(--s2); font-weight: 650; font-size: 12px; color: var(--muted); }
+table.x tr.inactive td { color: var(--faint); }
+td.d { font-family: var(--font-data); font-size: 11.5px; text-align: center; cursor: pointer; padding: 0; }
+td.d > button { all: unset; display: block; width: 100%; padding: 5px 8px; box-sizing: border-box; cursor: pointer; text-align: center; }
+td.d.done { background: var(--avail-soft); color: var(--avail-soft-fg); }
+td.d.next { background: var(--warn-soft); color: var(--warn); font-weight: 600; box-shadow: inset 0 0 0 2px var(--warn); }
+td.d.rej { background: var(--bad-soft); color: var(--bad); }
+td.d.skip { color: var(--warn); }
+td.d.na { color: var(--faint); background: repeating-linear-gradient(135deg, transparent 0 4px, var(--s1) 4px 8px); cursor: default; }
+td.d.na > button { cursor: default; }
+td.d.up { color: var(--faint); }
+td.clk { font-family: var(--font-data); font-weight: 600; text-align: center; }
+td.clk.bad { color: var(--bad); }
+td.clk.warn { color: var(--warn); }
+
+/* Poll sheet */
+td.v { font-size: 11.5px; text-align: center; min-width: 64px; }
+td.v.all { background: var(--avail); color: var(--avail-fg); font-weight: 600; }
+td.v.am, td.v.pm { background: var(--avail-soft); color: var(--avail-soft-fg); }
+td.v.no { background: var(--no); color: var(--faint); }
+td.v.null { background: repeating-linear-gradient(135deg, transparent 0 4px, var(--s1) 4px 8px); }
+td.v.win { box-shadow: inset 0 0 0 2px var(--accent); }
+td.v.pend { box-shadow: inset 0 0 0 2px var(--accent); background-image: none; outline: 1px dashed var(--accent); outline-offset: -5px; }
+td.v.ten { box-shadow: inset 0 0 0 2px var(--warn); }
+td.v.unav { box-shadow: inset 0 0 0 2px var(--bad); }
+td.v small { display: block; font-family: var(--font-data); font-size: 10px; font-weight: 500; }
+th.fri { color: var(--accent); }
+td.rem { white-space: normal; min-width: 280px; max-width: 420px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+tr.sum td { background: var(--s1); font-family: var(--font-data); font-size: 11.5px; text-align: center; font-weight: 600; color: var(--faint); }
+tr.sum td.ok { color: var(--avail); }
+.ai { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin-top: 4px; background: var(--accent-soft); color: var(--accent); border-radius: 4px; padding: 3px 6px; font-weight: 600; font-size: 11.5px; }
+.ai.ok { background: var(--avail-soft); color: var(--avail-soft-fg); }
+.ai.off { background: var(--s2); color: var(--faint); text-decoration: line-through; }
+.ai.off button { text-decoration: none; }
+.ai button { padding: 0 6px; font-size: 11px; border-radius: 3px; }
+.ai button.p { border-color: var(--accent); }
+.ai button.link { font-size: 11px; }
+.rule-edit { margin-top: 6px; padding: 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--bg); display: flex; flex-direction: column; gap: 6px; color: var(--fg); }
+.toggles { display: flex; flex-wrap: wrap; gap: 3px; }
+.toggles button { padding: 1px 5px; font-family: var(--font-data); font-weight: 500; font-size: 11px; }
+.toggles button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.sheet-tabs { display: flex; gap: 0; background: var(--s1); border-bottom: 1px solid var(--grid); padding-left: 30px; overflow-x: auto; }
+.sheet-tabs button { border: 0; border-right: 1px solid var(--grid); border-radius: 0; background: none; color: var(--muted); padding: 6px 14px; font-weight: 500; }
+.sheet-tabs button[aria-pressed="true"] { background: var(--bg); color: var(--fg); font-weight: 650; box-shadow: inset 0 2px 0 var(--accent); }
+.fixes { background: var(--warn-soft); border-block: 1px solid var(--line); padding-block: 8px; font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
+.fix { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.fix .sev { font-weight: 700; color: var(--warn); }
+.fix .sev.block { color: var(--bad); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; color: var(--muted); }
+.legend .sw { display: inline-block; width: 26px; height: 14px; border: 1px solid var(--grid); vertical-align: -2px; margin-right: 4px; }
+.drop { border: 2px dashed var(--grid); border-radius: 6px; padding: 18px 16px; text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center; background: var(--bg); }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Drawer */
+.scrim { position: fixed; inset: 0; background: var(--shadow); z-index: 8; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 9; width: min(480px, 100%); background: var(--bg); border-left: 1px solid var(--grid);
+  box-shadow: -12px 0 32px var(--shadow); overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) 18px;
+}
+.drawer .x { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); border: 0; font-size: 18px; padding: 2px 8px; }
+.contact { display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--muted); font-size: 13px; }
+.contact span { user-select: all; }
+.steps { border: 1px solid var(--grid); border-radius: 6px; display: flex; flex-direction: column; }
+.steps > div { border-top: 1px solid var(--line); }
+.steps > div:first-child { border-top: 0; }
+.steps .st { all: unset; box-sizing: border-box; width: 100%; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px; align-items: baseline; }
+.steps .st:hover { background: var(--s1); }
+.steps .st i { font-style: normal; font-family: var(--font-data); font-size: 11px; color: var(--faint); }
+.steps .st .when { font-family: var(--font-data); font-size: 11.5px; color: var(--muted); }
+.steps .done .st i { color: var(--avail); }
+.steps .done.rej .st i { color: var(--bad); }
+.steps .next .st { background: var(--warn-soft); font-weight: 650; }
+.steps .up .st, .steps .na .st { color: var(--faint); }
+.steps .skip .st { color: var(--warn); }
+.steps .detail { padding: 0 10px 8px 44px; font-size: 12.5px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.steps .open { background: var(--s1); }
+.step-form { padding: 10px; margin: 0 8px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--bg); display: flex; flex-direction: column; gap: 10px; }
+.radios { display: flex; flex-wrap: wrap; gap: 6px; }
+.radios button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.slots { display: flex; flex-wrap: wrap; gap: 4px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 20; background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; max-width: calc(100% - 32px); }
+details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font-size: 12.5px; }
+@media (prefers-reduced-motion: no-preference) { button, .steps .st { transition: background-color 0.12s ease; } }
+
+</style>
+<div id="app"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/*
+ * Flux interview scheduling: data model and pure logic.
+ *
+ * Everything in this file is free of DOM and storage so it can be unit
+ * tested with `node --test` and reused by later phases (matching, metrics).
+ * It is loaded in the page as a plain script (global `FluxModel`) and in
+ * Node through `module.exports`.
+ */
+(function (root) {
+  'use strict';
+
+  // ---------------------------------------------------------------------
+  // Teams, roles, availability values
+  // ---------------------------------------------------------------------
+
+  const TEAMS = [
+    { code: 'TM', name: 'Tender management' },
+    { code: 'PM', name: 'Project management' },
+    { code: 'CP', name: 'Contract management' },
+    { code: 'OM', name: 'Stakeholder management' },
+    { code: 'P&C', name: 'People & Culture (HR)' },
+  ];
+  const TEAM_CODES = TEAMS.map((t) => t.code);
+
+  const ROLES = [
+    { key: 'advisor', label: 'Advisor', plural: 'Advisors' },
+    { key: 'teamlead', label: 'Team lead', plural: 'Team leads' },
+    { key: 'joker', label: 'Joker (HR team lead)', plural: 'Jokers' },
+  ];
+
+  // Cell values in the poll. Dutch on the sheet, short codes in the data.
+  const VALUES = {
+    all: { label: 'All day', nl: 'Hele dag' },
+    am: { label: 'Morning', nl: 'Ochtend' },
+    pm: { label: 'Afternoon', nl: 'Middag' },
+    no: { label: 'Not available', nl: 'Niet' },
+  };
+  const NL_TO_VALUE = {
+    'hele dag': 'all',
+    heledag: 'all',
+    'hele dag.': 'all',
+    ochtend: 'am',
+    "'s ochtends": 'am',
+    middag: 'pm',
+    "'s middags": 'pm',
+    niet: 'no',
+    nee: 'no',
+  };
+
+  const WEEKDAYS_NL = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za'];
+  const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // ---------------------------------------------------------------------
+  // Dates (ISO yyyy-mm-dd strings, computed in UTC so no timezone drift)
+  // ---------------------------------------------------------------------
+
+  function pad(n) {
+    return String(n).padStart(2, '0');
+  }
+  function isoDate(y, m, d) {
+    return `${y}-${pad(m)}-${pad(d)}`;
+  }
+  function parseIso(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d));
+  }
+  function toIso(date) {
+    return isoDate(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  }
+  function addDays(iso, n) {
+    const d = parseIso(iso);
+    d.setUTCDate(d.getUTCDate() + n);
+    return toIso(d);
+  }
+  function daysBetween(a, b) {
+    return Math.round((parseIso(b) - parseIso(a)) / 86400000);
+  }
+  function weekdayOf(iso) {
+    return parseIso(iso).getUTCDay();
+  }
+  function formatDay(iso, opts) {
+    if (!iso) return '';
+    const d = parseIso(iso);
+    const wd = WEEKDAYS_EN[d.getUTCDay()];
+    const s = `${wd} ${d.getUTCDate()} ${MONTHS_EN[d.getUTCMonth()]}`;
+    return opts && opts.year ? `${s} ${d.getUTCFullYear()}` : s;
+  }
+  // Monday of the ISO week, used to group grid columns per week.
+  function weekStart(iso) {
+    const wd = weekdayOf(iso);
+    return addDays(iso, wd === 0 ? -6 : 1 - wd);
+  }
+  function todayIso(now) {
+    const d = now || new Date();
+    return isoDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
+
+  /** Pull a yyyy-mm-dd poll date out of a file name like
+   *  "Beschikbaarheid_traineegesprekken_Flux_2026-11-06.xlsx". */
+  function pollDateFromFileName(name) {
+    const m = /(\d{4})-(\d{2})-(\d{2})/.exec(name || '');
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+  }
+
+  /**
+   * Parse a column header like "ma 9-11" or "vr 4-12" into an ISO date.
+   * The poll has no year, so pick the year that puts the date closest to
+   * the poll date (handles a December poll that runs into January).
+   * Returns null when the header is not a day column.
+   */
+  function parseDayHeader(header, pollDate) {
+    const m = /^\s*(ma|di|wo|do|vr|za|zo)\w*\.?\s+(\d{1,2})\s*[-/.]\s*(\d{1,2})\s*$/i.exec(String(header || ''));
+    if (!m) return null;
+    const wd = WEEKDAYS_NL.indexOf(m[1].toLowerCase());
+    const day = Number(m[2]);
+    const month = Number(m[3]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const baseYear = Number((pollDate || todayIso()).slice(0, 4));
+    let best = null;
+    for (const y of [baseYear - 1, baseYear, baseYear + 1]) {
+      const iso = isoDate(y, month, day);
+      if (toIso(parseIso(iso)) !== iso) continue; // 31-11 etc.
+      const dist = Math.abs(daysBetween(pollDate || todayIso(), iso));
+      if (!best || dist < best.dist) best = { iso, dist };
+    }
+    if (!best) return null;
+    return { date: best.iso, weekday: wd, weekdayMatches: weekdayOf(best.iso) === wd, label: m[0].trim() };
+  }
+
+  /** Normalise one poll cell. */
+  function normalizeValue(raw) {
+    if (raw === null || raw === undefined) return { value: null };
+    const text = String(raw).trim();
+    if (text === '') return { value: null };
+    const key = text.toLowerCase().replace(/\s+/g, ' ');
+    if (key in NL_TO_VALUE) {
+      const value = NL_TO_VALUE[key];
+      const canonical = VALUES[value].nl;
+      return text === canonical ? { value } : { value, fixed: true, raw: text };
+    }
+    return { value: null, unknown: true, raw: text };
+  }
+
+  function normName(s) {
+    return String(s || '')
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  }
+
+  // ---------------------------------------------------------------------
+  // Poll import
+  // ---------------------------------------------------------------------
+
+  function roleFromSheetName(name) {
+    const n = normName(name);
+    if (/deep\s*dive|teamlead|team lead/.test(n)) return 'teamlead';
+    if (/competentie|advis/.test(n)) return 'advisor';
+    return null;
+  }
+
+  function isSummaryRow(name, cells) {
+    const n = normName(name);
+    if (!n) return true;
+    if (/^voorbeeld/.test(n)) return true;
+    if (/^(aantal|waarvan|totaal|total)/.test(n)) return true;
+    // Formula rows: numbers or formulas in the day cells, no text answers.
+    const nonEmpty = cells.filter((c) => c !== null && c !== undefined && String(c).trim() !== '');
+    if (nonEmpty.length && nonEmpty.every((c) => typeof c === 'number' || /^=|^\d+$/.test(String(c).trim()))) return true;
+    return false;
+  }
+
+  /**
+   * Turn the raw sheets of a poll workbook into a draft snapshot.
+   * `sheets` is [{ name, rows }] where rows are arrays of cell values
+   * (SheetJS `sheet_to_json(ws, { header: 1, raw: false })`).
+   */
+  function parsePoll(sheets, opts) {
+    const pollDate = (opts && opts.pollDate) || todayIso();
+    const tabs = [];
+    const problems = [];
+    for (const sheet of sheets) {
+      const rows = sheet.rows || [];
+      const headerIdx = rows.findIndex((r) => r && normName(r[0]) === 'naam');
+      if (headerIdx < 0) {
+        problems.push({ kind: 'sheet_skipped', sheet: sheet.name, message: `Tab "${sheet.name}" has no "Naam" header row, so it was skipped.` });
+        continue;
+      }
+      const header = rows[headerIdx];
+      const teamCol = header.findIndex((h) => normName(h) === 'team');
+      const remarkCol = header.findIndex((h) => /^opmerking/.test(normName(h)));
+      const days = [];
+      header.forEach((h, col) => {
+        const parsed = parseDayHeader(h, pollDate);
+        if (parsed) days.push({ col, ...parsed });
+      });
+      for (const d of days) {
+        if (!d.weekdayMatches) {
+          problems.push({ kind: 'weekday_mismatch', sheet: sheet.name, message: `Column "${d.label}" in "${sheet.name}" says ${d.label.slice(0, 2)} but ${formatDay(d.date, { year: true })} is a ${WEEKDAYS_EN[weekdayOf(d.date)]}.` });
+        }
+      }
+      const role = roleFromSheetName(sheet.name);
+      const entries = [];
+      for (let i = headerIdx + 1; i < rows.length; i++) {
+        const r = rows[i] || [];
+        const name = r[0] == null ? '' : String(r[0]).trim();
+        const dayCells = days.map((d) => r[d.col]);
+        if (isSummaryRow(name, dayCells)) continue;
+        const cells = {};
+        const fixes = [];
+        const unknowns = [];
+        days.forEach((d, j) => {
+          const n = normalizeValue(dayCells[j]);
+          cells[d.date] = n.value;
+          if (n.fixed) fixes.push({ date: d.date, raw: n.raw, value: n.value });
+          if (n.unknown) unknowns.push({ date: d.date, raw: n.raw });
+        });
+        const team = teamCol >= 0 && r[teamCol] != null ? String(r[teamCol]).trim() : '';
+        const remark = remarkCol >= 0 && r[remarkCol] != null ? String(r[remarkCol]).trim() : '';
+        entries.push({ key: `${tabs.length}:${i}`, row: i + 1, name, team, remark, cells, fixes, unknowns });
+      }
+      tabs.push({ sheet: sheet.name, role, dates: days.map((d) => d.date), entries });
+    }
+    const allDates = [...new Set(tabs.flatMap((t) => t.dates))].sort();
+    return {
+      pollDate,
+      from: allDates[0] || null,
+      to: allDates[allDates.length - 1] || null,
+      tabs,
+      problems,
+    };
+  }
+
+  function levenshtein(a, b) {
+    const m = a.length;
+    const n = b.length;
+    const dp = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+    for (let j = 1; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+    }
+    return dp[m][n];
+  }
+
+  function personNames(p) {
+    return [p.name, ...(p.aliases || [])].map(normName).filter(Boolean);
+  }
+
+  function personHasRole(p, role) {
+    if (!role) return true;
+    const roles = p.roles || [];
+    if (roles.includes(role)) return true;
+    // The HR joker answers the team-lead poll.
+    return role === 'teamlead' && roles.includes('joker');
+  }
+
+  /** Find roster suggestions for a name that did not match exactly. */
+  function suggestMatches(name, team, role, people) {
+    const n = normName(name);
+    const first = n.split(' ')[0];
+    const scored = [];
+    for (const p of people) {
+      let best = Infinity;
+      for (const pn of personNames(p)) {
+        let score = levenshtein(n, pn);
+        const pFirst = pn.split(' ')[0];
+        if (pFirst === first) score = Math.min(score, 1);
+        if (pn.startsWith(n) || n.startsWith(pn)) score = Math.min(score, 1);
+        best = Math.min(best, score);
+      }
+      if (best > Math.max(2, Math.floor(n.length / 3))) continue;
+      if (personHasRole(p, role)) best -= 0.5;
+      if (team && p.team === team) best -= 0.25;
+      scored.push({ person: p, score: best });
+    }
+    return scored.sort((a, b) => a.score - b.score).slice(0, 3).map((s) => s.person);
+  }
+
+  /**
+   * Check a draft against the roster. Returns per-entry match info and
+   * a list of problems Natalie resolves before saving.
+   * `decisions` maps entry key -> { action: 'match'|'add'|'skip', personId?, keepTeam? }.
+   */
+  function reviewDraft(draft, people, decisions) {
+    decisions = decisions || {};
+    const active = people.filter((p) => p.active !== false);
+    const issues = [];
+    const matches = {};
+    for (const tab of draft.tabs) {
+      for (const e of tab.entries) {
+        const dec = decisions[e.key];
+        let person = null;
+        if (dec && dec.action === 'match') person = people.find((p) => p.id === dec.personId) || null;
+        if (!person && !(dec && dec.action)) {
+          const n = normName(e.name);
+          const exact = people.filter((p) => personNames(p).includes(n));
+          person = exact.find((p) => personHasRole(p, tab.role)) || exact[0] || null;
+        }
+        matches[e.key] = { person, skipped: !!(dec && dec.action === 'skip'), add: !!(dec && dec.action === 'add') };
+        if (dec && dec.action === 'skip') continue;
+        if (!person && !(dec && dec.action === 'add')) {
+          issues.push({
+            kind: 'unknown_name',
+            severity: 'block',
+            key: e.key,
+            message: `"${e.name}" (${e.team || 'no team'}) is not on the roster.`,
+            suggestions: suggestMatches(e.name, e.team, tab.role, active),
+          });
+        }
+        if (person && e.team && person.team && e.team !== person.team && !(dec && dec.keepTeam)) {
+          issues.push({
+            kind: 'team_mismatch',
+            severity: 'warn',
+            key: e.key,
+            personId: person.id,
+            message: `${e.name} is in ${e.team} on the sheet but ${person.team} on the roster.`,
+          });
+        }
+        if (e.team && !TEAM_CODES.includes(e.team)) {
+          issues.push({ kind: 'unknown_team', severity: 'warn', key: e.key, message: `${e.name} has team "${e.team}", which is not a known team code.` });
+        }
+        if (person && tab.role && !personHasRole(person, tab.role)) {
+          issues.push({ kind: 'role_mismatch', severity: 'info', key: e.key, message: `${person.name} answered the ${tab.role === 'teamlead' ? 'team lead' : 'advisor'} poll but isn't listed with that role.` });
+        }
+        const vals = tab.dates.map((d) => e.cells[d]);
+        if (vals.every((v) => v === null)) {
+          issues.push({ kind: 'no_response', severity: 'info', key: e.key, message: `${e.name} left every day blank. Counted as no response, not as unavailable.` });
+        } else if (vals.every((v) => v === 'no')) {
+          issues.push({ kind: 'none_available', severity: 'info', key: e.key, message: `${e.name} answered "Niet" for every day.` });
+        }
+        if (e.fixes.length) {
+          issues.push({ kind: 'value_fixed', severity: 'info', key: e.key, message: `${e.name}: read ${e.fixes.map((f) => `"${f.raw}" on ${formatDay(f.date)} as ${VALUES[f.value].nl}`).join(', ')}.` });
+        }
+        if (e.unknowns.length) {
+          issues.push({ kind: 'unknown_value', severity: 'warn', key: e.key, message: `${e.name}: couldn't read ${e.unknowns.map((u) => `"${u.raw}" on ${formatDay(u.date)}`).join(', ')}. Treated as no answer.` });
+        }
+      }
+    }
+    // Rostered people of a polled role who are missing from the sheet.
+    const seen = new Set(Object.values(matches).filter((m) => m.person).map((m) => m.person.id));
+    const roles = draft.tabs.map((t) => t.role).filter(Boolean);
+    for (const p of active) {
+      if (!seen.has(p.id) && roles.some((r) => personHasRole(p, r))) {
+        issues.push({ kind: 'missing_from_sheet', severity: 'info', personId: p.id, message: `${p.name} (${p.team}) is on the roster but not on the sheet.` });
+      }
+    }
+    for (const pr of draft.problems) issues.push({ ...pr, severity: 'warn' });
+    return { issues, matches, blocking: issues.filter((i) => i.severity === 'block').length };
+  }
+
+  // ---------------------------------------------------------------------
+  // Remarks: Claude suggests, Natalie confirms
+  // ---------------------------------------------------------------------
+
+  const RULE_KINDS = {
+    window: 'Only between set hours',
+    unavailable: 'Not available',
+    tentative: 'Tentative, check first',
+    note: 'Note only',
+  };
+
+  /** Build the prompt asking Claude to read the poll remarks. */
+  function buildRemarkPrompt(draft) {
+    const items = [];
+    for (const tab of draft.tabs) {
+      for (const e of tab.entries) {
+        if (!e.remark) continue;
+        items.push({
+          row: e.key,
+          name: e.name,
+          answers: Object.fromEntries(tab.dates.map((d) => [`${d} (${WEEKDAYS_NL[weekdayOf(d)]})`, e.cells[d] ? VALUES[e.cells[d]].nl : '']).filter(([, v]) => v)),
+          remark: e.remark,
+          poll_dates: tab.dates,
+        });
+      }
+    }
+    const instructions = [
+      'You help an HR coordinator at Flux Partners (a Dutch consultancy) schedule 1-hour, in-person interviews.',
+      'Colleagues answered a half-day availability poll (Dutch). Each answer is Hele dag (all day), Ochtend (morning), Middag (afternoon) or Niet (not available).',
+      'Some added a free-text remark (usually Dutch). For each remark, propose rules that narrow or qualify specific poll dates.',
+      '',
+      'Rule kinds:',
+      '- "window": only available between from and to (HH:MM, 24h) on those dates. Use from or to alone for "until 12:00" or "from 11:00". "Graag einde middag" (preferably late afternoon) is a window from 15:00.',
+      '- "unavailable": not available on those dates at all, or in the given hours.',
+      '- "tentative": answers on those dates may change ("onder voorbehoud", "check my agenda"); the coordinator should check first.',
+      '- "note": useful context that maps to no hours, such as a location ("bij Boskalis in Amsterdam") or "only in an emergency". Put dates on it if the remark names them.',
+      '',
+      'Rules:',
+      '- Dates must come from that row\'s poll_dates. Resolve weekday words (woensdagen = every Wednesday in poll_dates; "vr 20" = the Friday the 20th; "vanaf 24/11" = 24 Nov and later).',
+      '- One remark can produce several rules. Skip a remark only if it says nothing about availability.',
+      '- "summary" is one short English sentence Natalie reads, e.g. "Fri 4 Dec only 14:00-15:30".',
+      '- "quote" is the exact part of the remark the rule comes from.',
+      '',
+      'Reply with only a JSON array, no prose. Example:',
+      '[{"row":"0:3","kind":"window","dates":["2026-12-04"],"from":"14:00","to":"15:30","summary":"Fri 4 Dec only 14:00-15:30","quote":"op vrijdag 4-12 alleen van 14-15.30 uur"}]',
+      '',
+      'Poll rows with remarks:',
+      JSON.stringify(items, null, 1),
+    ];
+    return { prompt: instructions.join('\n'), count: items.length };
+  }
+
+  const HHMM = /^([01]?\d|2[0-3])[:.]([0-5]\d)$/;
+  function normTime(t) {
+    if (t == null || t === '') return null;
+    const m = HHMM.exec(String(t).trim());
+    if (!m) {
+      const h = /^([01]?\d|2[0-3])$/.exec(String(t).trim());
+      return h ? `${pad(Number(h[1]))}:00` : null;
+    }
+    return `${pad(Number(m[1]))}:${m[2]}`;
+  }
+
+  /** Validate Claude's reply against the draft; drop anything malformed. */
+  function cleanRemarkSuggestions(raw, draft) {
+    const list = Array.isArray(raw) ? raw : raw && Array.isArray(raw.rules) ? raw.rules : [];
+    const byKey = {};
+    for (const tab of draft.tabs) for (const e of tab.entries) byKey[e.key] = { e, tab };
+    const out = [];
+    list.forEach((s, i) => {
+      if (!s || typeof s !== 'object') return;
+      const hit = byKey[String(s.row)];
+      if (!hit) return;
+      const kind = RULE_KINDS[s.kind] ? s.kind : 'note';
+      const dates = (Array.isArray(s.dates) ? s.dates : []).map(String).filter((d) => hit.tab.dates.includes(d));
+      const from = normTime(s.from);
+      const to = normTime(s.to);
+      if (kind === 'window' && !from && !to) return;
+      if (kind !== 'note' && !dates.length) return;
+      out.push({
+        id: `r${Date.now().toString(36)}${i}`,
+        entryKey: hit.e.key,
+        kind,
+        dates,
+        from: kind === 'window' || kind === 'unavailable' ? from : null,
+        to: kind === 'window' || kind === 'unavailable' ? to : null,
+        summary: String(s.summary || '').slice(0, 200) || RULE_KINDS[kind],
+        quote: String(s.quote || '').slice(0, 300),
+        source: 'claude',
+        status: 'pending',
+      });
+    });
+    return out;
+  }
+
+  function describeRule(r) {
+    const days = r.dates.length ? r.dates.map((d) => formatDay(d)).join(', ') : 'no specific days';
+    if (r.kind === 'window') return `${days}: ${r.from && r.to ? `${r.from}-${r.to}` : r.from ? `from ${r.from}` : `until ${r.to}`}`;
+    if (r.kind === 'unavailable') return `${days}: not available${r.from || r.to ? ` ${r.from || ''}-${r.to || ''}` : ''}`;
+    if (r.kind === 'tentative') return `${days}: check first`;
+    return r.summary;
+  }
+
+  /**
+   * Effective availability for one person-day: the poll value plus any
+   * confirmed rules. Returns { value, window, tentative, notes }.
+   */
+  function effectiveCell(value, rules, date) {
+    const out = { value, window: null, tentative: false, notes: [] };
+    for (const r of rules || []) {
+      if (r.status !== 'confirmed') continue;
+      if (r.dates.length && !r.dates.includes(date)) continue;
+      if (!r.dates.length && r.kind !== 'note') continue;
+      if (r.kind === 'unavailable' && !r.from && !r.to) out.value = 'no';
+      else if (r.kind === 'window' || r.kind === 'unavailable') out.window = r;
+      else if (r.kind === 'tentative') out.tentative = true;
+      if (r.dates.length) out.notes.push(r.summary);
+    }
+    return out;
+  }
+
+  /** Per-day coverage across a set of rows: who is free in each half-day,
+   *  and whether a pair from different teams is possible. */
+  function dayCoverage(rows, date) {
+    const half = { am: [], pm: [] };
+    for (const r of rows) {
+      const c = effectiveCell(r.cells[date], r.rules, date);
+      if (c.value === 'all' || c.value === 'am') half.am.push(r);
+      if (c.value === 'all' || c.value === 'pm') half.pm.push(r);
+    }
+    const teams = (list) => new Set(list.map((r) => r.team).filter(Boolean)).size;
+    return {
+      am: half.am.length,
+      pm: half.pm.length,
+      pairAm: teams(half.am) >= 2,
+      pairPm: teams(half.pm) >= 2,
+      people: new Set([...half.am, ...half.pm]).size,
+    };
+  }
+
+  /** Turn a reviewed draft into the snapshot document saved to the db. */
+  function buildSnapshot(draft, review, rules, meta) {
+    const tabs = draft.tabs.map((tab) => ({
+      sheet: tab.sheet,
+      role: tab.role,
+      dates: tab.dates,
+      rows: tab.entries
+        .filter((e) => !review.matches[e.key].skipped)
+        .map((e) => {
+          const m = review.matches[e.key];
+          return {
+            personId: m.person ? m.person.id : null,
+            name: e.name,
+            team: e.team,
+            remark: e.remark,
+            cells: e.cells,
+            rules: rules.filter((r) => r.entryKey === e.key && r.status !== 'dismissed').map(({ entryKey, ...r }) => r),
+          };
+        }),
+    }));
+    return {
+      campaignId: meta.campaignId,
+      fileName: meta.fileName || '',
+      pollDate: draft.pollDate,
+      from: draft.from,
+      to: draft.to,
+      importedAt: meta.importedAt || new Date().toISOString(),
+      tabs,
+      stats: snapshotStats({ tabs }),
+    };
+  }
+
+  function snapshotStats(snap) {
+    let people = 0;
+    let responded = 0;
+    let halfDays = 0;
+    for (const t of snap.tabs) {
+      for (const r of t.rows) {
+        people++;
+        const vals = t.dates.map((d) => r.cells[d]);
+        if (vals.some((v) => v !== null)) responded++;
+        for (const v of vals) halfDays += v === 'all' ? 2 : v === 'am' || v === 'pm' ? 1 : 0;
+      }
+    }
+    return { people, responded, halfDays };
+  }
+
+  // ---------------------------------------------------------------------
+  // Campaigns
+  // ---------------------------------------------------------------------
+
+  const DEFAULT_SETTINGS = {
+    invitesPerSlot: 3,
+    topUpAfterDecline: true,
+    replyWindowWorkingDays: 2,
+    holdBeforeCandidate: true,
+    holdAheadWorkingDays: 10,
+    holdsPerWeek: { advisor: 3, deepdive: 2 },
+    releaseUnfilledWorkingDays: 3,
+    cancellationWarningWorkingDays: 3,
+    holdsPerMemberPerMonth: 2,
+    preferFridays: true,
+  };
+
+  const DEFAULT_ROUNDS = [
+    { key: 'advisor', name: 'Advisor interview', role: 'advisor', interviewers: 2, differentTeams: true, durationMin: 60, maxDaysAfterPrevious: 7, fallbacks: ['natalie'] },
+    { key: 'deepdive', name: 'Team lead deep dive', role: 'teamlead', interviewers: 2, differentTeams: true, durationMin: 60, maxDaysAfterPrevious: 7, fallbacks: ['joker', 'natalie'] },
+  ];
+
+  function newCampaign(fields) {
+    return {
+      name: fields.name || 'New campaign',
+      startDate: fields.startDate || todayIso(),
+      endDate: fields.endDate || '',
+      targetHires: Number(fields.targetHires) || 0,
+      targetInterviews: Number(fields.targetInterviews) || 0,
+      rounds: JSON.parse(JSON.stringify(fields.rounds || DEFAULT_ROUNDS)),
+      settings: JSON.parse(JSON.stringify(fields.settings || DEFAULT_SETTINGS)),
+      archived: false,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Candidates: step-by-step timeline
+  // ---------------------------------------------------------------------
+
+  /*
+   * The main path, in order. `outcome` lists the choices Natalie picks
+   * for a step; a reject outcome routes to a call step and then closing.
+   */
+  const STEPS = [
+    { key: 'hr_done', n: 1, label: 'HR interview done', actor: 'Natalie', round: 'hr', outcome: ['pass', 'reject'], prompt: (c) => `Record HR result for ${c}` },
+    { key: 'avail_asked_r2', n: 2, label: 'Availability asked', actor: 'Natalie', round: 'advisor', prompt: (c) => `Ask ${c} for next week's availability` },
+    { key: 'avail_received_r2', n: 3, label: 'Availability received', actor: 'Natalie', round: 'advisor', fields: ['availability'], prompt: (c) => `Match ${c} to an advisor slot` },
+    { key: 'advisor_booked', n: 4, label: 'Advisor interview booked', actor: 'Tool + Natalie', round: 'advisor', fields: ['slot', 'interviewers'], prompt: (c) => `Send ${c}'s invite` },
+    { key: 'advisor_done', n: 5, label: 'Advisor interview done', actor: 'Advisors → Natalie', round: 'advisor', outcome: ['pass', 'reject'], prompt: (c) => `Get the advisors' verdict on ${c}` },
+    { key: 'result_call_r2', n: 6, label: 'Result call made', actor: 'Natalie', round: 'advisor', call: true, prompt: (c, s) => (s.rejectedAt === 'advisor' ? `Call ${c}: not moving on` : `Call ${c}: passed the advisor round`) },
+    { key: 'avail_received_final', n: 7, label: 'Availability received (final)', actor: 'Natalie', round: 'deepdive', fields: ['availability'], prompt: (c) => `Match ${c} to a deep dive` },
+    { key: 'deepdive_booked', n: 8, label: 'Deep dive booked', actor: 'Tool + Natalie', round: 'deepdive', fields: ['slot', 'interviewers'], prompt: (c) => `Send ${c}'s deep dive invite` },
+    { key: 'deepdive_done', n: 9, label: 'Deep dive done', actor: 'Team leads → Natalie', round: 'deepdive', outcome: ['hire', 'reject'], prompt: (c) => `Get the team leads' verdict on ${c}` },
+    { key: 'final_call', n: 10, label: 'Final call made', actor: 'Natalie', round: 'deepdive', call: true, prompt: (c, s) => (s.rejectedAt === 'deepdive' ? `Call ${c}: not hired` : `Call ${c}: offer`) },
+    { key: 'closed', n: 11, label: 'Closed', actor: 'Natalie', round: 'end', outcome: ['hired', 'rejected', 'withdrew', 'no_show'], prompt: (c) => `Close ${c}'s file` },
+  ];
+  const HR_REJECT_CALL = { key: 'reject_call_hr', n: '1b', label: 'Call: not moving on', actor: 'Natalie', round: 'hr', call: true, prompt: (c) => `Call ${c}: not moving on after HR` };
+  const ALL_STEPS = [STEPS[0], HR_REJECT_CALL, ...STEPS.slice(1)];
+  const STEP_BY_KEY = Object.fromEntries(ALL_STEPS.map((s) => [s.key, s]));
+
+  const OUTCOME_LABELS = {
+    pass: 'Passed',
+    reject: 'Not moving on',
+    hire: 'Hire',
+    hired: 'Hired',
+    rejected: 'Rejected',
+    withdrew: 'Withdrew',
+    no_show: 'No-show',
+  };
+
+  /** The latest entry per step (entries can be corrected by re-recording). */
+  function latestByStep(timeline) {
+    const map = {};
+    for (const e of timeline || []) {
+      if (e.voided) continue;
+      const cur = map[e.step];
+      if (!cur || e.at > cur.at || (e.at === cur.at && (e.recordedAt || '') >= (cur.recordedAt || ''))) map[e.step] = e;
+    }
+    return map;
+  }
+
+  /**
+   * Work out where a candidate is: which steps are done, which one is
+   * next, which round they're in, and the 1-week clock for that round.
+   */
+  function candidateState(cand, today) {
+    today = today || todayIso();
+    const done = latestByStep(cand.timeline);
+    const name = (cand.name || 'candidate').split(' ')[0];
+    let rejectedAt = null;
+    if (done.hr_done && done.hr_done.outcome === 'reject') rejectedAt = 'hr';
+    else if (done.advisor_done && done.advisor_done.outcome === 'reject') rejectedAt = 'advisor';
+    else if (done.deepdive_done && done.deepdive_done.outcome === 'reject') rejectedAt = 'deepdive';
+
+    let path;
+    if (rejectedAt === 'hr') path = ['hr_done', 'reject_call_hr', 'closed'];
+    else if (rejectedAt === 'advisor') path = ['hr_done', 'avail_asked_r2', 'avail_received_r2', 'advisor_booked', 'advisor_done', 'result_call_r2', 'closed'];
+    else path = STEPS.map((s) => s.key);
+
+    let next = null;
+    if (!done.closed) {
+      // First missing step after the furthest recorded one, so steps
+      // entered out of order don't send Natalie backwards.
+      let furthest = -1;
+      path.forEach((k, i) => {
+        if (done[k]) furthest = i;
+      });
+      for (let i = furthest + 1; i < path.length; i++) {
+        if (!done[path[i]]) {
+          next = path[i];
+          break;
+        }
+      }
+    }
+    const skipped = path.filter((k, i) => !done[k] && next && i < path.indexOf(next));
+
+    const closed = done.closed || null;
+    let status = 'open';
+    if (closed) status = closed.outcome || 'closed';
+
+    // Stage for the funnel.
+    let stage = 'hr';
+    if (done.hr_done && done.hr_done.outcome === 'pass') stage = 'advisor';
+    if (done.advisor_done && done.advisor_done.outcome === 'pass') stage = 'deepdive';
+    if ((done.deepdive_done && done.deepdive_done.outcome === 'hire') || (closed && closed.outcome === 'hired')) stage = 'hired';
+
+    // 1-week clock: runs from the moment availability is asked until the
+    // interview of that round takes place.
+    let clock = null;
+    if (!closed && !rejectedAt) {
+      if (stage === 'advisor') {
+        const start = (done.avail_asked_r2 || done.hr_done).at;
+        clock = makeClock('advisor', start, done.advisor_booked, done.advisor_done, today);
+      } else if (stage === 'deepdive' && done.result_call_r2) {
+        clock = makeClock('deepdive', done.result_call_r2.at, done.deepdive_booked, done.deepdive_done, today);
+      }
+    }
+
+    const step = next ? STEP_BY_KEY[next] : null;
+    return {
+      done,
+      path,
+      next,
+      skipped,
+      status,
+      stage,
+      rejectedAt,
+      clock,
+      prompt: step ? step.prompt(name, { rejectedAt }) : null,
+    };
+  }
+
+  function makeClock(round, start, booked, held, today) {
+    const deadline = addDays(start.slice(0, 10), 7);
+    const interviewDate = booked && booked.data && booked.data.slotDate ? booked.data.slotDate : null;
+    if (held) return { round, start, deadline, state: 'met', interviewDate: held.at.slice(0, 10), late: held.at.slice(0, 10) > deadline };
+    const day = daysBetween(start.slice(0, 10), today);
+    if (interviewDate) {
+      return { round, start, deadline, state: interviewDate > deadline ? 'booked_late' : 'booked', interviewDate, day, daysLeft: daysBetween(today, deadline) };
+    }
+    const daysLeft = daysBetween(today, deadline);
+    return { round, start, deadline, day, daysLeft, state: daysLeft < 0 ? 'overdue' : daysLeft <= 2 ? 'urgent' : 'running' };
+  }
+
+  /** Funnel counts for a campaign. */
+  function funnel(cands) {
+    const f = { total: cands.length, passedHr: 0, advisorDone: 0, passedAdvisor: 0, deepdiveDone: 0, hired: 0, open: 0, closed: 0 };
+    for (const c of cands) {
+      const s = candidateState(c);
+      const d = s.done;
+      if (d.hr_done && d.hr_done.outcome === 'pass') f.passedHr++;
+      if (d.advisor_done) f.advisorDone++;
+      if (d.advisor_done && d.advisor_done.outcome === 'pass') f.passedAdvisor++;
+      if (d.deepdive_done) f.deepdiveDone++;
+      if (s.stage === 'hired') f.hired++;
+      if (s.status === 'open') f.open++;
+      else f.closed++;
+    }
+    return f;
+  }
+
+  /** Same-team check for a proposed interviewer pair. */
+  function pairProblems(ids, people, round) {
+    const ps = ids.map((id) => people.find((p) => p.id === id)).filter(Boolean);
+    const problems = [];
+    if (round && ps.length < round.interviewers) problems.push(`Pick ${round.interviewers} interviewers.`);
+    if (round && round.differentTeams) {
+      const teams = ps.map((p) => p.team);
+      if (new Set(teams).size < teams.length) problems.push('Two interviewers are from the same team.');
+    }
+    return problems;
+  }
+
+  /** Who is available on a date, by half-day, according to the latest snapshot covering that date for a role. */
+  function availabilityOn(snapshots, personId, role, date) {
+    const sorted = [...snapshots].sort((a, b) => (b.pollDate || '').localeCompare(a.pollDate || '') || (b.importedAt || '').localeCompare(a.importedAt || ''));
+    for (const s of sorted) {
+      for (const t of s.tabs || []) {
+        if (role && t.role && t.role !== role) continue;
+        if (!t.dates.includes(date)) continue;
+        const row = t.rows.find((r) => r.personId === personId);
+        if (!row) continue;
+        return { ...effectiveCell(row.cells[date], row.rules, date), pollDate: s.pollDate };
+      }
+    }
+    return null;
+  }
+
+  const api = {
+    TEAMS,
+    TEAM_CODES,
+    ROLES,
+    VALUES,
+    WEEKDAYS_NL,
+    WEEKDAYS_EN,
+    RULE_KINDS,
+    STEPS,
+    ALL_STEPS,
+    STEP_BY_KEY,
+    HR_REJECT_CALL,
+    OUTCOME_LABELS,
+    DEFAULT_SETTINGS,
+    DEFAULT_ROUNDS,
+    addDays,
+    daysBetween,
+    weekdayOf,
+    weekStart,
+    formatDay,
+    todayIso,
+    pollDateFromFileName,
+    parseDayHeader,
+    normalizeValue,
+    normName,
+    parsePoll,
+    reviewDraft,
+    suggestMatches,
+    personHasRole,
+    buildRemarkPrompt,
+    cleanRemarkSuggestions,
+    describeRule,
+    effectiveCell,
+    dayCoverage,
+    buildSnapshot,
+    snapshotStats,
+    newCampaign,
+    latestByStep,
+    candidateState,
+    funnel,
+    pairProblems,
+    availabilityOn,
+    normTime,
+  };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.FluxModel = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/*
+ * Storage for the Flux scheduling page.
+ *
+ * On claude.ai the page uses the artifact's shared database (`db`
+ * capability). Outside claude.ai (opening dist/index.html locally, or a
+ * viewer who isn't signed in) it falls back to this browser's storage so
+ * the screens still work for testing; a banner says nothing is shared.
+ *
+ * Collections:
+ *   campaigns/{id}   name, dates, targets, rounds, settings
+ *   people/{id}      roster: name, team, roles, aliases, active, email
+ *   snapshots/{id}   one saved availability poll (dated, per campaign)
+ *   candidates/{id}  candidate record with its step timeline
+ *   notes/{id}       a note or interview feedback on a candidate, by Natalie or an interviewer
+ */
+(function (root) {
+  'use strict';
+
+  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes'];
+  const LOCAL_KEY = 'flux-scheduling-local-v1';
+
+  function uid(prefix) {
+    return `${prefix || ''}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  }
+
+  function createLocalBackend() {
+    let data = {};
+    try {
+      data = JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}') || {};
+    } catch (e) {
+      data = {};
+    }
+    for (const c of COLLECTIONS) data[c] = data[c] || {};
+    const listeners = {};
+    function persist() {
+      try {
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+      } catch (e) {
+        /* storage blocked: keep in memory */
+      }
+    }
+    function emit(coll) {
+      const docs = Object.entries(data[coll]).map(([id, d]) => ({ id, ...d }));
+      (listeners[coll] || []).forEach((fn) => fn(docs));
+    }
+    return {
+      mode: 'local',
+      subscribe(coll, fn) {
+        (listeners[coll] = listeners[coll] || []).push(fn);
+        setTimeout(() => emit(coll), 0);
+      },
+      async set(coll, id, doc) {
+        data[coll][id] = JSON.parse(JSON.stringify(doc));
+        persist();
+        emit(coll);
+      },
+      async update(coll, id, patch) {
+        data[coll][id] = { ...(data[coll][id] || {}), ...JSON.parse(JSON.stringify(patch)) };
+        persist();
+        emit(coll);
+      },
+      async remove(coll, id) {
+        delete data[coll][id];
+        persist();
+        emit(coll);
+      },
+    };
+  }
+
+  function createDbBackend(db) {
+    return {
+      mode: 'db',
+      subscribe(coll, fn, onError) {
+        db.collection(coll).onSnapshot(
+          (snap) => fn(snap.docs.filter((d) => d.exists).map((d) => ({ id: d.id, ...d.data() }))),
+          (err) => onError && onError(coll, err),
+        );
+      },
+      set(coll, id, doc) {
+        return db.collection(coll).doc(id).set(strip(doc));
+      },
+      update(coll, id, patch) {
+        return db.collection(coll).doc(id).update(strip(patch));
+      },
+      remove(coll, id) {
+        return db.collection(coll).doc(id).delete();
+      },
+    };
+  }
+
+  // Never write the `id` field into the body; drop undefined values.
+  function strip(doc) {
+    const { id, ...rest } = doc;
+    return JSON.parse(JSON.stringify(rest));
+  }
+
+  /**
+   * Connect and keep `state` (one array per collection) up to date.
+   * Calls `onChange(collection)` after each update.
+   */
+  async function connect(onChange, onError) {
+    let backend = null;
+    let user = null;
+    try {
+      if (root.claude && typeof root.claude.use === 'function') {
+        const [db, u] = await Promise.all([root.claude.use('db'), root.claude.use('user')]);
+        user = u;
+        if (db) backend = createDbBackend(db);
+      }
+    } catch (e) {
+      backend = null;
+    }
+    if (!backend) backend = createLocalBackend();
+    const state = { loaded: {} };
+    for (const c of COLLECTIONS) state[c] = [];
+    for (const c of COLLECTIONS) {
+      backend.subscribe(
+        c,
+        (docs) => {
+          state[c] = docs;
+          state.loaded[c] = true;
+          onChange(c);
+        },
+        onError,
+      );
+    }
+    return {
+      mode: backend.mode,
+      user,
+      state,
+      uid,
+      add(coll, doc) {
+        const id = uid(coll.slice(0, 2) + '_');
+        return backend.set(coll, id, doc).then(() => id);
+      },
+      set: (coll, id, doc) => backend.set(coll, id, doc),
+      update: (coll, id, patch) => backend.update(coll, id, patch),
+      remove: (coll, id) => backend.remove(coll, id),
+    };
+  }
+
+  root.FluxStore = { connect, uid, COLLECTIONS };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/*
+ * Flux interview scheduling: the page.
+ *
+ * Views (hash routes): #run (default), #availability, #roster, #campaign.
+ * Candidate detail opens as a drawer over any view.
+ * All values from storage, files or Claude go into the DOM as text.
+ */
+(function () {
+  'use strict';
+  const M = window.FluxModel;
+  const TODAY = M.todayIso();
+  const ROOMS = ['Room 1', 'Room 2'];
+
+  // ------------------------------------------------------------------
+  // Tiny DOM helper
+  // ------------------------------------------------------------------
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
+      else if (k === 'value') el.value = v;
+      else if (k === 'checked' || k === 'disabled' || k === 'selected') el[k] = !!v;
+      else el.setAttribute(k, v === true ? '' : String(v));
+    }
+    for (const kid of kids.flat(Infinity)) {
+      if (kid === null || kid === undefined || kid === false) continue;
+      el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+    }
+    return el;
+  }
+  // replaceChildren() turns null and arrays into text; flatten and drop empties first.
+  const fill = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
+  const short = (iso) => (iso ? `${Number(iso.slice(8, 10))}-${Number(iso.slice(5, 7))}` : '');
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + 's'}`;
+  function store(k, v) {
+    try {
+      if (v === undefined) return localStorage.getItem(k);
+      localStorage.setItem(k, v);
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
+  // ------------------------------------------------------------------
+  // State
+  // ------------------------------------------------------------------
+  let S = null; // store connection
+  const ui = {
+    view: 'run',
+    campaignId: store('flux.campaign'),
+    candId: null, // drawer: candidate id, or 'new'
+    openStep: null, // step key whose form is open in the drawer
+    candFilter: 'open',
+    draft: null, // availability import in progress
+    snapId: null,
+    sheetIdx: 0,
+    rosterEdit: null, // person id or 'new'
+    toast: null,
+    busy: {},
+    error: null,
+  };
+  let sample = null;
+
+  const people = () => [...S.state.people].sort((a, b) => a.name.localeCompare(b.name));
+  const campaigns = () => S.state.campaigns.filter((c) => !c.archived).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  function campaign() {
+    const all = campaigns();
+    return all.find((c) => c.id === ui.campaignId) || all[0] || null;
+  }
+  const candidates = () => {
+    const c = campaign();
+    return c ? S.state.candidates.filter((x) => x.campaignId === c.id).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '')) : [];
+  };
+  const snapshots = () => {
+    const c = campaign();
+    return c ? S.state.snapshots.filter((x) => x.campaignId === c.id).sort((a, b) => (b.pollDate || '').localeCompare(a.pollDate || '') || (b.importedAt || '').localeCompare(a.importedAt || '')) : [];
+  };
+  const personById = (id) => S.state.people.find((p) => p.id === id);
+
+  function toast(msg) {
+    ui.toast = msg;
+    render();
+    clearTimeout(toast.t);
+    toast.t = setTimeout(() => {
+      ui.toast = null;
+      render();
+    }, 2600);
+  }
+  async function act(fn, ok) {
+    try {
+      await fn();
+      if (ok) toast(ok);
+    } catch (e) {
+      toast(`Couldn't save: ${(e && (e.message || e.code)) || 'unknown error'}. Try again.`);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Render root
+  // ------------------------------------------------------------------
+  let pending = false;
+  function render() {
+    // Don't rebuild while someone is typing; render again on blur.
+    const a = document.activeElement;
+    if (a && a.closest && a.closest('#app') && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !render.force) {
+      pending = true;
+      return;
+    }
+    render.force = false;
+    pending = false;
+    const root = document.getElementById('app');
+    const scroll = { x: window.scrollX, y: window.scrollY };
+    const drawerScroll = document.querySelector('.drawer') ? document.querySelector('.drawer').scrollTop : 0;
+    root.replaceChildren(...[topBar(), banner(), h('main', {}, view()), drawer(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
+    window.scrollTo(scroll.x, scroll.y);
+    const d = document.querySelector('.drawer');
+    if (d) d.scrollTop = drawerScroll;
+  }
+  document.addEventListener('focusout', () => setTimeout(() => pending && render(), 0));
+  function rerender() {
+    render.force = true;
+    render();
+  }
+
+  function topBar() {
+    const c = campaign();
+    const cands = candidates();
+    const nav = [
+      ['run', 'Run view', cands.filter((x) => M.candidateState(x).status === 'open').length],
+      ['availability', 'Availability', null],
+      ['roster', 'Roster', S.state.people.filter((p) => p.active !== false).length],
+      ['campaign', 'Campaign', null],
+    ];
+    const f = M.funnel(cands);
+    return h(
+      'header',
+      { class: 'bar gutter' },
+      h('div', { class: 'brand' }, h('i'), 'Flux interviews'),
+      h('nav', {}, nav.map(([k, label, n]) => h('a', { href: `#${k}`, 'aria-current': ui.view === k ? 'page' : null }, label, n ? h('span', { class: 'n' }, n) : null))),
+      c
+        ? h(
+            'div',
+            { class: 'camp' },
+            h(
+              'select',
+              {
+                'aria-label': 'Campaign',
+                id: 'campaign-pick',
+                onchange: (e) => {
+                  ui.campaignId = e.target.value;
+                  store('flux.campaign', ui.campaignId);
+                  rerender();
+                },
+              },
+              campaigns().map((x) => h('option', { value: x.id, selected: x.id === c.id }, x.name)),
+            ),
+            h('span', {}, `${f.hired} of ${c.targetHires || '?'} hired`),
+          )
+        : null,
+    );
+  }
+
+  function banner() {
+    if (S.mode === 'db') return null;
+    return h('div', { class: 'banner gutter' }, 'Test mode: data is kept in this browser only. Open the published page on claude.ai, signed in, to share it with the team.');
+  }
+
+  function view() {
+    if (!campaign()) return setupView();
+    if (ui.view === 'availability') return availabilityView();
+    if (ui.view === 'roster') return rosterView();
+    if (ui.view === 'campaign') return campaignView();
+    return runView();
+  }
+
+  // ------------------------------------------------------------------
+  // First run
+  // ------------------------------------------------------------------
+  function setupView() {
+    const loaded = S.state.loaded.campaigns;
+    if (!loaded) return h('div', { class: 'section gutter' }, h('p', { class: 'muted' }, 'Loading…'));
+    return h(
+      'div',
+      { class: 'section gutter' },
+      h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Set up your first campaign'), h('p', {}, 'A campaign is one hiring drive with its own rounds, targets and availability polls. Candidates, holds and metrics all hang off it.'))),
+      campaignForm(null),
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // Run view: to-do list + holds/summary + step matrix
+  // ------------------------------------------------------------------
+  const KIND = {
+    hr_done: ['Record', ''],
+    reject_call_hr: ['Call', 'accent'],
+    avail_asked_r2: ['Ask', 'accent'],
+    avail_received_r2: ['Match', 'accent'],
+    advisor_booked: ['Book', 'accent'],
+    advisor_done: ['Record', ''],
+    result_call_r2: ['Call', 'accent'],
+    avail_received_final: ['Match', 'accent'],
+    deepdive_booked: ['Book', 'accent'],
+    deepdive_done: ['Record', ''],
+    final_call: ['Call', 'accent'],
+    closed: ['Close', ''],
+  };
+
+  function todoItems() {
+    const items = [];
+    for (const c of candidates()) {
+      const s = M.candidateState(c);
+      if (!s.next) continue;
+      let group = 'later';
+      let reason = '';
+      const [kind, tone] = KIND[s.next] || ['Do', ''];
+      let k = kind;
+      let t = tone;
+      if (s.clock && s.clock.state === 'overdue') {
+        group = 'overdue';
+        k = 'Overdue';
+        t = 'bad';
+        reason = `Day ${s.clock.day} of 7: the ${s.clock.round === 'advisor' ? 'advisor interview' : 'deep dive'} deadline was ${M.formatDay(s.clock.deadline)}.`;
+      } else if (s.clock && (s.clock.state === 'urgent' || s.clock.state === 'booked_late')) {
+        group = 'today';
+        t = 'warn';
+        reason = s.clock.state === 'booked_late' ? `Booked for ${M.formatDay(s.clock.interviewDate)}, after the 7-day deadline (${M.formatDay(s.clock.deadline)}).` : `Day ${s.clock.day} of 7, deadline ${M.formatDay(s.clock.deadline)}.`;
+      } else if (s.clock && s.clock.state === 'booked' && s.clock.interviewDate <= TODAY) {
+        group = 'today';
+        reason = s.clock.interviewDate === TODAY ? 'The interview is today.' : `The interview was on ${M.formatDay(s.clock.interviewDate)}.`;
+      } else if (s.clock && s.clock.state === 'booked') {
+        group = 'later';
+        reason = `Interview booked for ${M.formatDay(s.clock.interviewDate)}.`;
+      } else if (/call|avail_asked|reject/.test(s.next)) {
+        group = 'today';
+        reason = s.clock ? `Day ${s.clock.day} of 7.` : 'Every candidate hears back, and the call is logged.';
+      } else if (s.next === 'hr_done') {
+        const d = c.hrDate;
+        group = d && d <= TODAY ? 'today' : 'later';
+        reason = d ? `HR interview ${d === TODAY ? 'today' : d < TODAY ? `was on ${M.formatDay(d)}` : `on ${M.formatDay(d)}`}.` : 'No HR interview date yet.';
+      } else {
+        reason = s.clock ? `Day ${s.clock.day} of 7, deadline ${M.formatDay(s.clock.deadline)}.` : '';
+      }
+      if (s.skipped.length) reason += ` ${plural(s.skipped.length, 'earlier step')} not recorded.`;
+      items.push({ group, kind: k, tone: t, who: c.name, text: `${s.prompt}. ${reason}`.trim(), btn: k === 'Overdue' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
+    }
+    // Availability housekeeping
+    const snaps = snapshots();
+    if (!snaps.length) {
+      items.push({ group: 'later', kind: 'Import', tone: 'accent', who: 'Availability poll', text: 'No poll imported for this campaign yet. Import the xlsx so slots can be matched.', btn: 'Import', go: 'availability', sortKey: 90 });
+    } else {
+      const latest = snaps[0];
+      const age = M.daysBetween(latest.pollDate, TODAY);
+      if (latest.to && latest.to < M.addDays(TODAY, 7)) {
+        items.push({ group: latest.to < TODAY ? 'today' : 'later', kind: 'Poll', tone: 'warn', who: 'Availability poll', text: `The latest poll (${M.formatDay(latest.pollDate)}) only runs until ${M.formatDay(latest.to)}. Send out a new one.`, btn: 'Open', go: 'availability', sortKey: 80 });
+      } else if (age > 30) {
+        items.push({ group: 'later', kind: 'Poll', tone: 'warn', who: 'Availability poll', text: `The latest poll is ${age} days old. Answers may be out of date.`, btn: 'Open', go: 'availability', sortKey: 85 });
+      }
+    }
+    if (S.state.loaded.people && !S.state.people.length) {
+      items.push({ group: 'today', kind: 'Set up', tone: 'accent', who: 'Roster', text: 'The roster is empty. Import a poll and add people from it, or add them by hand.', btn: 'Open', go: 'roster', sortKey: 0 });
+    }
+    return items.sort((a, b) => a.sortKey - b.sortKey);
+  }
+
+  function runView() {
+    const items = todoItems();
+    const groups = [
+      ['overdue', 'Overdue'],
+      ['today', 'Today'],
+      ['later', 'Coming up'],
+    ];
+    const todo = h(
+      'section',
+      { class: 'tpanel', 'aria-label': 'To do' },
+      h('div', { class: 'ph' }, 'To do', h('span', { class: 'faint' }, items.length ? `${items.length} · deadlines first` : '')),
+      items.length
+        ? groups.map(([g, label]) => {
+            const list = items.filter((i) => i.group === g);
+            if (!list.length) return null;
+            return [
+              h('div', { class: 'grp' }, label),
+              list.map((i) =>
+                h(
+                  'div',
+                  { class: 'act' },
+                  h('span', { class: `kind k-${i.tone}` }, i.kind),
+                  h('div', {}, h('b', {}, i.who), h('p', {}, i.text)),
+                  h(
+                    'button',
+                    {
+                      class: i.tone === 'accent' || i.tone === 'bad' ? 'p' : '',
+                      onclick: () => {
+                        if (i.go) location.hash = i.go;
+                        else openCandidate(i.cand, i.step);
+                      },
+                    },
+                    i.btn,
+                  ),
+                ),
+              ),
+            ];
+          })
+        : h('div', { class: 'empty' }, h('p', {}, 'Nothing to do right now. Add a candidate after their HR interview and the next steps appear here.'), h('button', { class: 'p', onclick: () => openCandidate('new') }, '+ Candidate')),
+    );
+
+    const c = campaign();
+    const f = M.funnel(candidates());
+    const target = c.targetHires || 0;
+    const statRow = (label, n, of) => h('div', { class: 'stat' }, h('span', {}, label), h('b', {}, of ? `${n} / ${of}` : n), of ? h('div', { class: 'bar-track' }, h('i', { style: `width:${Math.min(100, (n / of) * 100)}%` })) : null);
+    const side = h(
+      'section',
+      { class: 'tpanel', 'aria-label': 'Campaign progress' },
+      h('div', { class: 'ph' }, 'Campaign progress', h('span', { class: 'faint' }, c.name)),
+      statRow('Candidates', f.total),
+      statRow('Passed HR', f.passedHr),
+      statRow('Passed advisor round', f.passedAdvisor),
+      statRow('Hired', f.hired, target || null),
+      h('div', { class: 'stat' }, h('span', { class: 'faint' }, 'Holds and interviewer invites arrive with matching and Outlook (phases 2 and 3).')),
+    );
+
+    return [
+      h('div', { class: 'section band gutter' }, h('div', { class: 'cols' }, todo, side)),
+      h(
+        'div',
+        { class: 'section' },
+        h(
+          'div',
+          { class: 'head gutter' },
+          h('div', { class: 'row' }, h('h2', {}, 'Candidates'), h('button', { class: 'p', onclick: () => openCandidate('new') }, '+ Candidate'), filterButtons()),
+          h('p', { class: 'small' }, 'Orange = next step. Click any cell to record or correct it. Clock = days since availability was asked (target 7).'),
+        ),
+        matrix(),
+      ),
+    ];
+  }
+
+  function filterButtons() {
+    const all = candidates().map((c) => M.candidateState(c).status === 'open');
+    const open = all.filter(Boolean).length;
+    return [
+      ['open', `Open (${open})`],
+      ['closed', `Closed (${all.length - open})`],
+      ['all', `All (${all.length})`],
+    ].map(([k, label]) =>
+      h(
+        'button',
+        {
+          'aria-pressed': ui.candFilter === k,
+          class: ui.candFilter === k ? 'p' : '',
+          onclick: () => {
+            ui.candFilter = k;
+            rerender();
+          },
+        },
+        label,
+      ),
+    );
+  }
+
+  function matrix() {
+    const rows = candidates().filter((c) => {
+      const st = M.candidateState(c).status;
+      return ui.candFilter === 'all' || (ui.candFilter === 'open' ? st === 'open' : st !== 'open');
+    });
+    if (!rows.length) return h('div', { class: 'empty gutter' }, h('p', {}, ui.candFilter === 'open' ? 'No open candidates.' : 'No candidates here yet.'));
+    const head = h('tr', {}, h('th', { class: 'rn' }), h('th', {}, 'Candidate'), M.STEPS.map((s) => h('th', {}, `${s.n}. ${s.label}`)), h('th', {}, 'Clock'), h('th', {}, 'Next action'));
+    const body = rows.map((c, i) => {
+      const s = M.candidateState(c);
+      const cells = M.STEPS.map((step) => {
+        let key = step.key;
+        // The HR reject call shows in column 2.
+        if (step.key === 'avail_asked_r2' && s.rejectedAt === 'hr') key = 'reject_call_hr';
+        const e = s.done[key];
+        const onPath = s.path.includes(key);
+        let cls = 'up';
+        let txt = '·';
+        if (e) {
+          cls = e.outcome === 'reject' || (key === 'closed' && e.outcome !== 'hired') ? 'done rej' : 'done';
+          if (key === 'closed') txt = M.OUTCOME_LABELS[e.outcome] || 'closed';
+          else if (key.endsWith('_booked') && e.data && e.data.slotDate) txt = `${short(e.data.slotDate)}${e.data.time ? ` ${e.data.time}` : ''}`;
+          else txt = `${short(e.at)}${e.outcome === 'pass' || e.outcome === 'hire' ? ' ✓' : e.outcome === 'reject' ? ' ✗' : key.startsWith('reject_call') ? ' call' : ''}`;
+        } else if (s.next === key) {
+          cls = 'next';
+          txt = 'to do';
+        } else if (s.skipped.includes(key)) {
+          cls = 'skip';
+          txt = '–';
+        } else if (!onPath) {
+          cls = 'na';
+          txt = '';
+        }
+        const clickable = cls !== 'na';
+        return h('td', { class: `d ${cls}` }, h('button', { disabled: !clickable, 'aria-label': `${c.name}: ${M.STEP_BY_KEY[key].label}`, onclick: clickable ? () => openCandidate(c.id, key) : null }, txt));
+      });
+      const clk = s.clock && s.clock.state !== 'met' ? s.clock : null;
+      return h(
+        'tr',
+        { class: ui.candId === c.id ? 'sel' : '' },
+        h('td', { class: 'rn' }, i + 1),
+        h('td', { class: 'name' }, h('button', { onclick: () => openCandidate(c.id) }, c.name)),
+        cells,
+        h('td', { class: `clk ${clk && (clk.state === 'overdue' || clk.daysLeft < 1) ? 'bad' : clk && clk.daysLeft <= 2 ? 'warn' : ''}` }, clk ? (clk.state === 'booked' ? `${Math.max(0, clk.day)}/7 ✓` : `${Math.max(0, clk.day)}/7`) : ''),
+        h('td', { class: 'small' }, s.prompt || M.OUTCOME_LABELS[s.status] || ''),
+      );
+    });
+    return h('div', { class: 'sheet-wrap' }, h('table', { class: 'x' }, h('thead', {}, head), h('tbody', {}, body)));
+  }
+
+  // ------------------------------------------------------------------
+  // Candidate drawer
+  // ------------------------------------------------------------------
+  function openCandidate(id, step) {
+    ui.candId = id;
+    ui.openStep = step || null;
+    if (id !== 'new' && !step) {
+      const c = S.state.candidates.find((x) => x.id === id);
+      if (c) ui.openStep = M.candidateState(c).next;
+    }
+    rerender();
+  }
+  function closeDrawer() {
+    ui.forms = {};
+    ui.candId = null;
+    ui.openStep = null;
+    rerender();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && ui.candId) closeDrawer();
+  });
+
+  function drawer() {
+    if (!ui.candId) return null;
+    const content = ui.candId === 'new' ? newCandidateForm() : candidateDetail(S.state.candidates.find((x) => x.id === ui.candId));
+    return [h('div', { class: 'scrim', onclick: closeDrawer }), h('aside', { class: 'drawer', role: 'dialog', 'aria-label': 'Candidate' }, h('button', { class: 'x', 'aria-label': 'Close', onclick: closeDrawer }, '×'), content)];
+  }
+
+  function newCandidateForm() {
+    const f = { name: '', email: '', phone: '', hrDate: TODAY, hr: 'pass', asked: true, notes: '' };
+    const err = h('p', { class: 'err-line' });
+    return h(
+      'form',
+      {
+        class: 'stack',
+        style: 'display:flex;flex-direction:column;gap:12px',
+        onsubmit: (e) => {
+          e.preventDefault();
+          if (!f.name.trim()) {
+            err.textContent = 'Add the candidate’s name.';
+            return;
+          }
+          const now = new Date().toISOString();
+          const timeline = [];
+          if (f.hr !== 'none') timeline.push({ id: S.uid('e'), step: 'hr_done', at: f.hrDate, outcome: f.hr, note: '', recordedAt: now });
+          if (f.hr === 'pass' && f.asked) timeline.push({ id: S.uid('e'), step: 'avail_asked_r2', at: f.hrDate, note: 'Asked at the end of the HR interview.', recordedAt: now });
+          const doc = { campaignId: campaign().id, name: f.name.trim(), email: f.email.trim(), phone: f.phone.trim(), hrDate: f.hrDate, notes: f.notes.trim(), timeline, createdAt: now };
+          act(async () => {
+            const id = await S.add('candidates', withSummary(doc));
+            ui.candId = id;
+            ui.openStep = M.candidateState(doc).next;
+            rerender();
+          }, `${doc.name} added`);
+        },
+      },
+      h('h2', {}, 'Add a candidate'),
+      h('p', { class: 'muted small' }, 'Add them after the HR interview. If they passed, the 1-week clock for the advisor interview starts when you ask for their availability.'),
+      h(
+        'div',
+        { class: 'fg' },
+        h('label', { class: 'f wide' }, 'Name', h('input', { id: 'nc-name', required: true, autocomplete: 'off', oninput: (e) => (f.name = e.target.value) })),
+        h('label', { class: 'f' }, 'Email', h('input', { id: 'nc-email', type: 'email', oninput: (e) => (f.email = e.target.value) })),
+        h('label', { class: 'f' }, 'Phone', h('input', { id: 'nc-phone', type: 'tel', oninput: (e) => (f.phone = e.target.value) })),
+        h('label', { class: 'f' }, 'HR interview date', h('input', { id: 'nc-hr', type: 'date', value: f.hrDate, oninput: (e) => (f.hrDate = e.target.value || TODAY) })),
+        h(
+          'label',
+          { class: 'f' },
+          'HR result',
+          h(
+            'select',
+            { id: 'nc-result', onchange: (e) => (f.hr = e.target.value) },
+            h('option', { value: 'pass', selected: true }, 'Passed'),
+            h('option', { value: 'reject' }, 'Not moving on'),
+            h('option', { value: 'none' }, 'Not recorded yet'),
+          ),
+        ),
+        h('label', { class: 'check wide' }, h('input', { id: 'nc-asked', type: 'checkbox', checked: true, onchange: (e) => (f.asked = e.target.checked) }), 'I asked for next week’s availability on the same day'),
+        h('label', { class: 'f wide' }, 'Notes', h('textarea', { id: 'nc-notes', oninput: (e) => (f.notes = e.target.value) })),
+      ),
+      err,
+      h('div', { class: 'row end' }, h('button', { type: 'button', onclick: closeDrawer }, 'Cancel'), h('button', { class: 'p', type: 'submit' }, 'Add candidate')),
+    );
+  }
+
+  // Denormalised fields so Claude sessions and metrics can query without replaying timelines.
+  function withSummary(doc) {
+    const s = M.candidateState(doc);
+    return { ...doc, status: s.status, stage: s.stage, nextStep: s.next || null, updatedAt: new Date().toISOString() };
+  }
+  function saveCandidate(c, patch, msg) {
+    const next = { ...c, ...patch };
+    return act(() => S.set('candidates', c.id, withSummary(next)), msg);
+  }
+
+  function candidateDetail(c) {
+    if (!c) return h('p', { class: 'muted' }, 'This candidate was removed.');
+    const s = M.candidateState(c);
+    const clk = s.clock && s.clock.state !== 'met' ? s.clock : null;
+    const header = h(
+      'div',
+      { style: 'display:flex;flex-direction:column;gap:4px;padding-right:30px' },
+      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', {}, c.name), clk ? h('span', { class: `chip ${clk.state === 'overdue' ? 'bad' : clk.daysLeft <= 2 ? 'warn' : 'accent'}` }, clk.state === 'booked' ? `booked ${M.formatDay(clk.interviewDate)}` : `day ${Math.max(0, clk.day)} of 7`) : h('span', { class: `chip ${s.status === 'hired' ? 'good' : s.status === 'open' ? 'accent' : ''}` }, s.status === 'open' ? 'Open' : M.OUTCOME_LABELS[s.status] || s.status)),
+      h('div', { class: 'contact' }, c.email ? h('span', {}, c.email) : null, c.phone ? h('span', {}, c.phone) : null, c.hrDate ? h('em', {}, `HR interview ${M.formatDay(c.hrDate)}`) : null),
+      c.notes ? h('p', { class: 'small muted', style: 'white-space:pre-wrap' }, c.notes) : null,
+    );
+    const keys = s.rejectedAt === 'hr' ? ['hr_done', 'reject_call_hr', ...M.STEPS.slice(1).map((x) => x.key)] : M.STEPS.map((x) => x.key);
+    const steps = h(
+      'div',
+      { class: 'steps' },
+      keys.map((key) => {
+        const step = M.STEP_BY_KEY[key];
+        const e = s.done[key];
+        const onPath = s.path.includes(key);
+        let cls = 'up';
+        if (e) cls = e.outcome === 'reject' ? 'done rej' : 'done';
+        else if (s.next === key) cls = 'next';
+        else if (s.skipped.includes(key)) cls = 'skip';
+        else if (!onPath) cls = 'na';
+        const isOpen = ui.openStep === key;
+        let when = '';
+        if (e) when = M.formatDay(e.at.slice(0, 10));
+        else if (s.next === key) when = 'next';
+        else if (s.skipped.includes(key)) when = 'not recorded';
+        else if (!onPath) when = 'n/a';
+        return h(
+          'div',
+          { class: `${cls}${isOpen ? ' open' : ''}` },
+          h(
+            'button',
+            {
+              class: 'st',
+              'aria-expanded': isOpen,
+              onclick: () => {
+                ui.openStep = isOpen ? null : key;
+                rerender();
+              },
+            },
+            h('i', {}, e ? (e.outcome === 'reject' ? '✗' : '✓') : step.n),
+            h('span', {}, step.label, e && e.outcome ? ` · ${M.OUTCOME_LABELS[e.outcome]}` : ''),
+            h('span', { class: 'when' }, when),
+          ),
+          e && !isOpen ? entryDetail(e) : null,
+          isOpen ? stepForm(c, key, e) : null,
+        );
+      }),
+    );
+    return h(
+      'div',
+      { style: 'display:flex;flex-direction:column;gap:14px' },
+      header,
+      s.prompt ? h('p', { class: 'small' }, h('b', {}, 'Next: '), s.prompt) : null,
+      steps,
+      briefPanel(c, s),
+      notesSection(c),
+      candidateAdmin(c, s),
+    );
+  }
+
+  function entryDetail(e) {
+    const bits = [];
+    const d = e.data || {};
+    if (d.slotDate) bits.push(`${M.formatDay(d.slotDate)}${d.time ? ` ${d.time}` : ''}${d.room ? `, ${d.room}` : ''}`);
+    if (d.interviewers && d.interviewers.length) bits.push(d.interviewers.map((id) => interviewerLabel(id)).join(' + '));
+    if (d.availability) bits.push(`Availability: ${d.availability}`);
+    if (d.slots && d.slots.length) bits.push(d.slots.map((x) => `${M.formatDay(x.date)} ${x.from || ''}${x.to ? `-${x.to}` : ''}`.trim()).join(', '));
+    if (d.reason) bits.push(`Reason: ${d.reason}`);
+    if (e.note) bits.push(e.note);
+    return bits.length ? h('div', { class: 'detail' }, bits.join('\n')) : null;
+  }
+  function interviewerLabel(id) {
+    if (id === 'natalie') return 'Natalie (HR)';
+    const p = personById(id);
+    return p ? `${p.name} (${p.team})` : 'removed person';
+  }
+
+  function stepForm(c, key, existing) {
+    const step = M.STEP_BY_KEY[key];
+    const s = M.candidateState(c);
+    const round = step.round === 'advisor' ? campaign().rounds[0] : step.round === 'deepdive' ? campaign().rounds[1] : null;
+    const prev = existing || {};
+    const pd = prev.data || {};
+    // Keep what's been typed across re-renders (another note saved, data arriving).
+    ui.forms = ui.forms || {};
+    const fk = `${c.id}:${key}:${prev.id || 'new'}`;
+    const f = ui.forms[fk] || (ui.forms[fk] = {
+      at: (prev.at || TODAY).slice(0, 10),
+      outcome: prev.outcome || (step.outcome ? defaultOutcome(key, s) : null),
+      note: prev.note || '',
+      availability: pd.availability || '',
+      slots: pd.slots || [],
+      slotDate: pd.slotDate || '',
+      time: pd.time || '',
+      room: pd.room || ROOMS[0],
+      interviewers: pd.interviewers ? [...pd.interviewers] : ['', ''],
+      reason: pd.reason || '',
+    });
+    const forget = () => delete ui.forms[fk];
+    const wrap = h('div', { class: 'step-form' });
+    const err = h('p', { class: 'err-line' });
+    const box = h('div', { style: 'display:flex;flex-direction:column;gap:10px' });
+
+    function draw() {
+      const parts = [];
+      parts.push(h('div', { class: 'fg' }, h('label', { class: 'f' }, step.call ? 'Call date' : key.endsWith('booked') ? 'Booked on' : 'Date', h('input', { type: 'date', id: `sf-at-${key}`, value: f.at, oninput: (e) => (f.at = e.target.value) }))));
+      if (step.outcome) {
+        const opts = key === 'closed' ? closeOptions(s) : step.outcome;
+        parts.push(
+          h(
+            'div',
+            { class: 'radios', role: 'group', 'aria-label': 'Outcome' },
+            opts.map((o) =>
+              h(
+                'button',
+                {
+                  type: 'button',
+                  'aria-pressed': f.outcome === o,
+                  onclick: () => {
+                    f.outcome = o;
+                    draw();
+                  },
+                },
+                M.OUTCOME_LABELS[o],
+              ),
+            ),
+          ),
+        );
+      }
+      if (step.call) {
+        const told = s.rejectedAt ? 'Told them they are not moving on.' : key === 'final_call' ? 'Told them the final result.' : 'Told them they passed and asked for availability for the deep dive.';
+        parts.push(h('p', { class: 'small muted' }, told));
+      }
+      if (key === 'closed' && (f.outcome === 'withdrew' || f.outcome === 'no_show')) {
+        parts.push(h('label', { class: 'f' }, 'Reason', h('input', { id: 'sf-reason', value: f.reason, oninput: (e) => (f.reason = e.target.value) })));
+      }
+      if (step.fields && step.fields.includes('availability')) parts.push(availabilityFields(f, draw));
+      if (step.fields && step.fields.includes('slot')) parts.push(slotFields(f, round, draw));
+      parts.push(h('label', { class: 'f' }, 'Note', h('textarea', { id: `sf-note-${key}`, value: f.note, oninput: (e) => (f.note = e.target.value) })));
+      parts.push(err);
+      parts.push(
+        h(
+          'div',
+          { class: 'row end' },
+          existing ? h('button', { type: 'button', class: 'danger', onclick: () => removeStep(c, key) }, 'Remove step') : null,
+          h(
+            'button',
+            {
+              type: 'button',
+              onclick: () => {
+                forget();
+                ui.openStep = null;
+                rerender();
+              },
+            },
+            'Cancel',
+          ),
+          h('button', { type: 'button', class: 'p', onclick: save }, existing ? 'Save correction' : 'Save step'),
+        ),
+      );
+      fill(box, parts);
+    }
+
+    function save() {
+      if (step.outcome && !f.outcome) {
+        err.textContent = 'Pick an outcome.';
+        return;
+      }
+      if (step.fields && step.fields.includes('slot') && !f.slotDate) {
+        err.textContent = 'Add the interview date.';
+        return;
+      }
+      const data = {};
+      if (step.fields && step.fields.includes('availability')) {
+        data.availability = f.availability.trim();
+        if (f.slots.length) data.slots = f.slots;
+      }
+      if (step.fields && step.fields.includes('slot')) Object.assign(data, { slotDate: f.slotDate, time: f.time, room: f.room, interviewers: f.interviewers.filter(Boolean) });
+      if (f.reason) data.reason = f.reason.trim();
+      const entry = { id: S.uid('e'), step: key, at: f.at || TODAY, note: f.note.trim(), recordedAt: new Date().toISOString() };
+      if (f.outcome) entry.outcome = f.outcome;
+      if (Object.keys(data).length) entry.data = data;
+      const timeline = [...(c.timeline || []), entry];
+      const after = M.candidateState({ ...c, timeline });
+      forget();
+      ui.openStep = after.next;
+      saveCandidate(c, { timeline }, `${step.label} saved`).then(rerender);
+    }
+
+    draw();
+    wrap.append(box);
+    return wrap;
+  }
+
+  function defaultOutcome(key, s) {
+    if (key === 'closed') {
+      if (s.rejectedAt) return 'rejected';
+      if (s.done.deepdive_done && s.done.deepdive_done.outcome === 'hire') return 'hired';
+      return null;
+    }
+    return null;
+  }
+  function closeOptions(s) {
+    if (s.rejectedAt) return ['rejected', 'withdrew', 'no_show'];
+    if (s.done.deepdive_done && s.done.deepdive_done.outcome === 'hire') return ['hired', 'withdrew'];
+    return ['withdrew', 'no_show', 'rejected'];
+  }
+
+  function availabilityFields(f, draw) {
+    const status = h('p', { class: 'small muted' });
+    return h(
+      'div',
+      { style: 'display:flex;flex-direction:column;gap:6px' },
+      h('label', { class: 'f' }, 'Days and times for the next week (paste their email or type it)', h('textarea', { id: 'sf-avail', value: f.availability, oninput: (e) => (f.availability = e.target.value) })),
+      sample
+        ? h(
+            'div',
+            { class: 'row' },
+            h(
+              'button',
+              {
+                type: 'button',
+                onclick: async () => {
+                  if (!f.availability.trim()) {
+                    status.textContent = 'Paste their availability first.';
+                    return;
+                  }
+                  status.textContent = 'Claude is reading it…';
+                  try {
+                    const res = await sample.json(
+                      `Today is ${TODAY} (${M.formatDay(TODAY)}). A job candidate wrote when they can come in for a 1-hour interview. Turn it into a JSON array of {"date":"YYYY-MM-DD","from":"HH:MM","to":"HH:MM"} for the coming 14 days. Use "from":"09:00","to":"12:30" for a morning, "13:00"-"17:30" for an afternoon, "09:00"-"17:30" for a whole day. Reply with only the JSON array.\n\nCandidate wrote:\n${f.availability}`,
+                      { modelTier: 'quick' },
+                    );
+                    f.slots = (Array.isArray(res) ? res : []).filter((x) => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date)).map((x) => ({ date: x.date, from: M.normTime(x.from) || '', to: M.normTime(x.to) || '' }));
+                    draw();
+                  } catch (e) {
+                    status.textContent = e && e.code === 'not_granted' ? 'Claude isn’t allowed on this page. Type the days instead.' : 'Claude couldn’t read that. Keep the text as it is, or try again.';
+                  }
+                },
+              },
+              'Read with Claude',
+            ),
+            status,
+          )
+        : null,
+      f.slots.length
+        ? h(
+            'div',
+            { class: 'slots' },
+            f.slots.map((x, i) =>
+              h(
+                'span',
+                { class: 'chip accent' },
+                `${M.formatDay(x.date)} ${x.from}${x.to ? `-${x.to}` : ''}`,
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    class: 'link',
+                    'aria-label': 'Remove',
+                    onclick: () => {
+                      f.slots.splice(i, 1);
+                      draw();
+                    },
+                  },
+                  '×',
+                ),
+              ),
+            ),
+          )
+        : null,
+    );
+  }
+
+  function slotFields(f, round, draw) {
+    const role = round ? round.role : 'advisor';
+    const pool = people().filter((p) => p.active !== false && (M.personHasRole(p, role) || (role === 'teamlead' && (p.roles || []).includes('joker'))));
+    const snaps = snapshots();
+    function label(p) {
+      let note = '';
+      if (f.slotDate) {
+        const a = M.availabilityOn(snaps, p.id, role, f.slotDate);
+        if (!a) note = ' · not in a poll for this date';
+        else if (a.value === null) note = ' · no answer';
+        else note = ` · ${a.value === 'no' ? 'not available' : M.VALUES[a.value].label.toLowerCase()}${a.window ? ` (${a.window.from || ''}-${a.window.to || ''})` : ''}${a.tentative ? ', check first' : ''}`;
+      }
+      return `${p.name} (${p.team})${(p.roles || []).includes('joker') ? ' · joker' : ''}${note}`;
+    }
+    const problems = M.pairProblems(f.interviewers.filter((x) => x && x !== 'natalie'), people(), round ? { ...round, interviewers: 0 } : null);
+    if (f.interviewers.filter(Boolean).length < (round ? round.interviewers : 2)) problems.push(`Pick ${round ? round.interviewers : 2} interviewers.`);
+    const who = role === 'teamlead' ? 'Team lead' : 'Advisor';
+    return h(
+      'div',
+      { style: 'display:flex;flex-direction:column;gap:8px' },
+      h(
+        'div',
+        { class: 'fg' },
+        h(
+          'label',
+          { class: 'f' },
+          'Interview date',
+          h(
+            'input',
+            {
+              type: 'date',
+              id: 'sf-slot',
+              value: f.slotDate,
+              onchange: (e) => {
+                f.slotDate = e.target.value;
+                draw();
+              },
+            },
+          ),
+        ),
+        h('label', { class: 'f' }, 'Start time', h('input', { type: 'time', id: 'sf-time', value: f.time, step: 900, oninput: (e) => (f.time = e.target.value) })),
+        h('label', { class: 'f' }, 'Room', h('select', { id: 'sf-room', onchange: (e) => (f.room = e.target.value) }, ROOMS.map((r) => h('option', { selected: f.room === r }, r)))),
+      ),
+      h(
+        'div',
+        { class: 'fg' },
+        [0, 1].map((i) =>
+          h(
+            'label',
+            { class: 'f' },
+            `${who} ${i + 1}`,
+            h(
+              'select',
+              {
+                id: `sf-int-${i}`,
+                onchange: (e) => {
+                  f.interviewers[i] = e.target.value;
+                  draw();
+                },
+              },
+              h('option', { value: '' }, 'Choose…'),
+              pool.map((p) => h('option', { value: p.id, selected: f.interviewers[i] === p.id }, label(p))),
+              h('option', { value: 'natalie', selected: f.interviewers[i] === 'natalie' }, 'Natalie (HR, last resort)'),
+            ),
+          ),
+        ),
+      ),
+      problems.length ? h('p', { class: 'warn-line' }, problems.join(' ')) : h('p', { class: 'small muted' }, 'Different teams: OK.'),
+      !pool.length ? h('p', { class: 'warn-line' }, `No ${who.toLowerCase()}s on the roster yet.`) : null,
+    );
+  }
+
+  function removeStep(c, key) {
+    const timeline = (c.timeline || []).map((e) => (e.step === key && !e.voided ? { ...e, voided: true } : e));
+    ui.openStep = null;
+    saveCandidate(c, { timeline }, 'Step removed');
+  }
+
+  function candidateAdmin(c, s) {
+    const box = h('div', { style: 'display:flex;flex-direction:column;gap:10px' });
+    let mode = null;
+    function draw() {
+      const parts = [];
+      if (mode === 'edit') {
+        const f = { name: c.name, email: c.email || '', phone: c.phone || '', hrDate: c.hrDate || '', notes: c.notes || '' };
+        parts.push(
+          h(
+            'div',
+            { class: 'step-form', style: 'margin:0' },
+            h(
+              'div',
+              { class: 'fg' },
+              h('label', { class: 'f wide' }, 'Name', h('input', { id: 'ed-name', value: f.name, oninput: (e) => (f.name = e.target.value) })),
+              h('label', { class: 'f' }, 'Email', h('input', { id: 'ed-email', value: f.email, oninput: (e) => (f.email = e.target.value) })),
+              h('label', { class: 'f' }, 'Phone', h('input', { id: 'ed-phone', value: f.phone, oninput: (e) => (f.phone = e.target.value) })),
+              h('label', { class: 'f' }, 'HR interview date', h('input', { id: 'ed-hr', type: 'date', value: f.hrDate, oninput: (e) => (f.hrDate = e.target.value) })),
+              h('label', { class: 'f wide' }, 'Notes', h('textarea', { id: 'ed-notes', value: f.notes, oninput: (e) => (f.notes = e.target.value) })),
+            ),
+            h(
+              'div',
+              { class: 'row end' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  onclick: () => {
+                    mode = null;
+                    draw();
+                  },
+                },
+                'Cancel',
+              ),
+              h('button', { type: 'button', class: 'p', onclick: () => f.name.trim() && saveCandidate(c, { ...f, name: f.name.trim() }, 'Details saved') }, 'Save details'),
+            ),
+          ),
+        );
+      } else if (mode === 'delete') {
+        parts.push(
+          h(
+            'div',
+            { class: 'row' },
+            h('span', { class: 'err-line' }, `Delete ${c.name} and their whole timeline? This can’t be undone.`),
+            h(
+              'button',
+              {
+                onclick: () => {
+                  mode = null;
+                  draw();
+                },
+              },
+              'Keep',
+            ),
+            h(
+              'button',
+              {
+                class: 'danger',
+                onclick: () =>
+                  act(async () => {
+                    await S.remove('candidates', c.id);
+                    closeDrawer();
+                  }, 'Candidate deleted'),
+              },
+              'Delete',
+            ),
+          ),
+        );
+      } else {
+        parts.push(
+          h(
+            'div',
+            { class: 'row' },
+            h(
+              'button',
+              {
+                onclick: () => {
+                  mode = 'edit';
+                  draw();
+                },
+              },
+              'Edit details',
+            ),
+            s.status === 'open'
+              ? h(
+                  'button',
+                  {
+                    onclick: () => {
+                      ui.openStep = 'closed';
+                      rerender();
+                    },
+                  },
+                  'Withdraw or close',
+                )
+              : null,
+            h(
+              'button',
+              {
+                class: 'danger',
+                onclick: () => {
+                  mode = 'delete';
+                  draw();
+                },
+              },
+              'Delete',
+            ),
+          ),
+        );
+      }
+      fill(box, parts);
+    }
+    draw();
+    return box;
+  }
+
+
+  // ------------------------------------------------------------------
+  // Notes, feedback and Claude's interview brief
+  // ------------------------------------------------------------------
+  const NOTE_ROUNDS = [
+    ['general', 'General'],
+    ['hr', 'HR interview'],
+    ['advisor', 'Advisor interview'],
+    ['deepdive', 'Deep dive'],
+  ];
+  const names = {};
+  let me = null;
+  async function resolveNames(ids) {
+    const u = S.user;
+    const missing = ids.filter((id) => id && !(id in names));
+    if (!u || !missing.length) return;
+    missing.forEach((id) => (names[id] = ''));
+    try {
+      const ps = await u.profiles(missing);
+      for (const id of missing) names[id] = (ps[id] && ps[id].name) || '';
+      render();
+    } catch (e) {
+      /* names stay blank */
+    }
+  }
+  function authorName(n) {
+    if (n.authorId && me && n.authorId === me) return 'You';
+    return (n.authorId && names[n.authorId]) || n.authorLabel || 'A colleague';
+  }
+  const notesFor = (c) => S.state.notes.filter((n) => n.candidateId === c.id).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  function notesSection(c) {
+    const list = notesFor(c);
+    resolveNames([...new Set(list.map((n) => n.authorId))]);
+    const s = M.candidateState(c);
+    const f = { text: '', round: s.stage === 'deepdive' ? 'deepdive' : s.stage === 'advisor' ? 'advisor' : 'general', kind: 'note' };
+    const err = h('p', { class: 'err-line' });
+    return h(
+      'section',
+      { style: 'display:flex;flex-direction:column;gap:8px', 'aria-label': 'Notes and feedback' },
+      h('h3', {}, 'Notes and feedback'),
+      h(
+        'div',
+        { class: 'step-form', style: 'margin:0' },
+        h('textarea', { id: `note-text-${c.id}`, placeholder: 'What stood out, what to probe next round, your verdict and why…', oninput: (e) => (f.text = e.target.value) }),
+        h(
+          'div',
+          { class: 'row' },
+          h('select', { id: `note-round-${c.id}`, 'aria-label': 'About', onchange: (e) => (f.round = e.target.value) }, NOTE_ROUNDS.map(([k, l]) => h('option', { value: k, selected: f.round === k }, l))),
+          h('select', { id: `note-kind-${c.id}`, 'aria-label': 'Type', onchange: (e) => (f.kind = e.target.value) }, h('option', { value: 'note' }, 'Note'), h('option', { value: 'feedback' }, 'Interview feedback')),
+          h('span', { style: 'flex:1' }),
+          h(
+            'button',
+            {
+              class: 'p',
+              onclick: () => {
+                if (!f.text.trim()) return (err.textContent = 'Write something first.');
+                const doc = { candidateId: c.id, campaignId: c.campaignId, round: f.round, kind: f.kind, text: f.text.trim().slice(0, 4000), authorId: me || null, authorLabel: me ? '' : 'You (test mode)', createdAt: new Date().toISOString() };
+                act(() => S.add('notes', doc).then(rerender), 'Note added');
+              },
+            },
+            'Add note',
+          ),
+        ),
+        err,
+      ),
+      list.length
+        ? list.map((n) =>
+            h(
+              'div',
+              { class: 'tpanel', style: 'padding:8px 10px;display:flex;flex-direction:column;gap:3px' },
+              h(
+                'div',
+                { class: 'row small' },
+                h('b', {}, authorName(n)),
+                h('span', { class: `chip ${n.kind === 'feedback' ? 'accent' : ''}` }, n.kind === 'feedback' ? 'Feedback' : 'Note'),
+                h('span', { class: 'chip' }, (NOTE_ROUNDS.find((r) => r[0] === n.round) || ['', 'General'])[1]),
+                h('span', { class: 'faint mono' }, M.formatDay((n.createdAt || '').slice(0, 10))),
+                n.authorId === me || !n.authorId ? h('button', { class: 'link', style: 'margin-left:auto;font-size:12px', onclick: () => act(() => S.remove('notes', n.id), 'Note deleted') }, 'Delete') : null,
+              ),
+              h('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere' }, n.text),
+            ),
+          )
+        : h('p', { class: 'small muted' }, 'No notes yet. Natalie, advisors and team leads can all add them; they feed the interview brief.'),
+    );
+  }
+
+  const briefs = {}; // candidate id -> { text, busy, error, focus, round }
+  function briefPanel(c, s) {
+    if (!sample) return null;
+    const b = (briefs[c.id] = briefs[c.id] || { text: '', busy: false, error: '', focus: '', round: s.stage === 'deepdive' ? 'deepdive' : 'advisor' });
+    const out = h('div', { class: 'small', style: 'white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5' }, b.text);
+    const status = h('p', { class: b.error ? 'err-line' : 'small muted' }, b.error || (b.busy ? 'Claude is writing the brief…' : ''));
+    async function run() {
+      b.busy = true;
+      b.error = '';
+      b.text = '';
+      status.className = 'small muted';
+      status.textContent = 'Claude is writing the brief…';
+      out.textContent = '';
+      if (b.ctrl) b.ctrl.abort();
+      b.ctrl = new AbortController();
+      try {
+        const res = await sample(buildBriefPrompt(c, b.round, b.focus), {
+          modelTier: 'default',
+          signal: b.ctrl.signal,
+          onText: ({ text }) => {
+            b.text = text;
+            out.textContent = text;
+          },
+        });
+        b.text = res.text;
+        out.textContent = res.text;
+        status.textContent = res.truncated ? 'The brief was cut short.' : '';
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        b.error = e && e.code === 'not_granted' ? 'Claude isn’t allowed on this page.' : e && e.code === 'rate_limited' ? 'Claude is busy. Try again in a minute.' : 'Claude couldn’t write the brief. Try again.';
+        status.className = 'err-line';
+        status.textContent = b.error;
+      } finally {
+        b.busy = false;
+      }
+    }
+    return h(
+      'section',
+      { class: 'tpanel', style: 'padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:var(--s1)', 'aria-label': 'Interview brief' },
+      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h3', {}, 'Interview brief'), h('span', { class: 'small muted' }, 'by Claude, from the notes and timeline')),
+      h(
+        'div',
+        { class: 'row' },
+        h('select', { id: `brief-round-${c.id}`, 'aria-label': 'For which interview', onchange: (e) => (b.round = e.target.value) }, h('option', { value: 'advisor', selected: b.round === 'advisor' }, 'For the advisor interview'), h('option', { value: 'deepdive', selected: b.round === 'deepdive' }, 'For the deep dive')),
+        h('input', { id: `brief-focus-${c.id}`, style: 'flex:1;min-width:160px', placeholder: 'What do you want to dig into? (optional)', value: b.focus, oninput: (e) => (b.focus = e.target.value) }),
+        h('button', { class: 'p', onclick: run }, b.text ? 'Brief me again' : 'Brief me'),
+      ),
+      status,
+      out,
+    );
+  }
+
+  function buildBriefPrompt(c, round, focus) {
+    const s = M.candidateState(c);
+    const timeline = (c.timeline || [])
+      .filter((e) => !e.voided)
+      .map((e) => {
+        const step = M.STEP_BY_KEY[e.step];
+        const d = e.data || {};
+        return `- ${e.at.slice(0, 10)} ${step ? step.label : e.step}${e.outcome ? ` (${M.OUTCOME_LABELS[e.outcome]})` : ''}${e.note ? `: ${e.note}` : ''}${d.availability ? ` | availability: ${d.availability}` : ''}${d.interviewers ? ` | interviewers: ${d.interviewers.map(interviewerLabel).join(', ')}` : ''}`;
+      })
+      .join('\n');
+    const notes = notesFor(c)
+      .reverse()
+      .map((n) => `- ${(n.createdAt || '').slice(0, 10)} ${authorName(n)} [${n.kind === 'feedback' ? 'interview feedback' : 'note'}, ${(NOTE_ROUNDS.find((r) => r[0] === n.round) || ['', 'general'])[1]}]: ${n.text}`)
+      .join('\n');
+    const roundText = round === 'deepdive' ? 'the final-round deep dive with two team leads (1 hour, in person)' : 'the advisor interview with two advisors from different teams (1 hour, in person)';
+    return [
+      'You help interviewers at Flux Partners, a Dutch consultancy that hires trainees into tender, project, contract and stakeholder management teams.',
+      `Write a short brief for ${roundText}. The reader opens it minutes before the interview.`,
+      'Use exactly these headings, each followed by 2 to 5 short bullet points:',
+      'What matters most',
+      'What colleagues noted',
+      'What to dig into',
+      'Questions to ask',
+      'Base everything on the record below. Attribute colleague observations to their author. Do not invent facts; if the record is thin, say so in one bullet and suggest what to find out. Keep it under 250 words. Plain text, no Markdown symbols other than "- " bullets. Notes may be in Dutch; write the brief in English.',
+      focus ? `The interviewer wants to focus on: ${focus}` : '',
+      '',
+      `Candidate: ${c.name}`,
+      `Current stage: ${s.stage}; next step: ${s.prompt || 'none'}`,
+      c.notes ? `Natalie's intake notes: ${c.notes}` : '',
+      'Timeline:',
+      timeline || '- nothing recorded yet',
+      'Notes and feedback:',
+      notes || '- none yet',
+    ]
+      .filter((x) => x !== '')
+      .join('\n');
+  }
+
+  // ------------------------------------------------------------------
+  // Availability: import + saved snapshots, shown like the sheet
+  // ------------------------------------------------------------------
+  const NL = { all: 'Hele dag', am: 'Ochtend', pm: 'Middag', no: 'Niet' };
+
+  function availabilityView() {
+    if (ui.draft) return importView();
+    const snaps = snapshots();
+    const snap = snaps.find((s) => s.id === ui.snapId) || snaps[0];
+    return [
+      h(
+        'div',
+        { class: 'section gutter' },
+        h(
+          'div',
+          { class: 'head' },
+          h('div', {}, h('h1', {}, 'Availability'), h('p', {}, 'Import the monthly poll as it is. Claude reads the remarks, you confirm them, and each import is saved as a dated snapshot.')),
+          snaps.length
+            ? h(
+                'label',
+                { class: 'f' },
+                'Snapshot',
+                h(
+                  'select',
+                  {
+                    id: 'snap-pick',
+                    onchange: (e) => {
+                      ui.snapId = e.target.value;
+                      ui.sheetIdx = 0;
+                      rerender();
+                    },
+                  },
+                  snaps.map((s, i) => h('option', { value: s.id, selected: snap && s.id === snap.id }, `Poll of ${M.formatDay(s.pollDate, { year: true })}${i === 0 ? ' (latest)' : ''}`)),
+                ),
+              )
+            : null,
+        ),
+        dropZone(),
+      ),
+      snap ? snapshotSheet(snap) : h('div', { class: 'empty gutter' }, h('p', {}, 'No poll imported yet for this campaign.')),
+    ];
+  }
+
+  function dropZone() {
+    const input = h('input', { type: 'file', id: 'poll-file', accept: '.xlsx,.xls,.csv', hidden: true, onchange: (e) => e.target.files[0] && readPoll(e.target.files[0]) });
+    const zone = h(
+      'div',
+      {
+        class: 'drop',
+        ondragover: (e) => {
+          e.preventDefault();
+          zone.classList.add('over');
+        },
+        ondragleave: () => zone.classList.remove('over'),
+        ondrop: (e) => {
+          e.preventDefault();
+          zone.classList.remove('over');
+          const file = e.dataTransfer.files[0];
+          if (file) readPoll(file);
+        },
+      },
+      h('b', {}, 'Drop the poll xlsx here'),
+      h('span', { class: 'small muted' }, 'Both tabs are read: advisors (competentiegesprekken) and team leads (Deepdive).'),
+      h('button', { class: 'p', onclick: () => input.click() }, 'Choose file'),
+      ui.error ? h('p', { class: 'err-line' }, ui.error) : null,
+      input,
+    );
+    return zone;
+  }
+
+  async function readPoll(file) {
+    ui.error = null;
+    if (!window.XLSX) {
+      ui.error = 'The spreadsheet reader didn’t load. Check your connection and reload the page.';
+      rerender();
+      return;
+    }
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = window.XLSX.read(buf, { type: 'array' });
+      const sheets = wb.SheetNames.map((name) => ({ name, rows: window.XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: null }) }));
+      const pollDate = M.pollDateFromFileName(file.name) || TODAY;
+      startDraft(sheets, file.name, pollDate);
+    } catch (e) {
+      ui.error = `Couldn’t read ${file.name}. Is it the poll xlsx?`;
+      rerender();
+    }
+  }
+
+  function startDraft(sheets, fileName, pollDate) {
+    const draft = M.parsePoll(sheets, { pollDate });
+    if (!draft.tabs.length) {
+      ui.error = `${fileName} has no tab with a "Naam" column, so there’s nothing to import.`;
+      rerender();
+      return;
+    }
+    ui.draft = { sheets, fileName, draft, decisions: {}, rules: [], claude: null, editing: null };
+    ui.sheetIdx = 0;
+    rerender();
+  }
+
+  function importView() {
+    const D = ui.draft;
+    const review = M.reviewDraft(D.draft, S.state.people, D.decisions);
+    const pendingRules = D.rules.filter((r) => r.status === 'pending').length;
+    const remarks = D.draft.tabs.reduce((n, t) => n + t.entries.filter((e) => e.remark).length, 0);
+    const canSave = review.blocking === 0 && pendingRules === 0;
+    const why = review.blocking ? `Fix ${plural(review.blocking, 'name')} first.` : pendingRules ? `Confirm or dismiss ${plural(pendingRules, 'remark suggestion')} first.` : '';
+    return [
+      h(
+        'div',
+        { class: 'section gutter', style: 'padding-bottom:10px' },
+        h(
+          'div',
+          { class: 'head' },
+          h('div', {}, h('h1', {}, 'Check the import'), h('p', {}, `${D.fileName} · ${M.formatDay(D.draft.from)} to ${M.formatDay(D.draft.to, { year: true })} · ${plural(D.draft.tabs.reduce((n, t) => n + t.entries.length, 0), 'person', 'people')}`)),
+          h(
+            'div',
+            { class: 'row' },
+            h(
+              'label',
+              { class: 'f' },
+              'Poll date',
+              h('input', {
+                type: 'date',
+                id: 'poll-date',
+                value: D.draft.pollDate,
+                onchange: (e) => {
+                  if (!e.target.value) return;
+                  const keep = { decisions: D.decisions, rules: D.rules };
+                  D.draft = M.parsePoll(D.sheets, { pollDate: e.target.value });
+                  Object.assign(D, keep);
+                  rerender();
+                },
+              }),
+            ),
+            h(
+              'button',
+              {
+                onclick: () => {
+                  ui.draft = null;
+                  rerender();
+                },
+              },
+              'Discard',
+            ),
+            remarks && sample ? h('button', { onclick: readRemarks, disabled: D.claude === 'busy' }, D.claude === 'busy' ? 'Claude is reading…' : D.claude === 'done' ? 'Read remarks again' : `Read ${plural(remarks, 'remark')} with Claude`) : null,
+            h('button', { class: 'p', disabled: !canSave, onclick: () => saveSnapshot(review) }, 'Save snapshot'),
+          ),
+        ),
+        why ? h('p', { class: 'warn-line' }, why) : null,
+        typeof D.claude === 'string' && D.claude.startsWith('error:') ? h('p', { class: 'err-line' }, D.claude.slice(6)) : null,
+        !sample && remarks ? h('p', { class: 'small muted' }, 'Claude isn’t available here, so add remark rules by hand with “+ Rule” next to each remark.') : null,
+      ),
+      fixList(review),
+      pollSheet(
+        D.draft.tabs.map((t) => ({
+          sheet: t.sheet,
+          role: t.role,
+          dates: t.dates,
+          rows: t.entries
+            .filter((e) => !review.matches[e.key].skipped)
+            .map((e) => ({ key: e.key, name: e.name, team: e.team, remark: e.remark, cells: e.cells, rules: D.rules.filter((r) => r.entryKey === e.key), person: review.matches[e.key].person })),
+        })),
+        true,
+      ),
+    ];
+  }
+
+  function fixList(review) {
+    const D = ui.draft;
+    const block = review.issues.filter((i) => i.severity === 'block');
+    const warn = review.issues.filter((i) => i.severity === 'warn');
+    const info = review.issues.filter((i) => i.severity === 'info');
+    if (!review.issues.length) return h('div', { class: 'fixes gutter', style: 'background:var(--avail-soft)' }, h('div', { class: 'fix' }, 'Every name matches the roster.'));
+    const entryOf = (key) => D.draft.tabs.flatMap((t) => t.entries.map((e) => ({ e, t }))).find((x) => x.e.key === key);
+    const decide = (key, dec) => {
+      D.decisions[key] = { ...(D.decisions[key] || {}), ...dec };
+      rerender();
+    };
+    const line = (i) => {
+      const actions = [];
+      if (i.kind === 'unknown_name') {
+        const { e, t } = entryOf(i.key);
+        for (const p of i.suggestions) actions.push(h('button', { class: 'link', onclick: () => decide(i.key, { action: 'match', personId: p.id }) }, `It’s ${p.name} (${p.team}, ${roleLabel(p)})`));
+        actions.push(h('button', { class: 'link', onclick: () => decide(i.key, { action: 'add', role: t.role || 'advisor' }) }, `Add ${e.name.trim()} as ${t.role === 'teamlead' ? 'team lead' : 'advisor'}, ${e.team || 'no team'}`));
+        actions.push(h('button', { class: 'link', onclick: () => decide(i.key, { action: 'skip' }) }, 'Skip this row'));
+      }
+      if (i.kind === 'team_mismatch') {
+        const { e } = entryOf(i.key);
+        actions.push(h('button', { class: 'link', onclick: () => decide(i.key, { updateTeam: e.team, keepTeam: true }) }, `Update roster to ${e.team}`));
+        actions.push(h('button', { class: 'link', onclick: () => decide(i.key, { keepTeam: true }) }, `Keep ${personById(i.personId).team}`));
+      }
+      return h('div', { class: 'fix' }, h('span', { class: `sev ${i.severity}` }, i.severity === 'block' ? 'Fix' : 'Check'), h('span', {}, i.message), actions);
+    };
+    const added = Object.entries(D.decisions).filter(([, d]) => d.action === 'add' || d.updateTeam || d.action === 'skip' || d.action === 'match');
+    return h(
+      'div',
+      { class: 'fixes gutter' },
+      block.map(line),
+      warn.map(line),
+      added.length
+        ? h(
+            'div',
+            { class: 'fix' },
+            h('span', { class: 'sev', style: 'color:var(--muted)' }, 'Done'),
+            added.map(([key, d]) => {
+              const x = entryOf(key);
+              const name = x ? x.e.name.trim() : key;
+              const what = d.action === 'add' ? `${name}: add to roster` : d.action === 'skip' ? `${name}: skipped` : d.action === 'match' ? `${name} = ${(personById(d.personId) || {}).name}` : `${name}: roster team → ${d.updateTeam}`;
+              return h('span', {}, what, ' ', h('button', { class: 'link', onclick: () => { delete D.decisions[key]; rerender(); } }, 'undo'), ' ·');
+            }),
+          )
+        : null,
+      info.length ? h('details', {}, h('summary', {}, `FYI: ${plural(info.length, 'note')} (blanks, all “Niet”, values read loosely, people missing from the sheet)`), info.map((i) => h('div', { class: 'fix' }, h('span', {}, '·'), h('span', {}, i.message)))) : null,
+    );
+  }
+
+  function roleLabel(p) {
+    const r = p.roles || [];
+    return r.includes('joker') ? 'joker' : r.includes('teamlead') ? 'team lead' : 'advisor';
+  }
+
+  async function readRemarks() {
+    const D = ui.draft;
+    const { prompt, count } = M.buildRemarkPrompt(D.draft);
+    if (!count || !sample) return;
+    D.claude = 'busy';
+    rerender();
+    try {
+      const raw = await sample.json(prompt, { modelTier: 'default' });
+      const fresh = M.cleanRemarkSuggestions(raw, D.draft);
+      // Keep anything Natalie already decided; replace pending Claude suggestions.
+      D.rules = [...D.rules.filter((r) => r.status !== 'pending' || r.source !== 'claude'), ...fresh];
+      D.claude = 'done';
+      toast(fresh.length ? `Claude suggested ${plural(fresh.length, 'rule')}. Confirm or edit each one.` : 'Claude found nothing in the remarks that changes availability.');
+    } catch (e) {
+      D.claude = `error:${e && e.code === 'not_granted' ? 'Claude isn’t allowed on this page, so add rules by hand.' : e && e.code === 'rate_limited' ? 'Claude is busy. Try again in a minute.' : 'Claude couldn’t read the remarks this time. Try again, or add rules by hand.'}`;
+      rerender();
+    }
+  }
+
+  async function saveSnapshot(review) {
+    const D = ui.draft;
+    await act(async () => {
+      // Roster changes first, so new rows get their person ids.
+      for (const tab of D.draft.tabs) {
+        for (const e of tab.entries) {
+          const dec = D.decisions[e.key];
+          if (!dec) continue;
+          if (dec.action === 'add') {
+            const id = await S.add('people', { name: e.name.trim(), team: e.team, roles: [dec.role || tab.role || 'advisor'], aliases: [], active: true, email: '', createdAt: new Date().toISOString() });
+            review.matches[e.key] = { person: { id }, skipped: false };
+          }
+          if (dec.updateTeam && review.matches[e.key].person) await S.update('people', review.matches[e.key].person.id, { team: dec.updateTeam });
+          // Remember how this person writes their name on the sheet.
+          const m = review.matches[e.key];
+          if (dec.action === 'match' && m.person) {
+            const p = personById(m.person.id);
+            const alias = e.name.trim();
+            if (p && M.normName(alias) !== M.normName(p.name) && !(p.aliases || []).map(M.normName).includes(M.normName(alias))) await S.update('people', p.id, { aliases: [...(p.aliases || []), alias] });
+          }
+        }
+      }
+      const snap = M.buildSnapshot(D.draft, review, D.rules, { campaignId: campaign().id, fileName: D.fileName });
+      const id = await S.add('snapshots', snap);
+      ui.draft = null;
+      ui.snapId = id;
+      ui.sheetIdx = 0;
+      rerender();
+    }, 'Snapshot saved');
+  }
+
+  function snapshotSheet(snap) {
+    const tabs = snap.tabs.map((t) => ({ ...t, rows: t.rows.map((r, i) => ({ ...r, key: `${t.sheet}:${i}`, person: r.personId ? personById(r.personId) : null })) }));
+    const st = snap.stats || M.snapshotStats(snap);
+    return [
+      h('div', { class: 'gutter', style: 'padding-bottom:10px' }, h('p', { class: 'small muted' }, `${snap.fileName || 'Poll'} · imported ${M.formatDay(snap.importedAt.slice(0, 10))} · ${st.responded} of ${st.people} answered · ${st.halfDays} half-days offered`, ' ', deleteSnapButton(snap))),
+      pollSheet(tabs, false),
+    ];
+  }
+
+  function deleteSnapButton(snap) {
+    const holder = h('span');
+    const draw = (confirm) =>
+      holder.replaceChildren(
+        confirm
+          ? h('span', {}, 'Delete this snapshot? ', h('button', { class: 'link', onclick: () => draw(false) }, 'Keep'), ' ', h('button', { class: 'link danger', onclick: () => act(() => S.remove('snapshots', snap.id), 'Snapshot deleted') }, 'Delete'))
+          : h('button', { class: 'link', onclick: () => draw(true) }, 'Delete snapshot'),
+      );
+    draw(false);
+    return holder;
+  }
+
+  /** The poll, shown the way the xlsx looks: Naam, Team, one column per day, Opmerking. */
+  function pollSheet(tabs, editable) {
+    if (!tabs.length) return null;
+    const idx = Math.min(ui.sheetIdx, tabs.length - 1);
+    const full = tabs[idx];
+    // Past weeks rarely matter when planning; hide them unless asked.
+    const fromDay = M.weekStart(TODAY);
+    const hiddenDays = full.dates.filter((d) => d < fromDay).length;
+    const showAll = ui.showPast || hiddenDays === full.dates.length;
+    const t = { ...full, dates: showAll ? full.dates : full.dates.filter((d) => d >= fromDay) };
+    const head = h(
+      'tr',
+      {},
+      h('th', { class: 'rn' }),
+      h('th', {}, 'Naam'),
+      h('th', {}, 'Team'),
+      t.dates.map((d) => h('th', { class: M.weekdayOf(d) === 5 ? 'fri' : '', style: 'text-align:center' }, `${M.WEEKDAYS_NL[M.weekdayOf(d)]} ${short(d)}`)),
+      h('th', {}, 'Opmerking'),
+    );
+    const body = t.rows.map((r, i) =>
+      h(
+        'tr',
+        {},
+        h('td', { class: 'rn' }, i + 1),
+        h('td', { class: 'name' }, r.name, r.person && M.normName(r.person.name) !== M.normName(r.name) ? h('span', { class: 'faint small' }, ` = ${r.person.name}`) : null),
+        h('td', { class: 'team' }, r.team),
+        t.dates.map((d) => pollCell(r, d, editable)),
+        h('td', { class: 'rem' }, r.remark || '', remarkRules(r, t, editable)),
+      ),
+    );
+    const sum = h(
+      'tr',
+      { class: 'sum' },
+      h('td', { class: 'rn' }),
+      h('td', { style: 'text-align:left' }, 'Free (pair?)'),
+      h('td'),
+      t.dates.map((d) => {
+        const c = M.dayCoverage(t.rows.map((r) => ({ ...r, rules: (r.rules || []).filter((x) => x.status === 'confirmed') })), d);
+        const ok = c.pairAm || c.pairPm;
+        return h('td', { class: ok ? 'ok' : '', title: `Morning ${c.am}${c.pairAm ? ' (pair possible)' : ''}, afternoon ${c.pm}${c.pairPm ? ' (pair possible)' : ''}` }, `${c.people}${ok ? ' ✓' : ''}`);
+      }),
+      h('td', { style: 'text-align:left;font-family:var(--font-ui)' }, '✓ = two people from different teams are free in the same half-day'),
+    );
+    const pastToggle = hiddenDays
+      ? h(
+          'div',
+          { class: 'gutter small muted', style: 'padding-block:6px' },
+          showAll ? `Showing all ${full.dates.length} poll days. ` : `Showing this week onward; ${plural(hiddenDays, 'earlier day')} hidden. `,
+          h('button', { class: 'link', onclick: () => ((ui.showPast = !ui.showPast), rerender()) }, showAll ? 'Hide earlier days' : 'Show earlier days'),
+        )
+      : null;
+    return [
+      pastToggle,
+      h('div', { class: 'sheet-wrap' }, h('table', { class: 'x' }, h('thead', {}, head), h('tbody', {}, body, sum))),
+      h(
+        'div',
+        { class: 'sheet-tabs' },
+        tabs.map((x, i) =>
+          h(
+            'button',
+            {
+              'aria-pressed': i === idx,
+              onclick: () => {
+                ui.sheetIdx = i;
+                rerender();
+              },
+            },
+            x.sheet,
+          ),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'section gutter' },
+        h(
+          'div',
+          { class: 'legend' },
+          h('span', {}, h('span', { class: 'sw', style: 'background:var(--avail)' }), 'Hele dag'),
+          h('span', {}, h('span', { class: 'sw', style: 'background:var(--avail-soft)' }), 'Ochtend or Middag'),
+          h('span', {}, h('span', { class: 'sw', style: 'background:var(--no)' }), 'Niet'),
+          h('span', {}, h('span', { class: 'sw', style: 'background:repeating-linear-gradient(135deg, transparent 0 4px, var(--s2) 4px 8px)' }), 'No answer (unknown, not unavailable)'),
+          h('span', {}, h('span', { class: 'sw', style: 'box-shadow:inset 0 0 0 2px var(--accent)' }), 'Narrowed by a remark'),
+          h('span', {}, h('span', { class: 'sw', style: 'box-shadow:inset 0 0 0 2px var(--warn)' }), 'Check first'),
+          h('span', {}, h('span', { class: 'sw', style: 'box-shadow:inset 0 0 0 2px var(--bad)' }), 'Not available per remark'),
+        ),
+      ),
+    ];
+  }
+
+  function pollCell(r, d, editable) {
+    const v = r.cells[d];
+    const rules = (r.rules || []).filter((x) => x.dates.includes(d) && x.status !== 'dismissed');
+    const confirmed = rules.filter((x) => x.status === 'confirmed');
+    const eff = M.effectiveCell(v, confirmed, d);
+    let cls = `v ${eff.value || 'null'}`;
+    let sub = null;
+    if (eff.window) {
+      cls += eff.window.kind === 'unavailable' ? ' unav' : ' win';
+      sub = `${eff.window.from || ''}-${eff.window.to || ''}`;
+    } else if (eff.value === 'no' && v !== 'no') cls += ' unav';
+    if (eff.tentative) cls += ' ten';
+    if (editable && rules.some((x) => x.status === 'pending')) cls += ' pend';
+    const title = rules.map((x) => `${x.status === 'pending' ? 'Suggested: ' : ''}${x.summary}`).join('\n') || null;
+    return h('td', { class: cls, title }, eff.value ? NL[eff.value] : '', sub ? h('small', {}, sub) : null);
+  }
+
+  function remarkRules(r, t, editable) {
+    const rules = r.rules || [];
+    const D = ui.draft;
+    const out = rules.map((rule) => {
+      if (editable && D.editing === rule.id) return ruleEditor(rule, t.dates);
+      const tone = rule.status === 'confirmed' ? 'ok' : rule.status === 'dismissed' ? 'off' : '';
+      const label = rule.status === 'pending' ? `${rule.source === 'claude' ? 'Claude' : 'You'}: ${rule.summary}` : rule.status === 'confirmed' ? `✓ ${rule.summary}` : rule.summary;
+      return h(
+        'div',
+        { class: `ai ${tone}`, title: M.describeRule(rule) },
+        h('span', {}, label),
+        editable && rule.status === 'pending' ? h('button', { class: 'p', onclick: () => setRule(rule, { status: 'confirmed' }) }, 'Confirm') : null,
+        editable && rule.status !== 'dismissed' ? h('button', { class: 'link', onclick: () => ((D.editing = rule.id), rerender()) }, 'Edit') : null,
+        editable && rule.status === 'pending' ? h('button', { class: 'link', onclick: () => setRule(rule, { status: 'dismissed' }) }, 'Dismiss') : null,
+        editable && rule.status !== 'pending' ? h('button', { class: 'link', onclick: () => setRule(rule, { status: 'pending' }) }, 'Undo') : null,
+      );
+    });
+    if (editable && r.remark) {
+      out.push(
+        h(
+          'div',
+          {},
+          h(
+            'button',
+            {
+              class: 'link',
+              style: 'font-size:11.5px',
+              onclick: () => {
+                const rule = { id: S.uid('r'), entryKey: r.key, kind: 'window', dates: [], from: null, to: null, summary: '', quote: '', source: 'manual', status: 'pending' };
+                D.rules.push(rule);
+                D.editing = rule.id;
+                rerender();
+              },
+            },
+            '+ Rule',
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
+  function setRule(rule, patch) {
+    Object.assign(rule, patch);
+    rerender();
+  }
+
+  function ruleEditor(rule, dates) {
+    const f = { ...rule, dates: [...rule.dates] };
+    const box = h('div', { class: 'rule-edit' });
+    function draw() {
+      fill(box, 
+        h(
+          'div',
+          { class: 'row' },
+          h('select', { id: `re-kind-${rule.id}`, 'aria-label': 'Kind', onchange: (e) => ((f.kind = e.target.value), draw()) }, Object.entries(M.RULE_KINDS).map(([k, v]) => h('option', { value: k, selected: f.kind === k }, v))),
+          f.kind === 'window' || f.kind === 'unavailable'
+            ? [h('input', { type: 'time', id: `re-from-${rule.id}`, 'aria-label': 'From', value: f.from || '', oninput: (e) => (f.from = e.target.value || null) }), h('span', {}, 'to'), h('input', { type: 'time', id: `re-to-${rule.id}`, 'aria-label': 'To', value: f.to || '', oninput: (e) => (f.to = e.target.value || null) })]
+            : null,
+        ),
+        h(
+          'div',
+          { class: 'toggles', role: 'group', 'aria-label': 'Days' },
+          dates.map((d) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                'aria-pressed': f.dates.includes(d),
+                onclick: () => {
+                  f.dates = f.dates.includes(d) ? f.dates.filter((x) => x !== d) : [...f.dates, d].sort();
+                  draw();
+                },
+              },
+              `${M.WEEKDAYS_NL[M.weekdayOf(d)]} ${short(d)}`,
+            ),
+          ),
+        ),
+        h('input', { id: `re-sum-${rule.id}`, placeholder: 'Summary Natalie reads, e.g. Fri 4 Dec only 14:00-15:30', value: f.summary, oninput: (e) => (f.summary = e.target.value) }),
+        h(
+          'div',
+          { class: 'row end' },
+          h(
+            'button',
+            {
+              type: 'button',
+              onclick: () => {
+                if (rule.source === 'manual' && !rule.summary) ui.draft.rules = ui.draft.rules.filter((x) => x !== rule);
+                ui.draft.editing = null;
+                rerender();
+              },
+            },
+            'Cancel',
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              class: 'p',
+              onclick: () => {
+                if (f.kind !== 'note' && !f.dates.length) return;
+                Object.assign(rule, { kind: f.kind, dates: f.dates, from: f.kind === 'window' || f.kind === 'unavailable' ? f.from : null, to: f.kind === 'window' || f.kind === 'unavailable' ? f.to : null, summary: f.summary.trim() || M.describeRule(f), status: 'confirmed' });
+                ui.draft.editing = null;
+                rerender();
+              },
+            },
+            'Save and confirm',
+          ),
+        ),
+      );
+    }
+    draw();
+    return box;
+  }
+
+  // ------------------------------------------------------------------
+  // Roster
+  // ------------------------------------------------------------------
+  function rosterView() {
+    const ps = people();
+    const latest = snapshots()[0];
+    const pollInfo = (p) => {
+      if (!latest) return '';
+      for (const t of latest.tabs) {
+        const r = t.rows.find((x) => x.personId === p.id);
+        if (!r) continue;
+        const vals = t.dates.map((d) => r.cells[d]);
+        if (vals.every((v) => v === null)) return 'no response';
+        const hd = vals.reduce((n, v) => n + (v === 'all' ? 2 : v === 'am' || v === 'pm' ? 1 : 0), 0);
+        return `${hd} half-days`;
+      }
+      return 'not on the poll';
+    };
+    const load = {};
+    for (const c of S.state.candidates) {
+      for (const e of c.timeline || []) {
+        if (e.voided || !e.data || !e.data.interviewers) continue;
+        for (const id of e.data.interviewers) load[id] = (load[id] || 0) + 1;
+      }
+    }
+    const groups = [
+      ['advisor', 'Advisors'],
+      ['teamlead', 'Team leads'],
+      ['joker', 'Joker (HR)'],
+    ];
+    const counts = (role) => M.TEAM_CODES.map((t) => [t, ps.filter((p) => p.active !== false && (p.roles || []).includes(role) && p.team === t).length]).filter(([, n]) => n);
+    const rows = [];
+    for (const [role, label] of groups) {
+      const list = ps.filter((p) => (role === 'advisor' ? (p.roles || []).includes('advisor') : role === 'teamlead' ? (p.roles || []).includes('teamlead') && !(p.roles || []).includes('advisor') : (p.roles || []).includes('joker') && !(p.roles || []).includes('teamlead')));
+      if (!list.length) continue;
+      rows.push(h('tr', { class: 'group' }, h('td', { colspan: 8 }, `${label} · ${list.filter((p) => p.active !== false).length} active · ${counts(role).map(([t, n]) => `${t} ${n}`).join(', ')}`)));
+      for (const p of list) {
+        if (ui.rosterEdit === p.id) {
+          rows.push(h('tr', {}, h('td', { colspan: 8 }, personForm(p))));
+          continue;
+        }
+        rows.push(
+          h(
+            'tr',
+            { class: p.active === false ? 'inactive' : '' },
+            h('td', { class: 'name' }, h('button', { onclick: () => ((ui.rosterEdit = p.id), rerender()) }, p.name)),
+            h('td', { class: 'team' }, p.team),
+            h('td', {}, (p.roles || []).map((r) => (M.ROLES.find((x) => x.key === r) || { label: r }).label).join(', ')),
+            h('td', { class: 'small muted' }, (p.aliases || []).join(', ')),
+            h('td', { class: 'small' }, p.email || ''),
+            h('td', { class: 'small' }, pollInfo(p)),
+            h('td', { class: 'mono', style: 'text-align:center' }, load[p.id] || ''),
+            h('td', { class: 'small' }, p.active === false ? 'Inactive' : 'Active'),
+          ),
+        );
+      }
+    }
+    return [
+      h(
+        'div',
+        { class: 'section gutter' },
+        h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Roster'), h('p', {}, 'Everyone who interviews, across all campaigns. Interview counts are shared, so nobody gets overloaded by two drives at once.')), h('button', { class: 'p', onclick: () => ((ui.rosterEdit = 'new'), rerender()) }, '+ Person')),
+        ui.rosterEdit === 'new' ? personForm(null) : null,
+      ),
+      ps.length
+        ? h(
+            'div',
+            { class: 'sheet-wrap' },
+            h(
+              'table',
+              { class: 'x' },
+              h('thead', {}, h('tr', {}, ['Name', 'Team', 'Role', 'Also written as', 'Email', latest ? `Poll of ${M.formatDay(latest.pollDate)}` : 'Latest poll', 'Interviews', 'Status'].map((x) => h('th', {}, x)))),
+              h('tbody', {}, rows),
+            ),
+          )
+        : h('div', { class: 'empty gutter' }, h('p', {}, 'No one on the roster yet. Import a poll and add people from it, or add them here.')),
+    ];
+  }
+
+  function personForm(p) {
+    const f = { name: p ? p.name : '', team: p ? p.team : 'TM', roles: p ? [...(p.roles || [])] : ['advisor'], aliases: p ? (p.aliases || []).join(', ') : '', email: p ? p.email || '' : '', active: p ? p.active !== false : true };
+    const err = h('p', { class: 'err-line' });
+    let confirmDel = false;
+    const box = h('div', { class: 'step-form', style: 'margin:0' });
+    function draw() {
+      fill(box, 
+        h(
+          'div',
+          { class: 'fg' },
+          h('label', { class: 'f' }, 'Name', h('input', { id: 'pf-name', value: f.name, oninput: (e) => (f.name = e.target.value) })),
+          h('label', { class: 'f' }, 'Team', h('select', { id: 'pf-team', onchange: (e) => (f.team = e.target.value) }, M.TEAMS.map((t) => h('option', { value: t.code, selected: f.team === t.code }, `${t.code} · ${t.name}`)))),
+          h('label', { class: 'f' }, 'Email', h('input', { id: 'pf-email', type: 'email', value: f.email, oninput: (e) => (f.email = e.target.value) })),
+          h('label', { class: 'f' }, 'Also written as (comma-separated)', h('input', { id: 'pf-alias', value: f.aliases, oninput: (e) => (f.aliases = e.target.value) })),
+          h(
+            'div',
+            { class: 'row wide' },
+            M.ROLES.map((r) =>
+              h(
+                'label',
+                { class: 'check' },
+                h('input', {
+                  type: 'checkbox',
+                  id: `pf-role-${r.key}`,
+                  checked: f.roles.includes(r.key),
+                  onchange: (e) => (f.roles = e.target.checked ? [...f.roles, r.key] : f.roles.filter((x) => x !== r.key)),
+                }),
+                r.label,
+              ),
+            ),
+            h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'pf-active', checked: f.active, onchange: (e) => (f.active = e.target.checked) }), 'Active (can be asked to interview)'),
+          ),
+        ),
+        err,
+        h(
+          'div',
+          { class: 'row end' },
+          p && !confirmDel ? h('button', { class: 'danger', onclick: () => ((confirmDel = true), draw()) }, 'Remove') : null,
+          p && confirmDel ? [h('span', { class: 'err-line' }, 'Remove from the roster? Marking inactive keeps their history.'), h('button', { class: 'danger', onclick: () => act(async () => { await S.remove('people', p.id); ui.rosterEdit = null; rerender(); }, 'Removed') }, 'Remove for good')] : null,
+          h('button', { onclick: () => ((ui.rosterEdit = null), rerender()) }, 'Cancel'),
+          h(
+            'button',
+            {
+              class: 'p',
+              onclick: () => {
+                if (!f.name.trim()) return (err.textContent = 'Add a name.');
+                if (!f.roles.length) return (err.textContent = 'Pick at least one role.');
+                const doc = { name: f.name.trim(), team: f.team, roles: f.roles, aliases: f.aliases.split(',').map((x) => x.trim()).filter(Boolean), email: f.email.trim(), active: f.active };
+                act(async () => {
+                  if (p) await S.update('people', p.id, doc);
+                  else await S.add('people', { ...doc, createdAt: new Date().toISOString() });
+                  ui.rosterEdit = null;
+                  rerender();
+                }, p ? 'Saved' : `${doc.name} added`);
+              },
+            },
+            p ? 'Save' : 'Add person',
+          ),
+        ),
+      );
+    }
+    draw();
+    return box;
+  }
+
+  // ------------------------------------------------------------------
+  // Campaign
+  // ------------------------------------------------------------------
+  function campaignView() {
+    const c = campaign();
+    const s = c.settings || M.DEFAULT_SETTINGS;
+    const settingRows = [
+      ['Invites per slot', s.invitesPerSlot],
+      ['Top up after a decline', s.topUpAfterDecline ? 'On' : 'Off'],
+      ['Reply window for interviewers', `${s.replyWindowWorkingDays} working days`],
+      ['Hold slots before a candidate exists', s.holdBeforeCandidate ? 'On' : 'Off'],
+      ['How far ahead to hold', `${s.holdAheadWorkingDays} working days`],
+      ['Holds per week', `Advisor ${s.holdsPerWeek.advisor}, deep dive ${s.holdsPerWeek.deepdive}`],
+      ['Release an unfilled hold', `${s.releaseUnfilledWorkingDays} working days before`],
+      ['Cancellation notice warning', `Under ${s.cancellationWarningWorkingDays} working days`],
+      ['Holds per member per month', s.holdsPerMemberPerMonth],
+      ['Prefer Fridays', s.preferFridays ? 'On' : 'Off'],
+    ];
+    return [
+      h('div', { class: 'section gutter' }, h('div', { class: 'head' }, h('div', {}, h('h1', {}, c.name), h('p', {}, 'Name, dates and targets for this hiring drive. Rounds and scheduling settings are used by matching from phase 2.')), h('button', { onclick: () => ((ui.newCampaign = !ui.newCampaign), rerender()) }, ui.newCampaign ? 'Close' : '+ New campaign')), ui.newCampaign ? campaignForm(null) : campaignForm(c)),
+      h(
+        'div',
+        { class: 'section gutter' },
+        h('h2', {}, 'Rounds'),
+        h(
+          'div',
+          { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:6px' },
+          h(
+            'table',
+            { class: 'x' },
+            h('thead', {}, h('tr', {}, ['Round', 'Interviewers', 'Different teams', 'Length', 'Max days after previous', 'Fallbacks'].map((x) => h('th', {}, x)))),
+            h(
+              'tbody',
+              {},
+              c.rounds.map((r) => h('tr', {}, h('td', { class: 'name' }, r.name), h('td', {}, `${r.interviewers} ${r.role === 'teamlead' ? 'team leads' : 'advisors'}`), h('td', {}, r.differentTeams ? 'Yes' : 'No'), h('td', {}, `${r.durationMin} min`), h('td', {}, `${r.maxDaysAfterPrevious} days`), h('td', {}, r.fallbacks.map((x) => (x === 'joker' ? 'HR joker' : 'Natalie')).join(', ')))),
+            ),
+          ),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'section gutter' },
+        h('h2', {}, 'Scheduling settings'),
+        h('p', { class: 'small muted' }, 'Defaults from the plan. They become adjustable when holds and matching arrive.'),
+        h('div', { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:6px' }, h('table', { class: 'x' }, h('tbody', {}, settingRows.map(([k, v]) => h('tr', {}, h('td', {}, k), h('td', { class: 'mono' }, v)))))),
+      ),
+    ];
+  }
+
+  function campaignForm(c) {
+    const f = c ? { name: c.name, startDate: c.startDate, endDate: c.endDate || '', targetHires: c.targetHires || '', targetInterviews: c.targetInterviews || '' } : { name: campaigns().length ? '' : 'Trainee hiring', startDate: TODAY, endDate: '', targetHires: campaigns().length ? '' : 10, targetInterviews: campaigns().length ? '' : 25 };
+    const err = h('p', { class: 'err-line' });
+    return h(
+      'form',
+      {
+        class: 'tpanel',
+        style: 'padding:14px;display:flex;flex-direction:column;gap:10px',
+        onsubmit: (e) => {
+          e.preventDefault();
+          if (!f.name.trim()) return (err.textContent = 'Give the campaign a name.');
+          act(async () => {
+            if (c) await S.update('campaigns', c.id, { name: f.name.trim(), startDate: f.startDate, endDate: f.endDate, targetHires: Number(f.targetHires) || 0, targetInterviews: Number(f.targetInterviews) || 0 });
+            else {
+              const id = await S.add('campaigns', M.newCampaign(f));
+              ui.campaignId = id;
+              store('flux.campaign', id);
+              ui.newCampaign = false;
+            }
+            rerender();
+          }, c ? 'Campaign saved' : 'Campaign created');
+        },
+      },
+      h(
+        'div',
+        { class: 'fg' },
+        h('label', { class: 'f wide' }, 'Name', h('input', { id: `cf-name-${c ? c.id : 'new'}`, value: f.name, oninput: (e) => (f.name = e.target.value) })),
+        h('label', { class: 'f' }, 'Start', h('input', { type: 'date', id: `cf-start-${c ? c.id : 'new'}`, value: f.startDate, oninput: (e) => (f.startDate = e.target.value) })),
+        h('label', { class: 'f' }, 'End', h('input', { type: 'date', id: `cf-end-${c ? c.id : 'new'}`, value: f.endDate, oninput: (e) => (f.endDate = e.target.value) })),
+        h('label', { class: 'f' }, 'Target hires', h('input', { type: 'number', min: 0, id: `cf-hires-${c ? c.id : 'new'}`, value: f.targetHires, oninput: (e) => (f.targetHires = e.target.value) })),
+        h('label', { class: 'f' }, 'Expected interviews', h('input', { type: 'number', min: 0, id: `cf-int-${c ? c.id : 'new'}`, value: f.targetInterviews, oninput: (e) => (f.targetInterviews = e.target.value) })),
+      ),
+      err,
+      h('div', { class: 'row end' }, h('button', { class: 'p', type: 'submit' }, c ? 'Save campaign' : 'Create campaign')),
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // Boot
+  // ------------------------------------------------------------------
+  function route() {
+    const v = (location.hash || '#run').slice(1);
+    ui.view = ['run', 'availability', 'roster', 'campaign'].includes(v) ? v : 'run';
+    rerender();
+  }
+  window.addEventListener('hashchange', route);
+
+  async function boot() {
+    S = await window.FluxStore.connect(
+      () => render(),
+      (coll, err) => toast(`Couldn’t load ${coll}: ${err.code}`),
+    );
+    try {
+      if (window.claude && window.claude.use) sample = await window.claude.use('sample');
+    } catch (e) {
+      sample = null;
+    }
+    try {
+      if (S.user && S.user.id) me = await S.user.id();
+    } catch (e) {
+      me = null;
+    }
+    route();
+  }
+  window.FluxApp = { startDraft: (...a) => startDraft(...a), state: () => S, ui };
+  boot();
+})();
+
+</script>
