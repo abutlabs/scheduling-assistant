@@ -9,7 +9,9 @@ All collections live in the artifact database at the root.
 
 ## people/{id}
 The roster, shared by all campaigns. `name`, `team` (TM, PM, CP, OM, P&C), `roles[]` (`advisor`, `teamlead`, `joker`),
-`aliases[]` (how the name appears on polls, e.g. "Koen B"), `email`, `active`.
+`aliases[]` (how the name appears on polls, e.g. "Koen B"), `email`, `active`,
+`access` (`app`: uses the app with a linked Claude account; `manual`: Outlook only, Natalie keeps their availability),
+`accountId` (the viewer id from the `user` capability, or `mock:<personId>` for a mock account).
 
 ## snapshots/{id}
 One imported poll. `campaignId`, `fileName`, `pollDate`, `from`, `to`, `importedAt`, `stats`,
@@ -31,6 +33,16 @@ are new entries and history is kept.
 Steps: `hr_done`, `reject_call_hr`, `avail_asked_r2`, `avail_received_r2`, `advisor_booked`, `advisor_done`,
 `result_call_r2`, `avail_received_final`, `deepdive_booked`, `deepdive_done`, `final_call`, `closed`.
 
+## invites/{id}
+A request asking an interviewer to hold a slot for a candidate's round. `campaignId`, `candidateId`, `round` (`advisor` | `deepdive`),
+`personId`, `slotDate`, `time`, `room`, `status` (`pending`, `accepted`, `declined`, `released`, `cancelled`), `sentAt`, `respondedAt`,
+`via` (`outlook`, `app`, `mock`), `declineReason`, `releaseReason`, `releasedAt`, `noticeDays`, `mock`.
+The pair is the first two accepts from different teams; `M.inviteState` works out who to release, who to chase and how many to top up.
+
+## availability/{personId}
+Half-day availability set by hand (by Natalie for people without Claude, or later by the person). `days` (date → value),
+`note`, `source`, `updatedAt`, `updatedBy`. It is merged with poll snapshots; the newest answer per person and day wins.
+
 ## notes/{id}
 `candidateId`, `campaignId`, `round` (`general`, `hr`, `advisor`, `deepdive`), `kind` (`note` or `feedback`), `text`,
-`authorId` (viewer id from the `user` capability; names are looked up when shown), `createdAt`.
+`authorId` (viewer id from the `user` capability; names are looked up when shown), `authorPersonId` (roster person, used by the mock sidecar), `mock`, `createdAt`.

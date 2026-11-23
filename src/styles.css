@@ -222,3 +222,14 @@ tr.sum td.ok { color: var(--avail); }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 20; background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; max-width: calc(100% - 32px); }
 details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font-size: 12.5px; }
 @media (prefers-reduced-motion: no-preference) { button, .steps .st { transition: background-color 0.12s ease; } }
+
+/* Mock sidecar: a test tool docked on the left, visibly different from the app (dashed warning edge). */
+.sidecar {
+  position: fixed; left: 0; bottom: 0; top: calc(env(safe-area-inset-top, 0px) + 46px); z-index: 7; width: min(400px, 100%);
+  background: var(--s1); border-right: 3px dashed var(--warn); box-shadow: 12px 0 32px var(--shadow); overflow-y: auto;
+  padding: 14px max(16px, env(safe-area-inset-left, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  display: flex; flex-direction: column; gap: 14px;
+}
+.sidecar .x { border: 0; font-size: 18px; padding: 2px 8px; background: none; }
+.mock-sec { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--grid); }
+.mock-card { background: var(--bg); border: 1px solid var(--grid); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }

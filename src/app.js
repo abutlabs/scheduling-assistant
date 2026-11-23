@@ -8,7 +8,16 @@
 (function () {
   'use strict';
   const M = window.FluxModel;
-  const TODAY = M.todayIso();
+  const REAL_TODAY = M.todayIso();
+  // The mock sidecar can pretend it's another day, to see clocks run down.
+  let TODAY = (function () {
+    try {
+      const v = localStorage.getItem('flux.mockToday');
+      return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : REAL_TODAY;
+    } catch (e) {
+      return REAL_TODAY;
+    }
+  })();
   const ROOMS = ['Room 1', 'Room 2'];
 
   // ------------------------------------------------------------------
@@ -30,6 +39,7 @@
     }
     return el;
   }
+  const cstate = (c) => M.candidateState(c, TODAY);
   // replaceChildren() turns null and arrays into text; flatten and drop empties first.
   const fill = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
   const short = (iso) => (iso ? `${Number(iso.slice(8, 10))}-${Number(iso.slice(5, 7))}` : '');
@@ -78,6 +88,16 @@
     const c = campaign();
     return c ? S.state.snapshots.filter((x) => x.campaignId === c.id).sort((a, b) => (b.pollDate || '').localeCompare(a.pollDate || '') || (b.importedAt || '').localeCompare(a.importedAt || '')) : [];
   };
+  // Poll snapshots plus availability set by hand, shaped alike so the newest answer per person and day wins.
+  function availSources() {
+    const manual = S.state.availability.map((a) => ({
+      pollDate: (a.updatedAt || '').slice(0, 10),
+      importedAt: a.updatedAt || '',
+      manual: true,
+      tabs: [{ role: null, dates: Object.keys(a.days || {}), rows: [{ personId: a.personId, cells: a.days || {}, rules: [] }] }],
+    }));
+    return [...snapshots(), ...manual];
+  }
   const personById = (id) => S.state.people.find((p) => p.id === id);
 
   function toast(msg) {
@@ -114,7 +134,7 @@
     const root = document.getElementById('app');
     const scroll = { x: window.scrollX, y: window.scrollY };
     const drawerScroll = document.querySelector('.drawer') ? document.querySelector('.drawer').scrollTop : 0;
-    root.replaceChildren(...[topBar(), banner(), h('main', {}, view()), drawer(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
+    root.replaceChildren(...[topBar(), banner(), h('main', {}, view()), drawer(), sidecar(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
     window.scrollTo(scroll.x, scroll.y);
     const d = document.querySelector('.drawer');
     if (d) d.scrollTop = drawerScroll;
@@ -129,7 +149,7 @@
     const c = campaign();
     const cands = candidates();
     const nav = [
-      ['run', 'Run view', cands.filter((x) => M.candidateState(x).status === 'open').length],
+      ['run', 'Run view', cands.filter((x) => cstate(x).status === 'open').length],
       ['availability', 'Availability', null],
       ['roster', 'Roster', S.state.people.filter((p) => p.active !== false).length],
       ['campaign', 'Campaign', null],
@@ -158,6 +178,7 @@
               campaigns().map((x) => h('option', { value: x.id, selected: x.id === c.id }, x.name)),
             ),
             h('span', {}, `${f.hired} of ${c.targetHires || '?'} hired`),
+            h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, title: 'Test tool: act as colleagues, fake replies, change the date', onclick: () => ((ui.mockOpen = !ui.mockOpen), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock'),
           )
         : null,
     );
@@ -211,7 +232,7 @@
   function todoItems() {
     const items = [];
     for (const c of candidates()) {
-      const s = M.candidateState(c);
+      const s = cstate(c);
       if (!s.next) continue;
       let group = 'later';
       let reason = '';
@@ -243,9 +264,17 @@
       } else {
         reason = s.clock ? `Day ${s.clock.day} of 7, deadline ${M.formatDay(s.clock.deadline)}.` : '';
       }
+      const inv = roundInvites(c);
+      if (inv.state.complete && s.next.endsWith('_booked')) continue;
+      if (inv.list.length && /avail_received|_booked$/.test(s.next) && !inv.state.complete && k !== 'Overdue') {
+        k = 'Waiting';
+        t = t === 'warn' ? 'warn' : '';
+        reason = `${inv.state.accepted.length} of 2 accepted, ${inv.state.pending.length} waiting. ${reason}`;
+      }
       if (s.skipped.length) reason += ` ${plural(s.skipped.length, 'earlier step')} not recorded.`;
       items.push({ group, kind: k, tone: t, who: c.name, text: `${s.prompt}. ${reason}`.trim(), btn: k === 'Overdue' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
     }
+    items.push(...inviteTodoItems());
     // Availability housekeeping
     const snaps = snapshots();
     if (!snaps.length) {
@@ -294,7 +323,13 @@
                       class: i.tone === 'accent' || i.tone === 'bad' ? 'p' : '',
                       onclick: () => {
                         if (i.go) location.hash = i.go;
-                        else openCandidate(i.cand, i.step);
+                        else if (i.invite) releaseInvite(i.invite, i.why);
+                        else if (i.prefill) {
+                          const c = S.state.candidates.find((x) => x.id === i.cand);
+                          const r = roundInvites(c);
+                          ui.candId = c.id;
+                          prefillBooking(c, i.step, r.list, r.state);
+                        } else openCandidate(i.cand, i.step);
                       },
                     },
                     i.btn,
@@ -338,7 +373,7 @@
   }
 
   function filterButtons() {
-    const all = candidates().map((c) => M.candidateState(c).status === 'open');
+    const all = candidates().map((c) => cstate(c).status === 'open');
     const open = all.filter(Boolean).length;
     return [
       ['open', `Open (${open})`],
@@ -362,13 +397,13 @@
 
   function matrix() {
     const rows = candidates().filter((c) => {
-      const st = M.candidateState(c).status;
+      const st = cstate(c).status;
       return ui.candFilter === 'all' || (ui.candFilter === 'open' ? st === 'open' : st !== 'open');
     });
     if (!rows.length) return h('div', { class: 'empty gutter' }, h('p', {}, ui.candFilter === 'open' ? 'No open candidates.' : 'No candidates here yet.'));
     const head = h('tr', {}, h('th', { class: 'rn' }), h('th', {}, 'Candidate'), M.STEPS.map((s) => h('th', {}, `${s.n}. ${s.label}`)), h('th', {}, 'Clock'), h('th', {}, 'Next action'));
     const body = rows.map((c, i) => {
-      const s = M.candidateState(c);
+      const s = cstate(c);
       const cells = M.STEPS.map((step) => {
         let key = step.key;
         // The HR reject call shows in column 2.
@@ -417,7 +452,7 @@
     ui.openStep = step || null;
     if (id !== 'new' && !step) {
       const c = S.state.candidates.find((x) => x.id === id);
-      if (c) ui.openStep = M.candidateState(c).next;
+      if (c) ui.openStep = cstate(c).next;
     }
     rerender();
   }
@@ -459,7 +494,7 @@
           act(async () => {
             const id = await S.add('candidates', withSummary(doc));
             ui.candId = id;
-            ui.openStep = M.candidateState(doc).next;
+            ui.openStep = cstate(doc).next;
             rerender();
           }, `${doc.name} added`);
         },
@@ -495,7 +530,7 @@
 
   // Denormalised fields so Claude sessions and metrics can query without replaying timelines.
   function withSummary(doc) {
-    const s = M.candidateState(doc);
+    const s = cstate(doc);
     return { ...doc, status: s.status, stage: s.stage, nextStep: s.next || null, updatedAt: new Date().toISOString() };
   }
   function saveCandidate(c, patch, msg) {
@@ -505,7 +540,7 @@
 
   function candidateDetail(c) {
     if (!c) return h('p', { class: 'muted' }, 'This candidate was removed.');
-    const s = M.candidateState(c);
+    const s = cstate(c);
     const clk = s.clock && s.clock.state !== 'met' ? s.clock : null;
     const header = h(
       'div',
@@ -560,6 +595,7 @@
       { style: 'display:flex;flex-direction:column;gap:14px' },
       header,
       s.prompt ? h('p', { class: 'small' }, h('b', {}, 'Next: '), s.prompt) : null,
+      requestsSection(c, s),
       steps,
       briefPanel(c, s),
       notesSection(c),
@@ -586,13 +622,20 @@
 
   function stepForm(c, key, existing) {
     const step = M.STEP_BY_KEY[key];
-    const s = M.candidateState(c);
+    const s = cstate(c);
     const round = step.round === 'advisor' ? campaign().rounds[0] : step.round === 'deepdive' ? campaign().rounds[1] : null;
     const prev = existing || {};
     const pd = prev.data || {};
     // Keep what's been typed across re-renders (another note saved, data arriving).
     ui.forms = ui.forms || {};
     const fk = `${c.id}:${key}:${prev.id || 'new'}`;
+    if (!existing && !ui.forms[fk] && key.endsWith('_booked')) {
+      const r = roundInvites(c, key === 'deepdive_booked' ? 'deepdive' : 'advisor');
+      if (r.state.complete) {
+        const slot = r.list.find((i) => r.state.pair.includes(i.personId)) || r.list[0];
+        ui.forms[fk] = { at: TODAY, outcome: null, note: '', availability: '', slots: [], slotDate: slot.slotDate, time: slot.time || '', room: slot.room || ROOMS[0], interviewers: [...r.state.pair], reason: '' };
+      }
+    }
     const f = ui.forms[fk] || (ui.forms[fk] = {
       at: (prev.at || TODAY).slice(0, 10),
       outcome: prev.outcome || (step.outcome ? defaultOutcome(key, s) : null),
@@ -690,7 +733,7 @@
       if (f.outcome) entry.outcome = f.outcome;
       if (Object.keys(data).length) entry.data = data;
       const timeline = [...(c.timeline || []), entry];
-      const after = M.candidateState({ ...c, timeline });
+      const after = cstate({ ...c, timeline });
       forget();
       ui.openStep = after.next;
       saveCandidate(c, { timeline }, `${step.label} saved`).then(rerender);
@@ -784,7 +827,7 @@
   function slotFields(f, round, draw) {
     const role = round ? round.role : 'advisor';
     const pool = people().filter((p) => p.active !== false && (M.personHasRole(p, role) || (role === 'teamlead' && (p.roles || []).includes('joker'))));
-    const snaps = snapshots();
+    const snaps = availSources();
     function label(p) {
       let note = '';
       if (f.slotDate) {
@@ -975,6 +1018,488 @@
   }
 
 
+
+  // ------------------------------------------------------------------
+  // Interviewer requests (invites)
+  // ------------------------------------------------------------------
+  const roundOf = (s) => (s.stage === 'deepdive' || s.stage === 'hired' ? 'deepdive' : 'advisor');
+  function roundInvites(c, round) {
+    const s = cstate(c);
+    const r = round || roundOf(s);
+    const list = S.state.invites.filter((i) => i.candidateId === c.id && i.round === r);
+    const camp = S.state.campaigns.find((x) => x.id === c.campaignId) || campaign();
+    const st = M.inviteState(list, S.state.people, { today: TODAY, replyDays: camp && camp.settings ? camp.settings.replyWindowWorkingDays : 2 });
+    return { round: r, list, state: st };
+  }
+  const pname = (id) => {
+    const p = personById(id);
+    return p ? `${p.name} (${p.team})` : 'someone';
+  };
+  const first = (c) => (c.name || '').split(' ')[0];
+  const nowIso = () => `${TODAY}T${new Date().toISOString().slice(11)}`;
+
+  function inviteTodoItems() {
+    const items = [];
+    for (const c of candidates()) {
+      const s = cstate(c);
+      if (s.status !== 'open') continue;
+      const { round, list, state } = roundInvites(c);
+      if (!list.length) continue;
+      const bookedKey = round === 'deepdive' ? 'deepdive_booked' : 'advisor_booked';
+      const slot = list[0];
+      const when = `${M.formatDay(slot.slotDate)} ${slot.time || ''}`.trim();
+      if (state.complete && !s.done[bookedKey]) {
+        items.push({ group: 'today', kind: 'Send', tone: 'accent', who: c.name, text: `Pair complete for ${when}: ${state.pair.map(pname).join(' + ')}. Book it and send ${first(c)}'s invite.`, btn: 'Book', cand: c.id, step: bookedKey, prefill: true, sortKey: 5 });
+      }
+      for (const r of state.toRelease) {
+        const notice = M.daysBetween(TODAY, r.invite.slotDate);
+        items.push({ group: 'today', kind: 'Release', tone: 'accent', who: pname(r.invite.personId), text: `Release from ${first(c)}'s ${when} slot: ${M.RELEASE_REASONS[r.why]}. Notice: ${plural(notice, 'day')}.`, btn: 'Release', invite: r.invite, why: r.why, sortKey: 6 });
+      }
+      if (!state.complete && state.shortBy > 0) {
+        items.push({ group: 'today', kind: 'Top up', tone: 'warn', who: c.name, text: `${state.declined.length ? `${state.declined.map((i) => pname(i.personId)).join(', ')} declined. ` : ''}Ask ${plural(state.shortBy, 'more person', 'more people')} for ${when}.`, btn: 'Ask', cand: c.id, step: null, sortKey: 4 });
+      }
+      for (const i of state.overdue) {
+        if (state.complete) continue;
+        items.push({ group: 'today', kind: 'Chase', tone: 'warn', who: pname(i.personId), text: `No reply to ${first(c)}'s ${when} request since ${M.formatDay(i.sentAt.slice(0, 10))}. Chase, or ask someone else.`, btn: 'Open', cand: c.id, step: null, sortKey: 7 });
+      }
+    }
+    return items;
+  }
+
+  function releaseInvite(inv, why) {
+    return act(() => S.update('invites', inv.id, { status: 'released', releaseReason: why || 'pair_filled', releasedAt: nowIso(), noticeDays: M.daysBetween(TODAY, inv.slotDate) }), `${pname(inv.personId)} released`);
+  }
+  function answerInvite(inv, status, via, reason) {
+    return act(() => S.update('invites', inv.id, { status, respondedAt: nowIso(), via: via || 'outlook', declineReason: reason || '' }), `${pname(inv.personId)}: ${status}`);
+  }
+
+  function requestsSection(c, s) {
+    if (s.status !== 'open' || s.stage === 'hr') return null;
+    const { round, list, state } = roundInvites(c);
+    const bookedKey = round === 'deepdive' ? 'deepdive_booked' : 'advisor_booked';
+    const roundObj = round === 'deepdive' ? campaign().rounds[1] : campaign().rounds[0];
+    const releaseIds = new Set(state.toRelease.map((r) => r.invite.id));
+    const chip = (i) => {
+      const tone = { accepted: 'good', declined: 'bad', pending: releaseIds.has(i.id) ? 'warn' : 'accent', released: '', cancelled: '' }[i.status];
+      return h('span', { class: `chip ${tone}` }, releaseIds.has(i.id) && i.status === 'pending' ? 'Release' : M.INVITE_STATUS[i.status]);
+    };
+    const rows = list
+      .slice()
+      .sort((a, b) => (a.sentAt || '').localeCompare(b.sentAt || ''))
+      .map((i) =>
+        h(
+          'div',
+          { class: 'row small', style: 'justify-content:space-between;border-top:1px solid var(--line);padding:6px 10px' },
+          h('span', {}, h('b', {}, pname(i.personId)), ' ', chip(i), i.via === 'app' || i.via === 'mock' ? h('span', { class: 'faint' }, ` via ${i.via === 'app' ? 'the app' : 'mock'}`) : null, i.declineReason ? h('span', { class: 'faint' }, ` · ${i.declineReason}`) : null),
+          h(
+            'span',
+            { class: 'row' },
+            i.status === 'pending' && !releaseIds.has(i.id) ? [h('button', { onclick: () => answerInvite(i, 'accepted') }, 'Accepted'), h('button', { onclick: () => answerInvite(i, 'declined') }, 'Declined')] : null,
+            releaseIds.has(i.id) ? h('button', { class: 'p', onclick: () => releaseInvite(i, state.toRelease.find((r) => r.invite.id === i.id).why) }, 'Release') : null,
+          ),
+        ),
+      );
+    const head = list.length
+      ? state.complete
+        ? h('div', { class: 'row', style: 'justify-content:space-between;padding:8px 10px' }, h('span', { class: 'small' }, h('b', {}, 'Pair complete: '), state.pair.map(pname).join(' + ')), !s.done[bookedKey] ? h('button', { class: 'p', onclick: () => prefillBooking(c, bookedKey, list, state) }, 'Book with this pair') : h('span', { class: 'chip good' }, 'Booked'))
+        : h('p', { class: 'small', style: 'padding:8px 10px' }, `${M.formatDay(list[0].slotDate)} ${list[0].time || ''}, ${list[0].room || ''}: ${state.accepted.length} of ${roundObj.interviewers} accepted, ${state.pending.length} waiting${state.shortBy ? `. Ask ${plural(state.shortBy, 'more person', 'more people')}.` : '.'}`)
+      : null;
+    return h(
+      'section',
+      { class: 'tpanel', 'aria-label': 'Interviewer requests' },
+      h('div', { class: 'ph' }, `Interviewer requests · ${roundObj.name}`, h('span', { class: 'faint' }, 'replies come from Outlook or the app')),
+      head,
+      rows,
+      !state.complete ? askForm(c, round, roundObj, list) : null,
+    );
+  }
+
+  function prefillBooking(c, key, list, state) {
+    ui.forms = ui.forms || {};
+    const slot = list.find((i) => state.pair.includes(i.personId)) || list[0];
+    ui.forms[`${c.id}:${key}:new`] = { at: TODAY, outcome: null, note: '', availability: '', slots: [], slotDate: slot.slotDate, time: slot.time || '', room: slot.room || ROOMS[0], interviewers: [...state.pair], reason: '' };
+    ui.openStep = key;
+    rerender();
+  }
+
+  function askForm(c, round, roundObj, list) {
+    const key = `ask:${c.id}:${round}`;
+    ui.forms = ui.forms || {};
+    const asked = new Set(list.filter((i) => i.status !== 'cancelled').map((i) => i.personId));
+    const f = ui.forms[key] || (ui.forms[key] = { open: !list.length, slotDate: list[0] ? list[0].slotDate : '', time: list[0] ? list[0].time : '10:00', room: list[0] ? list[0].room : ROOMS[0], picked: [] });
+    const box = h('div', { style: 'border-top:1px solid var(--line);padding:8px 10px;display:flex;flex-direction:column;gap:8px' });
+    const role = roundObj.role;
+    const load = interviewLoad();
+    function candidatesFor() {
+      const snaps = availSources();
+      return people()
+        .filter((p) => p.active !== false && (M.personHasRole(p, role) || (role === 'teamlead' && (p.roles || []).includes('joker'))) && !asked.has(p.id))
+        .map((p) => {
+          const a = f.slotDate ? M.availabilityOn(snaps, p.id, role, f.slotDate) : null;
+          const hour = Number((f.time || '10:00').slice(0, 2));
+          const half = hour < 12 ? 'am' : 'pm';
+          let score = 1;
+          let label = 'no poll answer';
+          if (a && a.value) {
+            const free = a.value === 'all' || a.value === half;
+            score = free ? 0 : 2;
+            label = a.value === 'no' ? 'not available' : free ? `free (${M.VALUES[a.value].label.toLowerCase()})` : `only ${M.VALUES[a.value].label.toLowerCase()}`;
+            if (a.window) label += `, ${a.window.from || ''}-${a.window.to || ''}`;
+            if (a.tentative) label += ', check first';
+          }
+          if ((p.roles || []).includes('joker')) score += 0.5;
+          return { p, score, label, load: load[p.id] || 0 };
+        })
+        .sort((a, b) => a.score - b.score || a.load - b.load || a.p.name.localeCompare(b.p.name));
+    }
+    function suggest() {
+      const n = (campaign().settings || M.DEFAULT_SETTINGS).invitesPerSlot || 3;
+      const taken = new Set(list.filter((i) => i.status === 'accepted' || i.status === 'pending').map((i) => (personById(i.personId) || {}).team));
+      const out = [];
+      for (const x of candidatesFor()) {
+        if (out.length >= Math.max(1, n - list.filter((i) => i.status === 'pending' || i.status === 'accepted').length)) break;
+        if (x.score >= 2 || taken.has(x.p.team)) continue;
+        taken.add(x.p.team);
+        out.push(x.p.id);
+      }
+      f.picked = out;
+    }
+    function draw() {
+      if (!f.open) {
+        fill(box, h('button', { onclick: () => ((f.open = true), f.slotDate && suggest(), draw()) }, list.length ? '+ Ask more people' : 'Ask interviewers'));
+        return;
+      }
+      const opts = candidatesFor();
+      const pickedTeams = f.picked.map((id) => (personById(id) || {}).team);
+      fill(
+        box,
+        h('div', { class: 'small muted' }, 'Pick a slot, then who to ask. Different teams first, then whoever is free and has done the fewest interviews.'),
+        h(
+          'div',
+          { class: 'fg' },
+          h('label', { class: 'f' }, 'Date', h('input', { type: 'date', id: `ask-date-${c.id}`, value: f.slotDate, onchange: (e) => ((f.slotDate = e.target.value), suggest(), draw()) })),
+          h('label', { class: 'f' }, 'Start', h('input', { type: 'time', id: `ask-time-${c.id}`, step: 900, value: f.time, onchange: (e) => ((f.time = e.target.value), suggest(), draw()) })),
+          h('label', { class: 'f' }, 'Room', h('select', { id: `ask-room-${c.id}`, onchange: (e) => (f.room = e.target.value) }, ROOMS.map((r) => h('option', { selected: f.room === r }, r)))),
+        ),
+        f.slotDate
+          ? h(
+              'div',
+              { style: 'max-height:220px;overflow:auto;border:1px solid var(--grid);border-radius:4px' },
+              opts.map((x) =>
+                h(
+                  'label',
+                  { class: 'check', style: 'display:flex;padding:4px 8px;border-top:1px solid var(--line)' },
+                  h('input', { type: 'checkbox', checked: f.picked.includes(x.p.id), onchange: (e) => ((f.picked = e.target.checked ? [...f.picked, x.p.id] : f.picked.filter((id) => id !== x.p.id)), draw()) }),
+                  h('span', { style: 'flex:1' }, `${x.p.name} `, h('span', { class: 'team' }, x.p.team)),
+                  h('span', { class: `small ${x.score === 0 ? '' : 'faint'}` }, `${x.label}${x.load ? ` · ${x.load} done` : ''}`),
+                ),
+              ),
+            )
+          : null,
+        new Set(pickedTeams).size < pickedTeams.length ? h('p', { class: 'warn-line' }, 'Two of these are on the same team. That works, but one will be released if both accept.') : null,
+        h(
+          'div',
+          { class: 'row end' },
+          list.length ? h('button', { onclick: () => ((f.open = false), draw()) }, 'Cancel') : null,
+          h(
+            'button',
+            {
+              class: 'p',
+              disabled: !f.slotDate || !f.picked.length,
+              onclick: () =>
+                act(async () => {
+                  for (const id of f.picked) await S.add('invites', { campaignId: c.campaignId, candidateId: c.id, round, personId: id, slotDate: f.slotDate, time: f.time, room: f.room, status: 'pending', sentAt: nowIso(), via: 'outlook', mock: !!c.mock });
+                  ui.forms[key] = { ...f, open: false, picked: [] };
+                  ui.inviteText = { candId: c.id, text: inviteText(c, round, f) };
+                  rerender();
+                }, `${plural(f.picked.length, 'request')} created`),
+            },
+            `Ask ${f.picked.length || ''}`.trim(),
+          ),
+        ),
+      );
+    }
+    draw();
+    const txt = ui.inviteText && ui.inviteText.candId === c.id ? ui.inviteText.text : null;
+    return [
+      box,
+      txt
+        ? h(
+            'div',
+            { style: 'border-top:1px solid var(--line);padding:8px 10px;display:flex;flex-direction:column;gap:6px' },
+            h('div', { class: 'row', style: 'justify-content:space-between' }, h('b', { class: 'small' }, 'Invite text, ready to send from Outlook'), h('button', { onclick: (e) => copyText(txt, e.target) }, 'Copy')),
+            h('pre', { class: 'small', style: 'white-space:pre-wrap;margin:0;font-family:var(--font-ui);background:var(--s1);padding:8px;border-radius:4px' }, txt),
+          )
+        : null,
+    ];
+  }
+
+  function inviteText(c, round, f) {
+    const what = round === 'deepdive' ? 'a deep dive (final round)' : 'an advisor interview';
+    return `Subject: Hold: ${what} on ${M.formatDay(f.slotDate)} ${f.time}, ${f.room}\n\nHi,\n\nCould you hold ${M.formatDay(f.slotDate)} from ${f.time} for ${what} with a trainee candidate (${first(c)})? It's 1 hour, in person, with a colleague from another team.\n\nPlease accept or decline this invite. If more people accept than we need, I'll release the extra slot with as much notice as I can.\n\nThanks,\nNatalie`;
+  }
+  function copyText(text, btn) {
+    try {
+      navigator.clipboard.writeText(text).then(
+        () => (btn.textContent = 'Copied'),
+        () => (btn.textContent = 'Select the text to copy'),
+      );
+    } catch (e) {
+      btn.textContent = 'Select the text to copy';
+    }
+  }
+  function interviewLoad() {
+    const load = {};
+    for (const i of S.state.invites) if (i.status === 'accepted') load[i.personId] = (load[i.personId] || 0) + 1;
+    return load;
+  }
+
+  // ------------------------------------------------------------------
+  // Roster: link people to Claude accounts
+  // ------------------------------------------------------------------
+  function accountCell(p) {
+    if (ui.linking === p.id) return accountPicker(p);
+    if (p.access === 'manual' && !p.accountId) return h('span', { class: 'faint' }, 'No Claude · Outlook only');
+    if (!p.accountId) return h('button', { class: 'link', onclick: () => ((ui.linking = p.id), rerender()) }, 'Link');
+    const isMock = p.accountId.startsWith('mock:');
+    if (!isMock) resolveNames([p.accountId]);
+    return h(
+      'span',
+      { class: 'row' },
+      h('span', { class: `chip ${isMock ? 'warn' : 'good'}` }, isMock ? 'Mock account' : names[p.accountId] || 'Linked'),
+      h('button', { class: 'link', onclick: () => act(() => S.update('people', p.id, { accountId: null }), 'Unlinked') }, 'Unlink'),
+    );
+  }
+  function accountPicker(p) {
+    const box = h('div', { style: 'display:flex;flex-direction:column;gap:4px;min-width:220px' });
+    const results = h('div', { style: 'display:flex;flex-direction:column;gap:2px' });
+    const canSearch = S.user && typeof S.user.search === 'function';
+    async function search(q) {
+      if (!canSearch) return;
+      try {
+        const hits = await S.user.search(q);
+        fill(
+          results,
+          (hits || []).slice(0, 6).map((hit) => h('button', { style: 'text-align:left', onclick: () => act(async () => { await S.update('people', p.id, { accountId: hit.id }); ui.linking = null; rerender(); }, `${p.name} linked`) }, hit.name || 'Unnamed account')),
+          hits && hits.length ? null : h('span', { class: 'faint small' }, 'No one found in your organization.'),
+        );
+      } catch (e) {
+        fill(results, h('span', { class: 'faint small' }, 'Search isn’t available here.'));
+      }
+    }
+    fill(
+      box,
+      canSearch ? h('input', { id: `acct-${p.id}`, placeholder: `Search ${p.name}…`, onfocus: (e) => search(e.target.value), oninput: (e) => search(e.target.value) }) : h('span', { class: 'faint small' }, 'Account search works on claude.ai.'),
+      results,
+      h('div', { class: 'row' }, h('button', { onclick: () => act(async () => { await S.update('people', p.id, { accountId: `mock:${p.id}` }); ui.linking = null; rerender(); }, 'Mock account linked') }, 'Use a mock account'), h('button', { class: 'link', onclick: () => ((ui.linking = null), rerender()) }, 'Cancel')),
+    );
+    return box;
+  }
+
+  // ------------------------------------------------------------------
+  // Mock sidecar: a test tool to feel the flow end to end
+  // ------------------------------------------------------------------
+  function sidecar() {
+    if (!ui.mockOpen || !campaign()) return null;
+    const ps = people().filter((p) => p.active !== false);
+    const asId = ui.actAs && personById(ui.actAs) ? ui.actAs : null;
+    const me2 = asId ? personById(asId) : null;
+    const panel = h(
+      'aside',
+      { class: 'sidecar', 'aria-label': 'Mock sidecar' },
+      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', {}, 'Mock sidecar'), h('button', { class: 'x', 'aria-label': 'Close mock sidecar', onclick: () => ((ui.mockOpen = false), rerender()) }, '×')),
+      h('p', { class: 'small muted' }, 'A test tool. Act as a colleague, answer requests, leave feedback and move the date, to see how the flow feels. Everything it creates is marked as mock.'),
+      h(
+        'section',
+        { class: 'mock-sec' },
+        h('h3', {}, 'Date'),
+        h(
+          'div',
+          { class: 'row' },
+          h('span', { class: 'small' }, 'Pretend today is'),
+          h('input', {
+            type: 'date',
+            id: 'mock-today',
+            value: TODAY,
+            onchange: (e) => {
+              TODAY = e.target.value || REAL_TODAY;
+              store('flux.mockToday', TODAY === REAL_TODAY ? '' : TODAY);
+              rerender();
+            },
+          }),
+          h('button', { onclick: () => shiftDay(1) }, '+1 day'),
+          TODAY !== REAL_TODAY ? h('button', { class: 'link', onclick: () => shiftDay(0) }, 'Back to today') : null,
+        ),
+      ),
+      h(
+        'section',
+        { class: 'mock-sec' },
+        h('h3', {}, 'Act as a colleague'),
+        h(
+          'select',
+          { id: 'mock-actas', onchange: (e) => ((ui.actAs = e.target.value || null), rerender()) },
+          h('option', { value: '' }, 'Choose someone…'),
+          ps.map((p) => h('option', { value: p.id, selected: p.id === asId }, `${p.name} (${p.team}, ${roleLabel(p)})${p.accountId ? '' : ' · no account linked'}`)),
+        ),
+        me2 ? actAsPanel(me2) : null,
+      ),
+      h(
+        'section',
+        { class: 'mock-sec' },
+        h('h3', {}, 'Everyone at once'),
+        h('div', { class: 'row' }, h('button', { onclick: simulateReplies }, 'Answer all waiting requests'), h('span', { class: 'small muted' }, 'Accepts when the poll says they’re free, declines otherwise.')),
+      ),
+      h(
+        'section',
+        { class: 'mock-sec' },
+        h('h3', {}, 'Demo data'),
+        h('div', { class: 'row' }, h('button', { onclick: loadDemo }, 'Load demo candidates'), h('button', { class: 'danger', onclick: clearMock }, 'Clear mock data'), h('button', { onclick: linkAllMock }, 'Give everyone a mock account')),
+      ),
+    );
+    return panel;
+  }
+
+  function shiftDay(n) {
+    TODAY = n ? M.addDays(TODAY, n) : REAL_TODAY;
+    store('flux.mockToday', TODAY === REAL_TODAY ? '' : TODAY);
+    rerender();
+  }
+
+  function actAsPanel(p) {
+    const mine = S.state.invites.filter((i) => i.personId === p.id);
+    const cand = (i) => S.state.candidates.find((c) => c.id === i.candidateId);
+    const pending = mine.filter((i) => i.status === 'pending' && cand(i));
+    const accepted = mine.filter((i) => i.status === 'accepted' && cand(i));
+    const released = mine.filter((i) => i.status === 'released');
+    const reasons = (ui.mockReasons = ui.mockReasons || {});
+    return h(
+      'div',
+      { style: 'display:flex;flex-direction:column;gap:8px' },
+      !p.accountId ? h('p', { class: 'warn-line' }, `${p.name} has no Claude account linked yet, so in real life they would only get the Outlook invite.`) : null,
+      h('b', { class: 'small' }, `Requests for ${p.name}`),
+      pending.length
+        ? pending.map((i) =>
+            h(
+              'div',
+              { class: 'mock-card' },
+              h('div', { class: 'small' }, h('b', {}, `${M.formatDay(i.slotDate)} ${i.time || ''}`), ` · ${i.room || ''} · ${i.round === 'deepdive' ? 'deep dive' : 'advisor interview'} with ${first(cand(i))}`),
+              h('input', { id: `mock-reason-${i.id}`, placeholder: 'Reason if declining (optional)', value: reasons[i.id] || '', oninput: (e) => (reasons[i.id] = e.target.value) }),
+              h('div', { class: 'row' }, h('button', { class: 'p', onclick: () => answerInvite(i, 'accepted', 'mock') }, 'Accept'), h('button', { onclick: () => answerInvite(i, 'declined', 'mock', reasons[i.id]) }, 'Decline')),
+            ),
+          )
+        : h('p', { class: 'small muted' }, 'Nothing waiting.'),
+      accepted.length ? h('b', { class: 'small' }, 'Interviews') : null,
+      accepted.map((i) => {
+        const c = cand(i);
+        const k = `fb:${i.id}`;
+        const f = (ui.forms = ui.forms || {})[k] || (ui.forms[k] = { text: '', lean: 'pass' });
+        const done = i.slotDate <= TODAY;
+        const sent = S.state.notes.filter((n) => n.candidateId === c.id && n.authorPersonId === p.id && n.round === i.round).length;
+        return h(
+          'div',
+          { class: 'mock-card' },
+          h('div', { class: 'row small', style: 'justify-content:space-between' }, h('span', {}, h('b', {}, c.name), ` · ${M.formatDay(i.slotDate)} ${i.time || ''}`), h('button', { class: 'link', onclick: () => openCandidate(c.id) }, 'Open brief')),
+          sent ? h('span', { class: 'chip good', style: 'align-self:flex-start' }, `✓ ${plural(sent, 'feedback note')} sent`) : null,
+          done
+            ? [
+                h('textarea', { id: `mock-fb-${i.id}`, placeholder: `Feedback from ${p.name} after the interview`, value: f.text, oninput: (e) => (f.text = e.target.value) }),
+                h(
+                  'div',
+                  { class: 'row' },
+                  h('select', { id: `mock-lean-${i.id}`, onchange: (e) => (f.lean = e.target.value) }, [['pass', 'Leaning pass'], ['unsure', 'Unsure'], ['reject', 'Leaning no']].map(([v, l]) => h('option', { value: v, selected: f.lean === v }, l))),
+                  h(
+                    'button',
+                    {
+                      class: 'p',
+                      onclick: () => {
+                        if (!f.text.trim()) return;
+                        const lean = { pass: 'Leaning pass', unsure: 'Unsure', reject: 'Leaning no' }[f.lean];
+                        act(async () => {
+                          await S.add('notes', { candidateId: c.id, campaignId: c.campaignId, round: i.round, kind: 'feedback', text: `${lean}. ${f.text.trim()}`, authorId: null, authorPersonId: p.id, authorLabel: p.name, mock: true, createdAt: nowIso() });
+                          ui.forms[k] = { text: '', lean: 'pass' };
+                          rerender();
+                        }, 'Feedback added');
+                      },
+                    },
+                    'Send feedback',
+                  ),
+                ),
+              ]
+            : h('p', { class: 'small muted' }, `Feedback opens on the interview day. Use “+1 day” above to get there.`),
+        );
+      }),
+      released.length ? h('p', { class: 'small muted' }, `Released from ${plural(released.length, 'slot')}: ${released.map((i) => M.RELEASE_REASONS[i.releaseReason] || 'released').join('; ')}.`) : null,
+    );
+  }
+
+  function simulateReplies() {
+    const snaps = availSources();
+    act(async () => {
+      let n = 0;
+      for (const i of S.state.invites.filter((x) => x.status === 'pending')) {
+        const c = S.state.candidates.find((x) => x.id === i.candidateId);
+        if (!c) continue;
+        const role = i.round === 'deepdive' ? 'teamlead' : 'advisor';
+        const a = M.availabilityOn(snaps, i.personId, role, i.slotDate);
+        const half = Number((i.time || '10').slice(0, 2)) < 12 ? 'am' : 'pm';
+        const free = a && (a.value === 'all' || a.value === half);
+        const yes = free ? Math.random() < 0.85 : a && a.value === 'no' ? false : Math.random() < 0.4;
+        await S.update('invites', i.id, { status: yes ? 'accepted' : 'declined', respondedAt: nowIso(), via: 'mock', declineReason: yes ? '' : free ? 'Client meeting came up' : 'Not available then' });
+        n++;
+      }
+      toast(n ? `${plural(n, 'request')} answered` : 'No requests waiting');
+    });
+  }
+
+  function linkAllMock() {
+    act(async () => {
+      for (const p of S.state.people) if (!p.accountId) await S.update('people', p.id, { accountId: `mock:${p.id}` });
+    }, 'Everyone has a mock account');
+  }
+
+  function clearMock() {
+    act(async () => {
+      for (const coll of ['invites', 'notes', 'candidates']) for (const d of S.state[coll].filter((x) => x.mock)) await S.remove(coll, d.id);
+    }, 'Mock data cleared');
+  }
+
+  function loadDemo() {
+    const camp = campaign();
+    const d = (n) => M.addDays(TODAY, n);
+    const now = nowIso();
+    const e = (step, at, outcome, extra) => ({ id: S.uid('e'), step, at, outcome, recordedAt: now, note: '', ...(extra || {}) });
+    // Next Friday at least 2 days out.
+    let fri = d(2);
+    while (M.weekdayOf(fri) !== 5) fri = M.addDays(fri, 1);
+    const demo = [
+      { name: 'Sanne de Vries (demo)', hrDate: d(-4), notes: 'Strong on tender writing. Available from January.', timeline: [e('hr_done', d(-4), 'pass'), e('avail_asked_r2', d(-4)), e('avail_received_r2', d(-2), null, { data: { availability: `Thursday morning, Friday all day` } })] },
+      { name: 'Daan Bakker (demo)', hrDate: d(-1), notes: '', timeline: [e('hr_done', d(-1), 'pass'), e('avail_asked_r2', d(-1))] },
+      { name: 'Lotte Visser (demo)', hrDate: d(-12), notes: 'Background in civil engineering.', timeline: [e('hr_done', d(-12), 'pass'), e('avail_asked_r2', d(-12)), e('avail_received_r2', d(-10)), e('advisor_booked', d(-9), null, { data: { slotDate: d(-6), time: '10:00', room: 'Room 1', interviewers: [] } }), e('advisor_done', d(-6), 'pass'), e('result_call_r2', d(-5))] },
+      { name: 'Emma Jansen (demo)', hrDate: TODAY, notes: '', timeline: [] },
+    ];
+    act(async () => {
+      const ids = [];
+      for (const c of demo) ids.push(await S.add('candidates', withSummary({ ...c, campaignId: camp.id, email: '', phone: '', mock: true, createdAt: now })));
+      // Sanne: three advisors asked for next Friday, from different teams.
+      const pool = people().filter((p) => p.active !== false && (p.roles || []).includes('advisor'));
+      const picked = [];
+      const teams = new Set();
+      for (const p of pool) {
+        if (picked.length >= 3) break;
+        if (teams.has(p.team)) continue;
+        const a = M.availabilityOn(availSources(), p.id, 'advisor', fri);
+        if (a && a.value === 'no') continue;
+        picked.push(p);
+        teams.add(p.team);
+      }
+      for (const p of picked) await S.add('invites', { campaignId: camp.id, candidateId: ids[0], round: 'advisor', personId: p.id, slotDate: fri, time: '10:00', room: 'Room 1', status: 'pending', sentAt: `${d(-1)}T09:00:00.000Z`, via: 'outlook', mock: true });
+      // Lotte: feedback from the advisor round.
+      const [a1, a2] = pool;
+      if (a1) await S.add('notes', { candidateId: ids[2], campaignId: camp.id, round: 'advisor', kind: 'feedback', text: 'Leaning pass. Structured answers, good questions about the tender process. Less sure how she handles conflict with a client.', authorPersonId: a1.id, authorLabel: a1.name, mock: true, createdAt: `${d(-6)}T12:00:00.000Z` });
+      if (a2) await S.add('notes', { candidateId: ids[2], campaignId: camp.id, round: 'advisor', kind: 'feedback', text: 'Leaning pass. Calm and analytical. Probe planning when several deadlines collide.', authorPersonId: a2.id, authorLabel: a2.name, mock: true, createdAt: `${d(-6)}T12:30:00.000Z` });
+    }, 'Demo candidates loaded');
+  }
+
   // ------------------------------------------------------------------
   // Notes, feedback and Claude's interview brief
   // ------------------------------------------------------------------
@@ -1001,6 +1526,7 @@
   }
   function authorName(n) {
     if (n.authorId && me && n.authorId === me) return 'You';
+    if (n.authorPersonId && personById(n.authorPersonId)) return `${personById(n.authorPersonId).name} (${personById(n.authorPersonId).team})${n.mock ? ' · mock' : ''}`;
     return (n.authorId && names[n.authorId]) || n.authorLabel || 'A colleague';
   }
   const notesFor = (c) => S.state.notes.filter((n) => n.candidateId === c.id).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
@@ -1008,7 +1534,7 @@
   function notesSection(c) {
     const list = notesFor(c);
     resolveNames([...new Set(list.map((n) => n.authorId))]);
-    const s = M.candidateState(c);
+    const s = cstate(c);
     const f = { text: '', round: s.stage === 'deepdive' ? 'deepdive' : s.stage === 'advisor' ? 'advisor' : 'general', kind: 'note' };
     const err = h('p', { class: 'err-line' });
     return h(
@@ -1114,7 +1640,7 @@
   }
 
   function buildBriefPrompt(c, round, focus) {
-    const s = M.candidateState(c);
+    const s = cstate(c);
     const timeline = (c.timeline || [])
       .filter((e) => !e.voided)
       .map((e) => {
@@ -1672,7 +2198,13 @@
   function rosterView() {
     const ps = people();
     const latest = snapshots()[0];
-    const pollInfo = (p) => {
+    const manualOf = (p) => S.state.availability.find((a) => a.personId === p.id);
+    const pollInfoText = (p) => {
+      const m = manualOf(p);
+      const base = pollInfoBase(p);
+      return m ? `${base ? `${base}; ` : ''}set by hand ${M.formatDay(m.updatedAt.slice(0, 10))}` : base;
+    };
+    const pollInfoBase = (p) => {
       if (!latest) return '';
       for (const t of latest.tabs) {
         const r = t.rows.find((x) => x.personId === p.id);
@@ -1715,12 +2247,13 @@
             h('td', { class: 'team' }, p.team),
             h('td', {}, (p.roles || []).map((r) => (M.ROLES.find((x) => x.key === r) || { label: r }).label).join(', ')),
             h('td', { class: 'small muted' }, (p.aliases || []).join(', ')),
-            h('td', { class: 'small' }, p.email || ''),
-            h('td', { class: 'small' }, pollInfo(p)),
+            h('td', { class: 'small' }, accountCell(p)),
+            h('td', { class: 'small' }, pollInfoText(p), ' ', h('button', { class: 'link', onclick: () => ((ui.availEdit = ui.availEdit === p.id ? null : p.id), rerender()) }, ui.availEdit === p.id ? 'Close' : 'Set')),
             h('td', { class: 'mono', style: 'text-align:center' }, load[p.id] || ''),
-            h('td', { class: 'small' }, p.active === false ? 'Inactive' : 'Active'),
+            h('td', { class: 'small' }, p.active === false ? 'Inactive' : p.access === 'manual' ? 'Active · no Claude' : 'Active'),
           ),
         );
+        if (ui.availEdit === p.id) rows.push(h('tr', {}, h('td', { colspan: 8 }, availabilityEditor(p))));
       }
     }
     return [
@@ -1737,7 +2270,7 @@
             h(
               'table',
               { class: 'x' },
-              h('thead', {}, h('tr', {}, ['Name', 'Team', 'Role', 'Also written as', 'Email', latest ? `Poll of ${M.formatDay(latest.pollDate)}` : 'Latest poll', 'Interviews', 'Status'].map((x) => h('th', {}, x)))),
+              h('thead', {}, h('tr', {}, ['Name', 'Team', 'Role', 'Also written as', 'Claude account', latest ? `Poll of ${M.formatDay(latest.pollDate)}` : 'Latest poll', 'Interviews', 'Status'].map((x) => h('th', {}, x)))),
               h('tbody', {}, rows),
             ),
           )
@@ -1745,8 +2278,85 @@
     ];
   }
 
+
+  // Natalie sets someone's half-day availability by hand (for people without Claude, or a phoned-in change).
+  function availabilityEditor(p) {
+    const start = M.weekStart(TODAY);
+    const days = [];
+    for (let i = 0; i < 28; i++) {
+      const d = M.addDays(start, i);
+      const wd = M.weekdayOf(d);
+      if (wd >= 1 && wd <= 5) days.push(d);
+    }
+    const existing = S.state.availability.find((a) => a.personId === p.id);
+    const k = `avail:${p.id}`;
+    ui.forms = ui.forms || {};
+    const role = (p.roles || []).includes('advisor') ? 'advisor' : 'teamlead';
+    const f =
+      ui.forms[k] ||
+      (ui.forms[k] = {
+        days: Object.fromEntries(
+          days.map((d) => {
+            const a = M.availabilityOn(availSources(), p.id, role, d);
+            return [d, a ? a.value : null];
+          }),
+        ),
+        note: (existing && existing.note) || '',
+      });
+    const order = [null, 'all', 'am', 'pm', 'no'];
+    const box = h('div', { style: 'display:flex;flex-direction:column;gap:8px;padding:6px 0' });
+    function draw() {
+      const weeks = [];
+      for (let w = 0; w < 4; w++) weeks.push(days.filter((d) => M.weekStart(d) === M.addDays(start, w * 7)));
+      fill(
+        box,
+        h('div', { class: 'small muted' }, `Availability for ${p.name}. Click a day to cycle: blank, Hele dag, Ochtend, Middag, Niet. This counts as their newest answer and wins over older polls.`),
+        h(
+          'div',
+          { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:4px' },
+          h(
+            'table',
+            { class: 'x' },
+            h('tbody', {}, weeks.map((wk) => h('tr', {}, h('th', { class: 'mono' }, `wk ${M.formatDay(wk[0])}`), wk.map((d) => {
+              const v = f.days[d];
+              return h('td', { class: `v ${v || 'null'}`, style: 'padding:0' }, h('button', { style: 'all:unset;display:block;width:100%;padding:5px 6px;cursor:pointer;text-align:center;box-sizing:border-box', 'aria-label': `${M.formatDay(d)}: ${v ? NL[v] : 'no answer'}`, onclick: () => { f.days[d] = order[(order.indexOf(v) + 1) % order.length]; draw(); } }, h('small', { style: 'font-size:10px;opacity:.75' }, `${M.WEEKDAYS_NL[M.weekdayOf(d)]} ${short(d)}`), h('span', { style: 'display:block' }, v ? NL[v] : '·')));
+            })))),
+          ),
+        ),
+        h('div', { class: 'row' }, ['all', 'no', null].map((v) => h('button', { onclick: () => { days.forEach((d) => (f.days[d] = v)); draw(); } }, v ? `All ${NL[v]}` : 'Clear all')), h('button', { onclick: () => { days.forEach((d) => (f.days[d] = M.weekdayOf(d) === 5 ? 'all' : f.days[d])); draw(); } }, 'Fridays Hele dag')),
+        h('input', { id: `avail-note-${p.id}`, placeholder: 'Note, e.g. “phoned in: new project from January”', value: f.note, oninput: (e) => (f.note = e.target.value) }),
+        h(
+          'div',
+          { class: 'row end' },
+          h('button', { onclick: () => { delete ui.forms[k]; ui.availEdit = null; rerender(); } }, 'Cancel'),
+          h(
+            'button',
+            {
+              class: 'p',
+              onclick: () =>
+                act(async () => {
+                  const kept = existing ? { ...existing.days } : {};
+                  for (const d of days) {
+                    if (f.days[d] === null) delete kept[d];
+                    else kept[d] = f.days[d];
+                  }
+                  await S.set('availability', p.id, { personId: p.id, days: kept, note: f.note.trim(), source: 'manual', updatedAt: `${TODAY}T${new Date().toISOString().slice(11)}`, updatedBy: me || null });
+                  delete ui.forms[k];
+                  ui.availEdit = null;
+                  rerender();
+                }, `Availability saved for ${p.name}`),
+            },
+            'Save availability',
+          ),
+        ),
+      );
+    }
+    draw();
+    return box;
+  }
+
   function personForm(p) {
-    const f = { name: p ? p.name : '', team: p ? p.team : 'TM', roles: p ? [...(p.roles || [])] : ['advisor'], aliases: p ? (p.aliases || []).join(', ') : '', email: p ? p.email || '' : '', active: p ? p.active !== false : true };
+    const f = { name: p ? p.name : '', team: p ? p.team : 'TM', roles: p ? [...(p.roles || [])] : ['advisor'], aliases: p ? (p.aliases || []).join(', ') : '', email: p ? p.email || '' : '', active: p ? p.active !== false : true, access: p ? p.access || 'app' : 'app' };
     const err = h('p', { class: 'err-line' });
     let confirmDel = false;
     const box = h('div', { class: 'step-form', style: 'margin:0' });
@@ -1777,6 +2387,13 @@
             ),
             h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'pf-active', checked: f.active, onchange: (e) => (f.active = e.target.checked) }), 'Active (can be asked to interview)'),
           ),
+          h(
+            'div',
+            { class: 'wide', style: 'display:flex;flex-direction:column;gap:4px' },
+            h('span', { class: 'small muted', style: 'font-weight:600' }, 'How they take part'),
+            h('label', { class: 'check' }, h('input', { type: 'radio', name: 'pf-access', id: 'pf-access-app', checked: f.access === 'app', onchange: () => (f.access = 'app') }), 'Invite to the app: they answer requests, fill in their own availability and see briefs. Link their Claude account next, then share the app with them from the Share menu.'),
+            h('label', { class: 'check' }, h('input', { type: 'radio', name: 'pf-access', id: 'pf-access-manual', checked: f.access === 'manual', onchange: () => (f.access = 'manual') }), 'Without Claude: they get Outlook invites only, and Natalie keeps their availability up to date here.'),
+          ),
         ),
         err,
         h(
@@ -1792,11 +2409,15 @@
               onclick: () => {
                 if (!f.name.trim()) return (err.textContent = 'Add a name.');
                 if (!f.roles.length) return (err.textContent = 'Pick at least one role.');
-                const doc = { name: f.name.trim(), team: f.team, roles: f.roles, aliases: f.aliases.split(',').map((x) => x.trim()).filter(Boolean), email: f.email.trim(), active: f.active };
+                const doc = { name: f.name.trim(), team: f.team, roles: f.roles, aliases: f.aliases.split(',').map((x) => x.trim()).filter(Boolean), email: f.email.trim(), active: f.active, access: f.access };
                 act(async () => {
+                  let id = p && p.id;
                   if (p) await S.update('people', p.id, doc);
-                  else await S.add('people', { ...doc, createdAt: new Date().toISOString() });
+                  else id = await S.add('people', { ...doc, createdAt: new Date().toISOString() });
                   ui.rosterEdit = null;
+                  // Next step for app users: link their account. For others: set availability.
+                  if (f.access === 'app' && !(p && p.accountId)) ui.linking = id;
+                  if (f.access === 'manual' && !p) ui.availEdit = id;
                   rerender();
                 }, p ? 'Saved' : `${doc.name} added`);
               },

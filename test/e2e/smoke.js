@@ -107,7 +107,50 @@ const fakeClaude = () => {
   await page.getByRole('button', { name: 'Save correction' }).click();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.screenshot({ path: path.join(outDir, '5-run.png'), fullPage: true });
+  // Mock sidecar: demo data, replies, acting as a colleague, feedback.
+  await page.getByRole('button', { name: 'Mock', exact: true }).click();
+  await page.getByRole('button', { name: 'Give everyone a mock account' }).click();
+  await page.waitForSelector('text=Everyone has a mock account');
+  await page.getByRole('button', { name: 'Load demo candidates' }).click();
+  await page.waitForSelector('text=Demo candidates loaded');
+  await page.screenshot({ path: path.join(outDir, '9-mock-demo.png'), fullPage: false });
+  await page.getByRole('button', { name: 'Answer all waiting requests' }).click();
+  await page.waitForSelector('text=/requests? answered|No requests waiting/');
+  await page.getByRole('button', { name: 'Close mock sidecar' }).click();
+  await page.screenshot({ path: path.join(outDir, '10-run-after-replies.png'), fullPage: true });
+  // Sanne (demo): open drawer, see requests
+  await page.getByRole('button', { name: 'Sanne de Vries (demo)', exact: true }).click();
+  await page.waitForSelector('text=Interviewer requests');
+  await page.screenshot({ path: path.join(outDir, '11-requests.png'), fullPage: false });
+  const book = page.getByRole('button', { name: 'Book with this pair' });
+  if (await book.count()) { await book.click(); await page.getByRole('button', { name: 'Save step' }).click(); }
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  // Act as someone with an accepted request, move the date, give feedback
+  const accepted = await page.evaluate(() => { const S = window.FluxApp.state(); const i = S.state.invites.find((x) => x.status === 'accepted'); return i ? { person: i.personId, date: i.slotDate } : null; });
+  await page.getByRole('button', { name: 'Mock', exact: true }).click();
+  if (accepted) {
+    await page.selectOption('#mock-actas', accepted.person);
+    await page.fill('#mock-today', accepted.date);
+    await page.dispatchEvent('#mock-today', 'change');
+    await page.fill('textarea[id^="mock-fb-"]', 'Good structure, a bit nervous at first. Ask about client conflict in the deep dive.');
+    await page.getByRole('button', { name: 'Send feedback' }).click();
+    await page.waitForSelector('text=Feedback added');
+  } else console.log('no accepted invite to act on');
+  await page.screenshot({ path: path.join(outDir, '12-act-as.png'), fullPage: false });
+  await page.getByRole('button', { name: 'Back to today' }).click();
+  await page.getByRole('button', { name: 'Close mock sidecar' }).click();
+
+  // Roster: a person without Claude, availability set by hand
   await page.goto(page_url + '#roster');
+  await page.getByRole('button', { name: '+ Person' }).click();
+  await page.fill('#pf-name', 'Sophie');
+  await page.selectOption('#pf-team', 'OM');
+  await page.check('#pf-access-manual');
+  await page.getByRole('button', { name: 'Add person' }).click();
+  await page.waitForSelector('text=Save availability');
+  await page.getByRole('button', { name: 'Fridays Hele dag' }).click();
+  await page.getByRole('button', { name: 'Save availability' }).click();
+  await page.waitForSelector('text=Availability saved for Sophie');
   await page.screenshot({ path: path.join(outDir, '6-roster.png'), fullPage: true });
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto(page_url + '#run');

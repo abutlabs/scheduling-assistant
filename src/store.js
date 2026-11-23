@@ -11,12 +11,14 @@
  *   people/{id}      roster: name, team, roles, aliases, active, email
  *   snapshots/{id}   one saved availability poll (dated, per campaign)
  *   candidates/{id}  candidate record with its step timeline
+ *   invites/{id}     a request to an interviewer to hold a slot for a candidate's round
+ *   availability/{personId}  half-day availability Natalie (or the person) set by hand; newest answer wins
  *   notes/{id}       a note or interview feedback on a candidate, by Natalie or an interviewer
  */
 (function (root) {
   'use strict';
 
-  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes'];
+  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes', 'invites', 'availability'];
   const LOCAL_KEY = 'flux-scheduling-local-v1';
 
   function uid(prefix) {

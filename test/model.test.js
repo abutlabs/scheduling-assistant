@@ -154,3 +154,18 @@ test('funnel counts stages', () => {
   assert.equal(f.passedHr, 2);
   assert.equal(f.passedAdvisor, 1);
 });
+
+test('invite state finds a different-team pair and what to release', () => {
+  const inv = (id, personId, status, respondedAt, sentAt) => ({ id, personId, status, respondedAt, sentAt: sentAt || '2026-11-20T09:00:00Z' });
+  let st = M.inviteState([inv('a', 'p1', 'accepted', '1'), inv('b', 'p5', 'pending'), inv('c', 'p2', 'pending')], roster, { today: '2026-11-21' });
+  assert.equal(st.complete, false);
+  assert.deepEqual(st.toRelease.map((r) => [r.invite.id, r.why]), [['b', 'same_team']]);
+  assert.equal(st.overdue.length, 0);
+  st = M.inviteState([inv('a', 'p1', 'accepted', '1'), inv('b', 'p5', 'pending'), inv('c', 'p2', 'accepted', '2'), inv('d', 'p4', 'pending')], roster);
+  assert.equal(st.complete, true);
+  assert.deepEqual(st.pair, ['p1', 'p2']);
+  assert.deepEqual(st.toRelease.map((r) => r.invite.id).sort(), ['b', 'd']);
+  st = M.inviteState([inv('a', 'p1', 'declined'), inv('c', 'p2', 'pending')], roster, { today: '2026-11-23' });
+  assert.equal(st.shortBy, 1);
+  assert.equal(st.overdue.length, 1);
+});

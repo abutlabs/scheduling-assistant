@@ -30,7 +30,17 @@ and write interview briefs.
   names and team clashes), and Claude turns remarks into rules that Natalie
   confirms, edits or dismisses. Saved as a dated snapshot.
 - **Roster**: advisors, team leads and the HR joker, with aliases, poll response
-  and interview load across campaigns.
+  and interview load across campaigns. Each person either uses the app (linked to
+  their Claude account in the organization) or takes part without Claude (Outlook
+  only), and Natalie can set anyone's half-day availability by hand.
+- **Interviewer requests**: from the candidate drawer, pick a slot and ask people
+  (different teams first, then free in the poll, then fewest interviews). Replies
+  are tracked, the first different-team pair completes the booking, and the to-do
+  list prompts to book, release extras, top up after a decline, or chase.
+- **Mock sidecar** (test tool, the Mock button): act as any colleague to accept or
+  decline requests and leave feedback, answer every waiting request at once, move
+  the date to watch clocks run, give everyone mock accounts, and load or clear demo
+  candidates. Everything it creates is marked `mock`.
 
 ## Layout
 

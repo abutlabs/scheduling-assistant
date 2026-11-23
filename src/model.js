@@ -749,6 +749,71 @@
     return null;
   }
 
+
+  // ---------------------------------------------------------------------
+  // Interviewer requests (invites) for one candidate's round
+  // ---------------------------------------------------------------------
+
+  const INVITE_STATUS = {
+    pending: 'Waiting for a reply',
+    accepted: 'Accepted',
+    declined: 'Declined',
+    released: 'Released',
+    cancelled: 'Cancelled',
+  };
+
+  /**
+   * Work out where a set of interviewer requests stands.
+   * Rule from the plan: the pair is the first 2 accepts from different
+   * teams. Once one person from a team accepts, other pending people from
+   * that team are released; once the pair is complete, everyone still
+   * pending is released. A decline (or no reply within the window)
+   * means topping up from the next person.
+   */
+  function inviteState(invites, people, opts) {
+    opts = opts || {};
+    const need = opts.need || 2;
+    const today = opts.today || todayIso();
+    const replyDays = opts.replyDays == null ? 2 : opts.replyDays;
+    const team = (id) => {
+      const p = people.find((x) => x.id === id);
+      return p ? p.team : '?';
+    };
+    const live = invites.filter((i) => i.status !== 'cancelled');
+    const accepted = live.filter((i) => i.status === 'accepted').sort((a, b) => (a.respondedAt || '').localeCompare(b.respondedAt || ''));
+    const pair = [];
+    const teams = new Set();
+    for (const i of accepted) {
+      if (pair.length >= need) break;
+      if (teams.has(team(i.personId))) continue;
+      pair.push(i);
+      teams.add(team(i.personId));
+    }
+    const complete = pair.length >= need;
+    const pending = live.filter((i) => i.status === 'pending');
+    const toRelease = [];
+    const sameTeamAccepted = accepted.filter((i) => !pair.includes(i));
+    for (const i of pending) {
+      if (complete) toRelease.push({ invite: i, why: 'pair_filled' });
+      else if (teams.has(team(i.personId))) toRelease.push({ invite: i, why: 'same_team' });
+    }
+    for (const i of sameTeamAccepted) toRelease.push({ invite: i, why: complete ? 'pair_filled' : 'same_team' });
+    const overdue = pending.filter((i) => i.sentAt && daysBetween(i.sentAt.slice(0, 10), today) >= replyDays);
+    const declined = live.filter((i) => i.status === 'declined');
+    // How many more people to ask so a pair is still possible.
+    const stillPossible = pending.filter((i) => !teams.has(team(i.personId)));
+    const shortBy = complete ? 0 : Math.max(0, need - pair.length - new Set(stillPossible.map((i) => team(i.personId))).size);
+    return { pair: pair.map((i) => i.personId), complete, pending, accepted, declined, toRelease, overdue, shortBy, teams: [...teams] };
+  }
+
+  const RELEASE_REASONS = {
+    same_team: 'another colleague from your team accepted first',
+    pair_filled: 'the interview pair is complete',
+    no_candidate: 'no candidate was matched to this slot',
+    candidate_cancelled: 'the candidate cancelled',
+    rescheduled: 'the interview was rescheduled',
+  };
+
   const api = {
     TEAMS,
     TEAM_CODES,
@@ -792,6 +857,9 @@
     pairProblems,
     availabilityOn,
     normTime,
+    INVITE_STATUS,
+    RELEASE_REASONS,
+    inviteState,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
