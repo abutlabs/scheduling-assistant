@@ -46,3 +46,17 @@ Half-day availability set by hand (by Natalie for people without Claude, or late
 ## notes/{id}
 `candidateId`, `campaignId`, `round` (`general`, `hr`, `advisor`, `deepdive`), `kind` (`note` or `feedback`), `text`,
 `authorId` (viewer id from the `user` capability; names are looked up when shown), `authorPersonId` (roster person, used by the mock sidecar), `mock`, `createdAt`.
+
+## members/{userId}
+
+One doc per Claude account that pressed "I'm in" on the welcome card. The doc id
+is the viewer's `user.id()`. Each person can write only their own doc; editors
+read them all, and the roster shows "Joined" when a person's linked `accountId`
+has a doc here.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| acceptedAt | ISO time | When they pressed "I'm in" |
+| lang | `en` or `nl` | Language the card was shown in |
+| mock | bool | Set by the mock sidecar; removed by "Clear mock data" |
+

@@ -233,3 +233,9 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
 .sidecar .x { border: 0; font-size: 18px; padding: 2px 8px; background: none; }
 .mock-sec { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--grid); }
 .mock-card { background: var(--bg); border: 1px solid var(--grid); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+
+/* Welcome card */
+.welcome-wrap { position: fixed; inset: 0; z-index: 20; background: var(--shadow); display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
+.welcome { background: var(--bg); border: 1px solid var(--grid); border-radius: 10px; box-shadow: 0 16px 40px var(--shadow); max-width: 520px; width: 100%; padding: 22px 22px 18px; display: flex; flex-direction: column; gap: 10px; }
+.welcome h2 { margin: 0; font-size: 20px; }
+.welcome p { margin: 0; line-height: 1.5; }

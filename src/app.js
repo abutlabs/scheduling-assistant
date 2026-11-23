@@ -134,7 +134,7 @@
     const root = document.getElementById('app');
     const scroll = { x: window.scrollX, y: window.scrollY };
     const drawerScroll = document.querySelector('.drawer') ? document.querySelector('.drawer').scrollTop : 0;
-    root.replaceChildren(...[topBar(), banner(), h('main', {}, view()), drawer(), sidecar(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
+    root.replaceChildren(...[topBar(), banner(), h('main', {}, view()), drawer(), sidecar(), welcomeCard(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
     window.scrollTo(scroll.x, scroll.y);
     const d = document.querySelector('.drawer');
     if (d) d.scrollTop = drawerScroll;
@@ -1267,6 +1267,7 @@
       'span',
       { class: 'row' },
       h('span', { class: `chip ${isMock ? 'warn' : 'good'}` }, isMock ? 'Mock account' : names[p.accountId] || 'Linked'),
+      memberOf(p.accountId) ? h('span', { class: 'chip good', title: `Said “I’m in” on ${M.formatDay(memberOf(p.accountId).acceptedAt.slice(0, 10))}` }, 'Joined ✓') : h('span', { class: 'faint small' }, 'Not joined yet'),
       h('button', { class: 'link', onclick: () => act(() => S.update('people', p.id, { accountId: null }), 'Unlinked') }, 'Unlink'),
     );
   }
@@ -1376,6 +1377,11 @@
       'div',
       { style: 'display:flex;flex-direction:column;gap:8px' },
       !p.accountId ? h('p', { class: 'warn-line' }, `${p.name} has no Claude account linked yet, so in real life they would only get the Outlook invite.`) : null,
+      p.accountId
+        ? memberOf(p.accountId)
+          ? h('span', { class: 'chip good', style: 'align-self:flex-start' }, '✓ Joined the app')
+          : h('button', { style: 'align-self:flex-start', onclick: () => ((ui.welcome = { memberId: p.accountId, name: p.name, mock: true }), rerender()) }, 'Open the app as them (welcome card)')
+        : null,
       h('b', { class: 'small' }, `Requests for ${p.name}`),
       pending.length
         ? pending.map((i) =>
@@ -1459,7 +1465,7 @@
 
   function clearMock() {
     act(async () => {
-      for (const coll of ['invites', 'notes', 'candidates']) for (const d of S.state[coll].filter((x) => x.mock)) await S.remove(coll, d.id);
+      for (const coll of ['invites', 'notes', 'candidates', 'members']) for (const d of S.state[coll].filter((x) => x.mock)) await S.remove(coll, d.id);
     }, 'Mock data cleared');
   }
 
@@ -2517,6 +2523,86 @@
     );
   }
 
+
+  // ------------------------------------------------------------------
+  // Welcome card: shown once per person; "I'm in" is saved to members/{userId}
+  // ------------------------------------------------------------------
+  const WELCOME = {
+    en: {
+      title: 'Welcome to Flux Interviews',
+      body: [
+        'Flux Partners is small, and our people are everything, including the people we hire next. We want to find them ourselves instead of leaning on expensive agencies, and that only works if interviewing runs smoothly for you.',
+        'This app is our first step. It spreads interviews fairly across teams, gives you notice when plans change, and gives you a short brief on each candidate before you walk in. You can keep answering in Outlook if you prefer.',
+        'It won’t be perfect yet. Tell us what’s annoying or missing (use the comment button or tell Natalie) and we’ll keep improving it.',
+      ],
+      privacy: 'Candidate details are only visible to the people interviewing them and to HR.',
+      ok: 'I’m in',
+      later: 'Not now',
+      other: 'Nederlands',
+    },
+    nl: {
+      title: 'Welkom bij Flux Interviews',
+      body: [
+        'Flux Partners is klein, en onze mensen zijn alles, ook de mensen die we hierna aannemen. We willen ze zelf vinden in plaats van te leunen op dure bureaus, en dat lukt alleen als interviewen voor jou soepel loopt.',
+        'Deze app is onze eerste stap. Hij verdeelt interviews eerlijk over de teams, laat het je op tijd weten als plannen veranderen, en geeft je voor elk gesprek een korte brief over de kandidaat. Je kunt ook gewoon in Outlook blijven reageren.',
+        'Hij is nog niet perfect. Vertel ons wat irritant is of ontbreekt (via de commentaarknop of tegen Natalie), dan blijven we hem verbeteren.',
+      ],
+      privacy: 'Kandidaatgegevens zijn alleen zichtbaar voor de mensen die hen interviewen en voor HR.',
+      ok: 'Ik doe mee',
+      later: 'Niet nu',
+      other: 'English',
+    },
+  };
+  // ui.welcome: null (hidden) or { memberId, name?, mock? }
+  async function checkWelcome() {
+    const id = me || 'local';
+    if (store(`flux.welcomed.${id}`)) return;
+    let doc = null;
+    try {
+      doc = await S.get('members', id);
+    } catch (e) {
+      doc = null;
+    }
+    if (doc && doc.acceptedAt) {
+      store(`flux.welcomed.${id}`, '1');
+      return;
+    }
+    ui.welcome = { memberId: id };
+    rerender();
+  }
+  function welcomeCard() {
+    const w = ui.welcome;
+    if (!w) return null;
+    const lang = ui.welcomeLang || (/^nl\b/i.test(navigator.language || '') ? 'nl' : 'en');
+    const t = WELCOME[lang];
+    const close = () => ((ui.welcome = null), rerender());
+    const accept = () =>
+      act(async () => {
+        await S.set('members', w.memberId, { acceptedAt: new Date().toISOString(), lang, ...(w.mock ? { mock: true } : {}) });
+        if (!w.mock) store(`flux.welcomed.${w.memberId}`, '1');
+        close();
+      }, w.mock ? `${w.name} joined (mock)` : 'Welcome aboard');
+    return h(
+      'div',
+      { class: 'welcome-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'welcome-title' },
+      h(
+        'div',
+        { class: 'welcome' },
+        h(
+          'div',
+          { class: 'row', style: 'justify-content:space-between;align-items:flex-start' },
+          h('h2', { id: 'welcome-title' }, t.title),
+          h('button', { class: 'link small', onclick: () => ((ui.welcomeLang = lang === 'en' ? 'nl' : 'en'), rerender()) }, t.other),
+        ),
+        w.mock ? h('p', { class: 'warn-line small' }, `Mock: this is what ${w.name} sees the first time they open the app.`) : null,
+        t.body.map((para) => h('p', {}, para)),
+        h('p', { class: 'small muted' }, t.privacy),
+        h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { onclick: close }, t.later), h('button', { class: 'p', onclick: accept }, t.ok)),
+      ),
+    );
+  }
+  const memberOf = (accountId) => accountId && S.state.members.find((m) => m.id === accountId && m.acceptedAt);
+
   // ------------------------------------------------------------------
   // Boot
   // ------------------------------------------------------------------
@@ -2530,7 +2616,7 @@
   async function boot() {
     S = await window.FluxStore.connect(
       () => render(),
-      (coll, err) => toast(`Couldn’t load ${coll}: ${err.code}`),
+      (coll, err) => coll !== 'members' && toast(`Couldn’t load ${coll}: ${err.code}`),
     );
     try {
       if (window.claude && window.claude.use) sample = await window.claude.use('sample');
@@ -2543,6 +2629,7 @@
       me = null;
     }
     route();
+    checkWelcome();
   }
   window.FluxApp = { startDraft: (...a) => startDraft(...a), state: () => S, ui };
   boot();

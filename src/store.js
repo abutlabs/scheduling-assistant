@@ -14,11 +14,12 @@
  *   invites/{id}     a request to an interviewer to hold a slot for a candidate's round
  *   availability/{personId}  half-day availability Natalie (or the person) set by hand; newest answer wins
  *   notes/{id}       a note or interview feedback on a candidate, by Natalie or an interviewer
+ *   members/{userId} a team member said "I'm in" on the welcome card (each person writes their own)
  */
 (function (root) {
   'use strict';
 
-  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes', 'invites', 'availability'];
+  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes', 'invites', 'availability', 'members'];
   const LOCAL_KEY = 'flux-scheduling-local-v1';
 
   function uid(prefix) {
@@ -61,6 +62,9 @@
         persist();
         emit(coll);
       },
+      async get(coll, id) {
+        return data[coll][id] ? { id, ...data[coll][id] } : null;
+      },
       async remove(coll, id) {
         delete data[coll][id];
         persist();
@@ -86,6 +90,10 @@
       },
       remove(coll, id) {
         return db.collection(coll).doc(id).delete();
+      },
+      async get(coll, id) {
+        const d = await db.collection(coll).doc(id).get();
+        return d.exists ? { id: d.id, ...d.data() } : null;
       },
     };
   }
@@ -138,6 +146,7 @@
       set: (coll, id, doc) => backend.set(coll, id, doc),
       update: (coll, id, patch) => backend.update(coll, id, patch),
       remove: (coll, id) => backend.remove(coll, id),
+      get: (coll, id) => backend.get(coll, id),
     };
   }
 

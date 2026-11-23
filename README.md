@@ -10,6 +10,14 @@ lives in the artifact's built-in database, and it uses Claude (through the
 page's `sample` capability) to read poll remarks, read candidate availability
 and write interview briefs.
 
+## Why this exists
+
+Flux Partners is small, and its people are its strength. Recruiting through
+agencies is expensive and keeps the process out of our hands. This app is a
+first step toward running recruitment in-house with AI support: fair interview
+load across teams, fast turnaround for candidates, and fewer emails for
+everyone. It's built to improve through the feedback of the people who use it.
+
 ## Phase 1 (this branch)
 
 - **Campaigns**: the first is Trainee hiring (target 10 hires, about 25 interviews).
@@ -76,13 +84,16 @@ Publish `dist/index.html` as a claude.ai artifact with these capabilities:
   "db": { "rules": [
     { "path": "", "read": "view", "write": "admin" },
     { "path": "candidates", "read": "admin", "write": "admin" },
-    { "path": "notes", "read": "admin", "write": "admin" }
+    { "path": "notes", "read": "admin", "write": "admin" },
+    { "path": "members", "read": "admin", "write": "owner" },
+    { "path": "members/{self}", "read": "view", "write": "interact" }
   ] },
   "user": { "scopes": ["profile"] },
   "sample": {}
 }
 ```
 
-Candidate records and notes are readable by editors only. Interviewers get
+Candidate records and notes are readable by editors only. Each person writes
+only their own `members/{userId}` doc when they press "I'm in" on the welcome card. Interviewers get
 their own access when the interviewer view is built. The page must be published
 from a Flux Partners account so Natalie and colleagues in the organization can use it.

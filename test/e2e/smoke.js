@@ -39,6 +39,14 @@ const fakeClaude = () => {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.goto(page_url);
+  // Welcome card on first open: English, then Dutch, then "I'm in".
+  await page.waitForSelector('text=Welcome to Flux Interviews');
+  await page.screenshot({ path: path.join(outDir, '0-welcome.png'), fullPage: false });
+  await page.getByRole('button', { name: 'Nederlands' }).click();
+  await page.waitForSelector('text=Welkom bij Flux Interviews');
+  await page.screenshot({ path: path.join(outDir, '0-welcome-nl.png'), fullPage: false });
+  await page.getByRole('button', { name: 'Ik doe mee' }).click();
+  await page.waitForSelector('text=Welcome aboard');
   await page.getByRole('button', { name: 'Create campaign' }).click();
   await page.waitForSelector('text=To do');
 
@@ -137,6 +145,11 @@ const fakeClaude = () => {
     await page.waitForSelector('text=Feedback added');
   } else console.log('no accepted invite to act on');
   await page.screenshot({ path: path.join(outDir, '12-act-as.png'), fullPage: false });
+  await page.getByRole('button', { name: 'Open the app as them (welcome card)' }).click();
+  await page.waitForSelector('text=/Mock: this is what .* sees/');
+  await page.screenshot({ path: path.join(outDir, '13-welcome-mock.png'), fullPage: false });
+  await page.getByRole('button', { name: /I’m in|Ik doe mee/ }).click();
+  await page.waitForSelector('text=✓ Joined the app');
   await page.getByRole('button', { name: 'Back to today' }).click();
   await page.getByRole('button', { name: 'Close mock sidecar' }).click();
 
@@ -152,6 +165,11 @@ const fakeClaude = () => {
   await page.getByRole('button', { name: 'Save availability' }).click();
   await page.waitForSelector('text=Availability saved for Sophie');
   await page.screenshot({ path: path.join(outDir, '6-roster.png'), fullPage: true });
+  if (!(await page.getByText('Joined ✓').count())) errors.push('roster shows no joined member');
+  // Reload: the welcome card must not come back.
+  await page.reload();
+  await page.waitForTimeout(300);
+  if (await page.getByText('Welcome to Flux Interviews').count()) errors.push('welcome card shown twice');
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto(page_url + '#run');
   await page.screenshot({ path: path.join(outDir, '7-run-dark.png'), fullPage: true });
