@@ -5188,7 +5188,7 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
   // Feedback reports: everyone can send a screenshot and a note to the
   // developer. Stored in reports/{id}; editors read them in the Developer view.
   // ------------------------------------------------------------------
-  const BUILD = '2026-11-23 23:57 b2eadeb';
+  const BUILD = '2026-11-23 23:57 165ff6d';
   const recentErrors = [];
   window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
   window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
