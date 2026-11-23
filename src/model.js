@@ -557,20 +557,59 @@
     preferFridays: true,
   };
 
+  const HR_ROUND = { key: 'hr', name: 'HR interview', role: 'hr', interviewers: 1, differentTeams: false, durationMin: 45, maxDaysAfterPrevious: null, fallbacks: [] };
   const DEFAULT_ROUNDS = [
     { key: 'advisor', name: 'Advisor interview', role: 'advisor', interviewers: 2, differentTeams: true, durationMin: 60, maxDaysAfterPrevious: 7, fallbacks: ['natalie'] },
     { key: 'deepdive', name: 'Team lead deep dive', role: 'teamlead', interviewers: 2, differentTeams: true, durationMin: 60, maxDaysAfterPrevious: 7, fallbacks: ['joker', 'natalie'] },
   ];
 
+  /**
+   * Campaign structures live in code. A structure fixes the rounds (and the
+   * candidate steps that go with them); Natalie adjusts each round's rules
+   * and picks who sits in each round when she creates a campaign. New
+   * structures (for example a 2-round interview) are added here.
+   */
+  const STRUCTURES = {
+    'three-round': {
+      key: 'three-round',
+      name: '3-round interview',
+      description: 'HR interview with Natalie, then an advisor interview with two advisors from different teams, then a deep dive with two team leads.',
+      rounds: [HR_ROUND, ...DEFAULT_ROUNDS],
+    },
+  };
+  const DEFAULT_STRUCTURE = 'three-round';
+
+  /** Who can sit in a round, by roster role. */
+  function eligibleFor(round, person) {
+    if (!person || person.active === false) return false;
+    const roles = person.roles || [];
+    if (round.role === 'hr') return person.team === 'P&C' || roles.includes('joker');
+    if (round.role === 'teamlead') return roles.includes('teamlead') || roles.includes('joker');
+    return roles.includes(round.role);
+  }
+
+  /** The people in a campaign round: the chosen members, or everyone eligible when none were chosen. */
+  function roundMembers(camp, roundKey, people) {
+    const round = ((camp && camp.rounds) || STRUCTURES[DEFAULT_STRUCTURE].rounds).find((r) => r.key === roundKey);
+    if (!round) return [];
+    const chosen = camp && camp.members && camp.members[roundKey];
+    if (chosen) return people.filter((p) => chosen.includes(p.id) && p.active !== false);
+    return people.filter((p) => eligibleFor(round, p));
+  }
+
   function newCampaign(fields) {
+    const structure = STRUCTURES[fields.structure] || STRUCTURES[DEFAULT_STRUCTURE];
     return {
       name: fields.name || 'New campaign',
       startDate: fields.startDate || todayIso(),
       endDate: fields.endDate || '',
       targetHires: Number(fields.targetHires) || 0,
       targetInterviews: Number(fields.targetInterviews) || 0,
-      rounds: JSON.parse(JSON.stringify(fields.rounds || DEFAULT_ROUNDS)),
+      structure: structure.key,
+      rounds: JSON.parse(JSON.stringify(fields.rounds || structure.rounds)),
       settings: JSON.parse(JSON.stringify(fields.settings || DEFAULT_SETTINGS)),
+      members: fields.members ? JSON.parse(JSON.stringify(fields.members)) : null,
+      invited: {},
       archived: false,
       createdAt: new Date().toISOString(),
     };
@@ -998,6 +1037,10 @@
     INVITE_STATUS,
     RELEASE_REASONS,
     inviteState,
+    STRUCTURES,
+    DEFAULT_STRUCTURE,
+    eligibleFor,
+    roundMembers,
     POINTS,
     interviewsOf,
     scoreboard,

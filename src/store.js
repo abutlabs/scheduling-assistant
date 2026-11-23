@@ -18,11 +18,12 @@
  *   inbox/{userId}   what one interviewer sees: their requests, interviews, briefs, own scores (written by Natalie's page)
  *   replies/{userId} an interviewer's answers and feedback, applied to invites and notes by Natalie's page
  *   stats/{campaignId} campaign overview and team scoreboard everyone can read
+ *   reports/{id}     feedback report (note, screenshot, app context) for the developer
  */
 (function (root) {
   'use strict';
 
-  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes', 'invites', 'availability', 'members', 'inbox', 'replies', 'stats'];
+  const COLLECTIONS = ['campaigns', 'people', 'snapshots', 'candidates', 'notes', 'invites', 'availability', 'members', 'inbox', 'replies', 'stats', 'reports'];
   // What an advisor or team lead's page loads; the rest is Natalie's.
   const VIEWER_COLLECTIONS = ['campaigns', 'stats'];
   const LOCAL_KEY = 'flux-scheduling-local-v1';

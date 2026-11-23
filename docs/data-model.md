@@ -94,3 +94,19 @@ feedback on time). Individual scores are never in here.
 feedback within a day of the interview. Ties share a rank. Teams are ranked by
 points per member.
 
+## campaigns/{id}: structure and people
+
+`structure` names the structure in code (`three-round`). `rounds` holds the
+rules per round (`hr`, `advisor`, `deepdive`). `members` maps a round key to the
+roster ids chosen for it; a round without an entry is open to everyone eligible
+by role. `invited` maps a roster id to when Natalie marked them invited.
+`appLink` is the share link pasted into the invitation.
+
+## reports/{id}
+
+A feedback report from the Report button. `kind` (broken, confusing, idea),
+`what`, `expected`, `screenshot` (JPEG data URL, about 1100 px wide, or null),
+`context` {view, page, drawer, as, campaign, mockDate, build, size, agent,
+errors}, `authorId`, `authorName`, `status` (new, seen, fixing, fixed, wontfix),
+`createdAt`. Anyone who can use the app can add one; only editors read them.
+

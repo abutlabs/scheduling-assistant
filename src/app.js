@@ -26,6 +26,10 @@
   function h(tag, attrs, ...kids) {
     const el = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs || {})) {
+      if (k.startsWith('aria-') && typeof v === 'boolean') {
+        el.setAttribute(k, String(v));
+        continue;
+      }
       if (v === null || v === undefined || v === false) continue;
       if (k === 'class') el.className = v;
       else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
@@ -39,6 +43,12 @@
     }
     return el;
   }
+  // Is this person in the campaign's round? (Chosen members, or everyone eligible when none were chosen.)
+  function inRound(c, roundKey, p) {
+    const camp = S.state.campaigns.find((x) => x.id === c.campaignId) || campaign();
+    return M.roundMembers(camp, roundKey, [p]).length > 0;
+  }
+  const roundByKey = (camp, key) => ((camp && camp.rounds) || []).find((r) => r.key === key) || M.DEFAULT_ROUNDS.find((r) => r.key === key);
   // Max days per round come from the candidate's campaign settings.
   function roundLimits(campId) {
     const camp = S && S.state.campaigns.find((x) => x.id === campId);
@@ -143,7 +153,7 @@
     const scroll = { x: window.scrollX, y: window.scrollY };
     const drawerScroll = document.querySelector('.drawer') ? document.querySelector('.drawer').scrollTop : 0;
     const iv = ivContext();
-    root.replaceChildren(...[iv ? ivTopBar(iv) : topBar(), iv ? ivBanner(iv) : null, banner(), h('main', {}, iv ? interviewerView(iv) : view()), iv ? null : drawer(), sidecar(), welcomeCard(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
+    root.replaceChildren(...[iv ? ivTopBar(iv) : topBar(), iv ? ivBanner(iv) : null, banner(), h('main', {}, iv ? interviewerView(iv) : ui.dev ? devView() : view()), iv || ui.dev ? null : drawer(), sidecar(), welcomeCard(), reportFab(), reportDialog(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
     window.scrollTo(scroll.x, scroll.y);
     const d = document.querySelector('.drawer');
     if (d) d.scrollTop = drawerScroll;
@@ -168,7 +178,7 @@
       'header',
       { class: 'bar gutter' },
       h('div', { class: 'brand' }, h('i'), 'Flux interviews'),
-      h('nav', {}, nav.map(([k, label, n]) => h('a', { href: `#${k}`, 'aria-current': ui.view === k ? 'page' : null }, label, n ? h('span', { class: 'n' }, n) : null))),
+      h('nav', {}, nav.map(([k, label, n]) => h('a', { href: `#${k}`, onclick: () => ui.dev && setViewAs(null), 'aria-current': ui.view === k && !ui.dev ? 'page' : null }, label, n ? h('span', { class: 'n' }, n) : null))),
       c
         ? h(
             'div',
@@ -216,8 +226,8 @@
     return h(
       'div',
       { class: 'section gutter' },
-      h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Set up your first campaign'), h('p', {}, 'A campaign is one hiring drive with its own rounds, targets and availability polls. Candidates, holds and metrics all hang off it.'))),
-      campaignForm(null),
+      h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Set up your first campaign'), h('p', {}, 'A campaign is one hiring drive: its structure, the people in each round, targets and availability polls.'))),
+      campaignWizard(),
     );
   }
 
@@ -304,70 +314,76 @@
     return items.sort((a, b) => a.sortKey - b.sortKey);
   }
 
+  const DAYNAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const longDay = (iso) => `${DAYNAME[M.weekdayOf(iso)]} ${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
+
+  function todoRow(i) {
+    return h(
+      'div',
+      { class: `act tone-${i.tone || 'plain'}` },
+      h('i', { class: 'dot', title: i.kind }),
+      h('div', {}, h('b', {}, i.who), h('p', {}, i.text)),
+      h(
+        'button',
+        {
+          class: i.tone === 'accent' || i.tone === 'bad' ? 'p' : '',
+          onclick: () => {
+            if (i.go) location.hash = i.go;
+            else if (i.invite) releaseInvite(i.invite, i.why);
+            else if (i.prefill) {
+              const c = S.state.candidates.find((x) => x.id === i.cand);
+              const r = roundInvites(c);
+              ui.candId = c.id;
+              prefillBooking(c, i.step, r.list, r.state);
+            } else openCandidate(i.cand, i.step);
+          },
+        },
+        i.btn,
+      ),
+    );
+  }
+
   function runView() {
     const items = todoItems();
-    const groups = [
-      ['overdue', 'Overdue'],
-      ['today', 'Today'],
-      ['later', 'Coming up'],
-    ];
-    const todo = h(
-      'section',
-      { class: 'tpanel', 'aria-label': 'To do' },
-      h('div', { class: 'ph' }, 'To do', h('span', { class: 'faint' }, items.length ? `${items.length} · deadlines first` : '')),
-      items.length
-        ? groups.map(([g, label]) => {
-            const list = items.filter((i) => i.group === g);
-            if (!list.length) return null;
-            return [
-              h('div', { class: 'grp' }, label),
-              list.map((i) =>
-                h(
-                  'div',
-                  { class: 'act' },
-                  h('span', { class: `kind k-${i.tone}` }, i.kind),
-                  h('div', {}, h('b', {}, i.who), h('p', {}, i.text)),
-                  h(
-                    'button',
-                    {
-                      class: i.tone === 'accent' || i.tone === 'bad' ? 'p' : '',
-                      onclick: () => {
-                        if (i.go) location.hash = i.go;
-                        else if (i.invite) releaseInvite(i.invite, i.why);
-                        else if (i.prefill) {
-                          const c = S.state.candidates.find((x) => x.id === i.cand);
-                          const r = roundInvites(c);
-                          ui.candId = c.id;
-                          prefillBooking(c, i.step, r.list, r.state);
-                        } else openCandidate(i.cand, i.step);
-                      },
-                    },
-                    i.btn,
-                  ),
-                ),
-              ),
-            ];
-          })
-        : h('div', { class: 'empty' }, h('p', {}, 'Nothing to do right now. Add a candidate after their HR interview and the next steps appear here.'), h('button', { class: 'p', onclick: () => openCandidate('new') }, '+ Candidate')),
-    );
-
+    const now = items.filter((i) => i.group === 'overdue' || i.group === 'today');
+    const later = items.filter((i) => i.group === 'later');
+    const showN = ui.showAllTodo ? now.length : 5;
     const c = campaign();
     const f = M.funnel(candidates());
     const target = c.targetHires || 0;
-    const statRow = (label, n, of) => h('div', { class: 'stat' }, h('span', {}, label), h('b', {}, of ? `${n} / ${of}` : n), of ? h('div', { class: 'bar-track' }, h('i', { style: `width:${Math.min(100, (n / of) * 100)}%` })) : null);
-    const side = h(
+    const pct = target ? Math.min(100, Math.round((f.hired / target) * 100)) : 0;
+    const summary = now.length ? `${plural(now.length, 'thing needs', 'things need')} you today.` : 'Nothing needs you right now.';
+
+    const todo = h(
       'section',
-      { class: 'tpanel', 'aria-label': 'Campaign progress' },
-      h('div', { class: 'ph' }, 'Campaign progress', h('span', { class: 'faint' }, c.name)),
-      statRow('Candidates', f.total),
-      statRow('Passed HR', f.passedHr),
-      statRow('Passed advisor round', f.passedAdvisor),
-      statRow('Hired', f.hired, target || null),
-      h('div', { class: 'stat' }, h('span', { class: 'faint' }, 'Holds and interviewer invites arrive with matching and Outlook (phases 2 and 3).')),
+      { class: 'calm-card', 'aria-label': 'To do' },
+      now.length
+        ? [now.slice(0, showN).map(todoRow), now.length > showN ? h('button', { class: 'link more', onclick: () => ((ui.showAllTodo = true), rerender()) }, `Show ${now.length - showN} more`) : null]
+        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : 'Add a candidate after their HR interview and the next steps appear here.'), candidates().length ? null : h('button', { class: 'p', onclick: () => openCandidate('new') }, '+ Candidate')),
+      later.length
+        ? h(
+            'details',
+            { class: 'later', open: !!ui.laterOpen, ontoggle: (e) => (ui.laterOpen = e.target.open) },
+            h('summary', {}, `Coming up (${later.length})`),
+            later.map(todoRow),
+          )
+        : null,
     );
 
+    const side = h(
+      'section',
+      { class: 'calm-card progress', 'aria-label': 'Campaign progress' },
+      h('span', { class: 'muted' }, c.name),
+      h('div', { class: 'big-num' }, `${f.hired}`, h('span', {}, ` of ${target || '?'} hired`)),
+      h('div', { class: 'meter' }, h('i', { style: `width:${pct}%` })),
+      h('p', { class: 'muted' }, `${plural(f.total, 'candidate')} · ${f.passedHr} passed HR · ${f.passedAdvisor} through the advisor round`),
+    );
+
+    const showTable = store('flux.stepTable') === '1';
     return [
-      h('div', { class: 'section band gutter' }, h('div', { class: 'cols' }, todo, side)),
+      h('div', { class: 'section gutter calm-head' }, h('p', { class: 'muted' }, longDay(TODAY)), h('h1', {}, summary)),
+      h('div', { class: 'section gutter' }, h('div', { class: 'cols' }, todo, side)),
       h(
         'div',
         { class: 'section' },
@@ -375,11 +391,36 @@
           'div',
           { class: 'head gutter' },
           h('div', { class: 'row' }, h('h2', {}, 'Candidates'), h('button', { class: 'p', onclick: () => openCandidate('new') }, '+ Candidate'), filterButtons()),
-          h('p', { class: 'small' }, 'Orange = next step. Click any cell to record or correct it. Clock = days since availability was asked (target 7).'),
+          h('button', { class: 'link', onclick: () => (store('flux.stepTable', showTable ? '0' : '1'), rerender()) }, showTable ? 'Simple list' : 'Show every step'),
         ),
-        matrix(),
+        showTable ? matrix() : candidateList(),
       ),
     ];
+  }
+
+  // The calm default: one line per candidate with where they are and what's next.
+  function candidateList() {
+    const list = candidates().filter((c) => {
+      const st = cstate(c).status;
+      return ui.candFilter === 'all' ? true : ui.candFilter === 'closed' ? st !== 'open' : st === 'open';
+    });
+    if (!list.length) return h('div', { class: 'gutter' }, h('p', { class: 'muted' }, 'No candidates here.'));
+    const stageName = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Hired' };
+    return h(
+      'div',
+      { class: 'gutter cand-list' },
+      list.map((c) => {
+        const s = cstate(c);
+        return h(
+          'button',
+          { class: 'cand-row', onclick: () => openCandidate(c.id) },
+          h('b', {}, c.name),
+          h('span', { class: `chip ${s.status === 'open' ? 'accent' : s.status === 'hired' ? 'good' : ''}` }, s.status === 'open' ? stageName[s.stage] : M.OUTCOME_LABELS[s.status] || s.status),
+          h('span', { class: 'muted next' }, s.prompt || ''),
+          s.clock && s.clock.state !== 'met' ? h('span', { class: `small ${s.clock.state === 'overdue' ? 'bad-t' : s.clock.daysLeft <= 2 ? 'warn-t' : 'faint'}` }, s.clock.state === 'overdue' ? 'past deadline' : `day ${Math.max(0, s.clock.day)} of ${s.clock.max}`) : h('span', {}),
+        );
+      }),
+    );
   }
 
   function filterButtons() {
@@ -633,7 +674,7 @@
   function stepForm(c, key, existing) {
     const step = M.STEP_BY_KEY[key];
     const s = cstate(c);
-    const round = step.round === 'advisor' ? campaign().rounds[0] : step.round === 'deepdive' ? campaign().rounds[1] : null;
+    const round = step.round === 'advisor' || step.round === 'deepdive' ? roundByKey(campaign(), step.round) : null;
     const prev = existing || {};
     const pd = prev.data || {};
     // Keep what's been typed across re-renders (another note saved, data arriving).
@@ -1088,7 +1129,7 @@
     if (s.status !== 'open' || s.stage === 'hr') return null;
     const { round, list, state } = roundInvites(c);
     const bookedKey = round === 'deepdive' ? 'deepdive_booked' : 'advisor_booked';
-    const roundObj = round === 'deepdive' ? campaign().rounds[1] : campaign().rounds[0];
+    const roundObj = roundByKey(campaign(), round);
     const releaseIds = new Set(state.toRelease.map((r) => r.invite.id));
     const chip = (i) => {
       const tone = { accepted: 'good', declined: 'bad', pending: releaseIds.has(i.id) ? 'warn' : 'accent', released: '', cancelled: '' }[i.status];
@@ -1144,7 +1185,7 @@
     function candidatesFor() {
       const snaps = availSources();
       return people()
-        .filter((p) => p.active !== false && (M.personHasRole(p, role) || (role === 'teamlead' && (p.roles || []).includes('joker'))) && !asked.has(p.id))
+        .filter((p) => inRound(c, round, p) && !asked.has(p.id))
         .map((p) => {
           const a = f.slotDate ? M.availabilityOn(snaps, p.id, role, f.slotDate) : null;
           const hour = Number((f.time || '10:00').slice(0, 2));
@@ -1497,7 +1538,6 @@
         if (b && b.data && b.data.slotDate === day) simLog(day, `${first(c)}’s ${ROUND_LABEL[round].toLowerCase()} takes place today${b.data.time ? ` at ${b.data.time}` : ''}. Record the result when the feedback is in.`);
       }
     }
-    if (!n) simLog(day, M.weekdayOf(day) === 0 || M.weekdayOf(day) === 6 ? 'Weekend. Nobody answered.' : 'No replies today.');
   }
 
   function clearMock() {
@@ -2513,11 +2553,16 @@
   }
   const fmtSetting = (v, kind, unit) => (kind === 'bool' ? (v ? 'On' : 'Off') : `${v ?? '–'}${unit ? ` ${unit}` : ''}`);
 
-  function rulesSection(c, editable) {
-    const editing = editable && ui.editRules === c.id;
+  // draft: the wizard passes its own {rounds, settings} to edit before the campaign exists.
+  function roundProblem(rounds) {
+    const bad = rounds.find((r) => !(r.interviewers >= 1) || !(r.durationMin >= 15) || (r.maxDaysAfterPrevious != null && !(r.maxDaysAfterPrevious >= 1)));
+    return bad ? `${bad.name}: at least 1 interviewer, 15 minutes and 1 day.` : '';
+  }
+  function rulesSection(c, editable, draft) {
+    const editing = !!draft || (editable && ui.editRules === c.id);
     const settings = c.settings || M.DEFAULT_SETTINGS;
     const rounds = c.rounds || M.DEFAULT_ROUNDS;
-    const f = editing ? (ui.rulesDraft = ui.rulesDraft || { settings: JSON.parse(JSON.stringify(settings)), rounds: JSON.parse(JSON.stringify(rounds)) }) : null;
+    const f = draft || (editing ? (ui.rulesDraft = ui.rulesDraft || { settings: JSON.parse(JSON.stringify(settings)), rounds: JSON.parse(JSON.stringify(rounds)) }) : null);
     const err = h('p', { class: 'err-line' });
     const numIn = (id, val, onv) => h('input', { type: 'number', min: 0, max: 60, id, value: val, style: 'width:70px', oninput: (e) => onv(Number(e.target.value)) });
     const boolIn = (id, val, onv) => h('input', { type: 'checkbox', id, checked: !!val, onchange: (e) => onv(e.target.checked) });
@@ -2529,7 +2574,7 @@
         'div',
         { class: 'head' },
         h('div', {}, h('h2', {}, 'Rounds and scheduling rules'), h('p', {}, editable ? 'Everyone in the campaign can read these. Only you can change them.' : 'How interviews are planned in this campaign. Natalie sets these.')),
-        editable && !editing ? h('button', { onclick: () => ((ui.editRules = c.id), (ui.rulesDraft = null), rerender()) }, 'Edit') : null,
+        draft ? null : editable && !editing ? h('button', { onclick: () => ((ui.editRules = c.id), (ui.rulesDraft = null), rerender()) }, 'Edit') : null,
       ),
       h(
         'div',
@@ -2546,19 +2591,21 @@
                 'tr',
                 {},
                 h('td', { class: 'name' }, r.name),
-                h('td', {}, editing ? numIn(`r-int-${i}`, r.interviewers, (v) => (r.interviewers = v)) : `${r.interviewers} ${r.role === 'teamlead' ? 'team leads' : 'advisors'}`),
-                h('td', {}, editing ? boolIn(`r-diff-${i}`, r.differentTeams, (v) => (r.differentTeams = v)) : r.differentTeams ? 'Yes' : 'No'),
-                h('td', {}, editing ? numIn(`r-len-${i}`, r.durationMin, (v) => (r.durationMin = v)) : `${r.durationMin} min`),
-                h('td', {}, editing ? numIn(`r-max-${i}`, r.maxDaysAfterPrevious, (v) => (r.maxDaysAfterPrevious = v)) : `${r.maxDaysAfterPrevious} days`),
+                h('td', {}, r.role === 'hr' ? 'Natalie (HR)' : editing ? numIn(`r-int-${r.key}`, r.interviewers, (v) => (r.interviewers = v)) : `${r.interviewers} ${r.role === 'teamlead' ? 'team leads' : 'advisors'}`),
+                h('td', {}, r.role === 'hr' ? '–' : editing ? boolIn(`r-diff-${r.key}`, r.differentTeams, (v) => (r.differentTeams = v)) : r.differentTeams ? 'Yes' : 'No'),
+                h('td', {}, editing ? numIn(`r-len-${r.key}`, r.durationMin, (v) => (r.durationMin = v)) : `${r.durationMin} min`),
+                h('td', {}, r.maxDaysAfterPrevious == null ? '–' : editing ? numIn(`r-max-${r.key}`, r.maxDaysAfterPrevious, (v) => (r.maxDaysAfterPrevious = v)) : `${r.maxDaysAfterPrevious} days`),
                 h(
                   'td',
                   {},
-                  editing
+                  r.role === 'hr'
+                    ? '–'
+                    : editing
                     ? h(
                         'div',
                         { class: 'row' },
                         [['joker', 'HR joker'], ['natalie', 'Natalie']].map(([k, l]) =>
-                          h('label', { class: 'check' }, boolIn(`r-fb-${i}-${k}`, (r.fallbacks || []).includes(k), (v) => (r.fallbacks = v ? [...new Set([...(r.fallbacks || []), k])] : (r.fallbacks || []).filter((x) => x !== k))), l),
+                          h('label', { class: 'check' }, boolIn(`r-fb-${r.key}-${k}`, (r.fallbacks || []).includes(k), (v) => (r.fallbacks = v ? [...new Set([...(r.fallbacks || []), k])] : (r.fallbacks || []).filter((x) => x !== k))), l),
                         ),
                       )
                     : (r.fallbacks || []).map((x) => (x === 'joker' ? 'HR joker' : 'Natalie')).join(', ') || '–',
@@ -2569,6 +2616,10 @@
         ),
       ),
       h(
+        'details',
+        { class: 'round-sum', open: editing },
+        h('summary', {}, h('b', {}, 'Scheduling settings'), h('span', { class: 'muted' }, ` · ${SETTING_FIELDS.length} settings, ${SETTING_FIELDS.filter((x) => x[4]).length} in use now`)),
+        h(
         'div',
         { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:6px' },
         h(
@@ -2591,7 +2642,8 @@
           ),
         ),
       ),
-      editing
+      ),
+      editing && !draft
         ? h(
             'div',
             { class: 'row end' },
@@ -2602,8 +2654,8 @@
               {
                 class: 'p',
                 onclick: () => {
-                  const bad = f.rounds.find((r) => !(r.interviewers >= 1) || !(r.durationMin >= 15) || !(r.maxDaysAfterPrevious >= 1));
-                  if (bad) return (err.textContent = `${bad.name}: at least 1 interviewer, 15 minutes and 1 day.`);
+                  const bad = roundProblem(f.rounds);
+                  if (bad) return (err.textContent = bad);
                   if (!(f.settings.replyWindowWorkingDays >= 1)) return (err.textContent = 'The reply window needs at least 1 working day.');
                   act(async () => {
                     await S.update('campaigns', c.id, { settings: f.settings, rounds: f.rounds });
@@ -2620,12 +2672,240 @@
     );
   }
 
+  // ------------------------------------------------------------------
+  // New campaign: structure, rules, people per round, then invite
+  // ------------------------------------------------------------------
+  const roleWord = (r) => (r.role === 'hr' ? 'HR' : r.role === 'teamlead' ? 'team leads' : 'advisors');
+  function newWizard() {
+    const first = !campaigns().length;
+    const st = M.STRUCTURES[M.DEFAULT_STRUCTURE];
+    return {
+      name: first ? 'Trainee hiring' : '',
+      startDate: TODAY,
+      endDate: '',
+      targetHires: first ? 10 : '',
+      targetInterviews: first ? 25 : '',
+      structure: st.key,
+      draft: { rounds: JSON.parse(JSON.stringify(st.rounds)), settings: JSON.parse(JSON.stringify(M.DEFAULT_SETTINGS)) },
+      members: null, // filled from the roster on first render
+    };
+  }
+  function defaultMembers(rounds) {
+    const out = {};
+    for (const r of rounds) out[r.key] = S.state.people.filter((p) => M.eligibleFor(r, p)).map((p) => p.id);
+    return out;
+  }
+
+  // Toggle chips per team for one round.
+  function memberPicker(round, members, onChange) {
+    const eligible = people().filter((p) => M.eligibleFor(round, p));
+    const chosen = new Set(members[round.key] || []);
+    if (!eligible.length) return h('p', { class: 'small muted' }, `No ${roleWord(round)} on the roster yet. Add them on the Roster page; until you choose, everyone eligible takes part.`);
+    const teams = [...new Set(eligible.map((p) => p.team))].sort();
+    const teamCount = new Set(eligible.filter((p) => chosen.has(p.id)).map((p) => p.team)).size;
+    const set = (ids) => {
+      members[round.key] = ids;
+      onChange();
+    };
+    return h(
+      'div',
+      { class: 'picker' },
+      h(
+        'div',
+        { class: 'row', style: 'justify-content:space-between' },
+        h('span', { class: 'muted' }, `${chosen.size} of ${eligible.length} ${roleWord(round)} · ${plural(teamCount, 'team')}`),
+        h('span', { class: 'row' }, h('button', { class: 'link', onclick: () => set(eligible.map((p) => p.id)) }, 'Everyone'), h('button', { class: 'link', onclick: () => set([]) }, 'Nobody')),
+      ),
+      round.differentTeams && chosen.size && teamCount < 2 ? h('p', { class: 'warn-line' }, 'This round needs people from at least two teams.') : null,
+      teams.map((t) =>
+        h(
+          'div',
+          { class: 'picker-team' },
+          h('span', { class: 'picker-label' }, t),
+          h(
+            'div',
+            { class: 'chips' },
+            eligible
+              .filter((p) => p.team === t)
+              .map((p) =>
+                h(
+                  'button',
+                  {
+                    class: 'pick',
+                    'aria-pressed': chosen.has(p.id),
+                    onclick: () => set(chosen.has(p.id) ? [...chosen].filter((x) => x !== p.id) : [...chosen, p.id]),
+                  },
+                  p.name,
+                ),
+              ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  function campaignWizard() {
+    const w = (ui.wiz = ui.wiz || newWizard());
+    if (!w.members && S.state.loaded.people) w.members = defaultMembers(w.draft.rounds);
+    const err = h('p', { class: 'err-line' });
+    const st = M.STRUCTURES[w.structure];
+    const step = (n, title, sub, ...body) => h('section', { class: 'wiz-step' }, h('div', { class: 'wiz-num' }, n), h('div', { class: 'wiz-body' }, h('h2', {}, title), sub ? h('p', { class: 'muted' }, sub) : null, ...body));
+    return h(
+      'div',
+      { class: 'wizard' },
+      step(
+        1,
+        'The basics',
+        null,
+        h(
+          'div',
+          { class: 'fg' },
+          h('label', { class: 'f wide' }, 'Name', h('input', { id: 'cf-name-new', value: w.name, oninput: (e) => (w.name = e.target.value) })),
+          h('label', { class: 'f' }, 'Start', h('input', { type: 'date', id: 'cf-start-new', value: w.startDate, oninput: (e) => (w.startDate = e.target.value) })),
+          h('label', { class: 'f' }, 'End', h('input', { type: 'date', id: 'cf-end-new', value: w.endDate, oninput: (e) => (w.endDate = e.target.value) })),
+          h('label', { class: 'f' }, 'Target hires', h('input', { type: 'number', min: 0, id: 'cf-hires-new', value: w.targetHires, oninput: (e) => (w.targetHires = e.target.value) })),
+          h('label', { class: 'f' }, 'Expected interviews', h('input', { type: 'number', min: 0, id: 'cf-int-new', value: w.targetInterviews, oninput: (e) => (w.targetInterviews = e.target.value) })),
+        ),
+      ),
+      step(
+        2,
+        'Structure',
+        'How candidates move through the campaign. You can tune each round’s rules now or later.',
+        h(
+          'div',
+          { class: 'structs' },
+          Object.values(M.STRUCTURES).map((x) =>
+            h(
+              'button',
+              {
+                class: 'struct',
+                'aria-pressed': x.key === w.structure,
+                onclick: () => {
+                  w.structure = x.key;
+                  w.draft = { rounds: JSON.parse(JSON.stringify(x.rounds)), settings: w.draft.settings };
+                  w.members = defaultMembers(w.draft.rounds);
+                  rerender();
+                },
+              },
+              h('b', {}, x.name),
+              h('span', { class: 'muted' }, x.description),
+            ),
+          ),
+          h('p', { class: 'small faint' }, 'More structures (for example a 2-round interview) are added by the developer.'),
+        ),
+        ui.wizRules ? rulesSection({ id: 'new' }, true, w.draft) : h('button', { class: 'link', style: 'align-self:flex-start', onclick: () => ((ui.wizRules = true), rerender()) }, `Adjust the rules of the ${st.rounds.length} rounds`),
+      ),
+      step(
+        3,
+        'Who is in each round',
+        'Everyone you pick gets invited to the app. People without Claude still get Outlook invites.',
+        w.members ? w.draft.rounds.map((r) => h('div', { class: 'wiz-round' }, h('h3', {}, r.name), memberPicker(r, w.members, rerender))) : h('p', { class: 'muted' }, 'Loading the roster…'),
+      ),
+      h(
+        'div',
+        { class: 'row end' },
+        err,
+        campaigns().length ? h('button', { onclick: () => ((ui.newCampaign = false), (ui.wiz = null), rerender()) }, 'Cancel') : null,
+        h(
+          'button',
+          {
+            class: 'p big-btn',
+            onclick: () => {
+              if (!w.name.trim()) return (err.textContent = 'Give the campaign a name.');
+              const bad = roundProblem(w.draft.rounds);
+              if (bad) return (err.textContent = bad);
+              // Rounds with nobody eligible on the roster yet stay open to everyone eligible.
+              const members = {};
+              for (const r of w.draft.rounds) if (people().some((p) => M.eligibleFor(r, p))) members[r.key] = (w.members || {})[r.key] || [];
+              act(async () => {
+                const id = await S.add('campaigns', M.newCampaign({ ...w, name: w.name.trim(), rounds: w.draft.rounds, settings: w.draft.settings, members: Object.keys(members).length ? members : null }));
+                ui.campaignId = id;
+                store('flux.campaign', id);
+                ui.newCampaign = false;
+                ui.wiz = null;
+                ui.wizRules = false;
+                ui.showInvite = true;
+                if (Object.keys(members).length) location.hash = '#campaign';
+                rerender();
+              }, 'Campaign created');
+            },
+          },
+          'Create campaign',
+        ),
+      ),
+    );
+  }
+
+  // People in the campaign and their invitations.
+  function campaignPeople(c) {
+    const editing = ui.editPeople === c.id;
+    const m = editing ? (ui.peopleDraft = ui.peopleDraft || JSON.parse(JSON.stringify(c.members || defaultMembers(c.rounds || [])))) : null;
+    const rounds = c.rounds || [];
+    const all = [...new Map(rounds.flatMap((r) => M.roundMembers(c, r.key, S.state.people).map((p) => [p.id, { p, round: r }]))).values()];
+    const invited = c.invited || {};
+    const status = (p) => (memberOf(p.accountId) ? h('span', { class: 'chip good' }, 'Joined') : invited[p.id] ? h('span', { class: 'chip accent' }, `Invited ${M.formatDay(invited[p.id].slice(0, 10))}`) : h('span', { class: 'chip' }, 'Not invited'));
+    const link = c.appLink || '';
+    const inviteText = `Hi,\n\nYou’re on the interview panel for ${c.name}. We’re trying a new way of planning interviews: a small Claude app made for Flux.\n\nOpen it here: ${link || '[link to the app]'}\n\nIt shows your interview requests, a short brief before each interview and how your team is doing. You can still answer the Outlook invites as usual. It’s new, so please press Report in the app whenever something is unclear or could be better.\n\nThanks,\nNatalie`;
+    const copyBtn = h('button', { onclick: (e) => copyText(inviteText, e.target) }, 'Copy invitation');
+    return h(
+      'div',
+      { class: 'section gutter' },
+      h(
+        'div',
+        { class: 'head' },
+        h('div', {}, h('h2', {}, 'People in this campaign'), h('p', {}, `${all.length} people across ${plural(rounds.length, 'round')}. ${all.filter((x) => memberOf(x.p.accountId)).length} have joined the app.`)),
+        editing ? null : h('button', { onclick: () => ((ui.editPeople = c.id), (ui.peopleDraft = null), rerender()) }, 'Change people'),
+      ),
+      editing
+        ? [
+            rounds.map((r) => h('div', { class: 'wiz-round' }, h('h3', {}, r.name), memberPicker(r, m, rerender))),
+            h(
+              'div',
+              { class: 'row end' },
+              h('button', { onclick: () => ((ui.editPeople = null), rerender()) }, 'Cancel'),
+              h('button', { class: 'p', onclick: () => act(async () => { await S.update('campaigns', c.id, { members: m }); ui.editPeople = null; ui.peopleDraft = null; ui.showInvite = true; rerender(); }, 'People saved') }, 'Save people'),
+            ),
+          ]
+        : null,
+      ui.showInvite || Object.keys(invited).length < all.length
+        ? h(
+            'div',
+            { class: 'invite-box' },
+            h('h3', {}, 'Invite them'),
+            h('label', { class: 'f' }, 'Link to this app (copy it from Share in Claude)', h('input', { id: 'app-link', value: link, placeholder: 'https://claude.ai/…', onchange: (e) => act(() => S.update('campaigns', c.id, { appLink: e.target.value.trim() }), 'Link saved') })),
+            h('pre', { class: 'invite-text' }, inviteText),
+            h(
+              'div',
+              { class: 'row' },
+              copyBtn,
+              h('button', { class: 'p', onclick: () => act(async () => { const now = new Date().toISOString(); const next = { ...invited }; for (const x of all) next[x.p.id] = next[x.p.id] || now; await S.update('campaigns', c.id, { invited: next }); ui.showInvite = false; rerender(); }, 'Marked as invited') }, 'Mark everyone as invited'),
+              h('span', { class: 'small muted' }, 'Send it from Outlook or Teams. Sending from the app comes with the Outlook connection.'),
+            ),
+          )
+        : null,
+      rounds.map((r) => {
+        const ps = M.roundMembers(c, r.key, S.state.people);
+        const joined = ps.filter((p) => memberOf(p.accountId)).length;
+        const inv = ps.filter((p) => invited[p.id]).length;
+        return h(
+          'details',
+          { class: 'round-sum' },
+          h('summary', {}, h('b', {}, r.name), h('span', { class: 'muted' }, ` · ${plural(ps.length, 'person', 'people')} · ${inv} invited · ${joined} joined`)),
+          h('div', { class: 'people-list' }, ps.map((p) => h('div', { class: 'person-row' }, h('span', {}, h('b', {}, p.name), h('span', { class: 'muted' }, ` · ${p.team}`)), h('span', { class: 'row' }, p.accountId ? null : h('span', { class: 'small faint' }, 'Outlook only'), status(p))))),
+        );
+      }),
+    );
+  }
+
   function campaignView() {
     const c = campaign();
     return [
-      h('div', { class: 'section gutter' }, h('div', { class: 'head' }, h('div', {}, h('h1', {}, c.name), h('p', {}, 'Name, dates and targets for this hiring drive.')), h('button', { onclick: () => ((ui.newCampaign = !ui.newCampaign), rerender()) }, ui.newCampaign ? 'Close' : '+ New campaign')), ui.newCampaign ? campaignForm(null) : campaignForm(c)),
-      rulesSection(c, true),
-      adminScoreboard(c),
+      ui.newCampaign
+        ? h('div', { class: 'section gutter' }, h('h1', {}, 'New campaign'), campaignWizard())
+        : h('div', { class: 'section gutter' }, h('div', { class: 'head' }, h('div', {}, h('h1', {}, c.name), h('p', {}, `${(M.STRUCTURES[c.structure] || M.STRUCTURES[M.DEFAULT_STRUCTURE]).name} · name, dates and targets.`)), h('button', { onclick: () => ((ui.newCampaign = true), (ui.wiz = null), rerender()) }, '+ New campaign')), campaignForm(c)),
+      ui.newCampaign ? null : campaignPeople(c),
+      ui.newCampaign ? null : rulesSection(c, true),
+      ui.newCampaign ? null : adminScoreboard(c),
     ];
   }
 
@@ -2691,7 +2971,9 @@
   const campInvites = (campId) => S.state.invites.filter((i) => i.campaignId === campId);
 
   function scoresFor(camp) {
-    return M.scoreboard({ cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().filter((n) => n.campaignId === camp.id), people: S.state.people, today: TODAY });
+    // Only the people in this campaign's interview rounds take part.
+    const ids = new Set((camp.rounds || []).filter((r) => r.role !== 'hr').flatMap((r) => M.roundMembers(camp, r.key, S.state.people).map((p) => p.id)));
+    return M.scoreboard({ cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().filter((n) => n.campaignId === camp.id), people: S.state.people.filter((p) => ids.has(p.id)), today: TODAY });
   }
 
   function statsFor(camp) {
@@ -2840,7 +3122,8 @@
     const score = (p) => S.state.invites.filter((i) => i.personId === p.id).length;
     return [...ps].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name))[0] || null;
   }
-  function setViewAs(id) {
+  function setViewAs(id, dev) {
+    ui.dev = !!dev;
     ui.viewAs = id || null;
     store('flux.viewAs', ui.viewAs || '');
     ui.forms = {};
@@ -2852,11 +3135,12 @@
   function viewSwitch() {
     if (!S.admin || !campaign()) return null;
     const cur = ui.viewAs && personById(ui.viewAs);
-    const curRole = cur ? roleLabel(cur) : 'admin';
+    const curRole = ui.dev ? 'dev' : cur ? roleLabel(cur) : 'admin';
     const seg = [
       ['admin', 'Admin'],
       ['advisor', 'Advisor'],
       ['team lead', 'Team lead'],
+      ['dev', `Developer${S.state.reports.filter((x) => (x.status || 'new') === 'new').length ? ` · ${S.state.reports.filter((x) => (x.status || 'new') === 'new').length}` : ''}`],
     ];
     return h(
       'div',
@@ -2872,6 +3156,7 @@
               'aria-pressed': curRole === r || (r === 'team lead' && curRole === 'joker'),
               onclick: () => {
                 if (r === 'admin') return setViewAs(null);
+                if (r === 'dev') return setViewAs(null, true);
                 if (curRole === r) return;
                 const p = busiest(r);
                 if (p) setViewAs(p.id);
@@ -2943,7 +3228,7 @@
         'div',
         { class: 'iv-grid' },
         h('div', { class: 'iv-col' }, ivRequests(ctx), ivInterviews(ctx), ivAvailability(inbox)),
-        h('div', { class: 'iv-col' }, st ? myScore(inbox, st) : null, st ? teamBoard(st, inbox.team) : null, st ? campaignOverview(st) : null),
+        h('div', { class: 'iv-col' }, st ? myScore(inbox, st) : null, st ? teamBoard(st, inbox.team, true) : null, st ? campaignOverview(st) : null),
       ),
       ivRules(st),
     );
@@ -3132,7 +3417,7 @@
       h('h2', {}, 'Your score'),
       h('div', { class: 'row', style: 'align-items:baseline;gap:14px' }, h('span', { class: 'big' }, s.points), h('span', {}, 'points'), h('span', { class: 'chip accent' }, `#${s.rank} of ${s.of} overall`), h('span', { class: 'chip' }, `#${s.teamRank} of ${s.teamOf} in ${s.team}`)),
       s.nudge ? h('p', { class: 'small' }, s.nudge) : null,
-      h('div', { class: 'kpis' }, kpi('Interviews done', s.done, s.upcoming ? `${s.upcoming} coming up` : ''), kpi('Fair share so far', st.fairEach, 'per person'), kpi('Avg reply time', hrs(s.avgReplyHours), `${s.quickReplies} within a day`), kpi('Feedback on time', s.feedbackDue ? `${s.feedbackOnTime}/${s.feedbackDue}` : '–', 'within a day')),
+      h('div', { class: 'kpis' }, kpi('Interviews done', s.done, s.upcoming ? `${s.upcoming} coming up` : `fair share ${st.fairEach}`), kpi('Avg reply time', hrs(s.avgReplyHours), `${s.quickReplies} within a day`), kpi('Feedback on time', s.feedbackDue ? `${s.feedbackOnTime}/${s.feedbackDue}` : '–', 'within a day')),
       s.badges.length ? h('div', { class: 'row' }, s.badges.map((b) => h('span', { class: 'chip good' }, `★ ${b}`))) : null,
       h('p', { class: 'small faint' }, `${M.POINTS.interview} points per interview, ${M.POINTS.quickReply} for answering a request within a day, ${M.POINTS.quickFeedback} for feedback within a day. Only you and Natalie see your own numbers.`),
     );
@@ -3141,7 +3426,8 @@
     return h('div', { class: 'kpi' }, h('span', { class: 'small muted' }, label), h('b', {}, String(value)), sub ? h('span', { class: 'small faint' }, sub) : null);
   }
 
-  function teamBoard(st, myTeam) {
+  function teamBoard(st, myTeam, compact) {
+    const show = (i) => !compact || i < 4;
     return h(
       'section',
       { class: 'tpanel iv-card', 'aria-label': 'Team board' },
@@ -3152,7 +3438,7 @@
         h(
           'table',
           { class: 'x' },
-          h('thead', {}, h('tr', {}, ['#', 'Team', 'Points per person', 'Interviews', 'Fair share', 'Avg reply', 'Feedback on time'].map((x, i) => h('th', { class: i > 4 ? 'wide-only' : '' }, x)))),
+          h('thead', {}, h('tr', {}, ['#', 'Team', 'Points per person', 'Interviews', 'Fair share', 'Avg reply', 'Feedback on time'].map((x, i) => (show(i) ? h('th', { class: i > 4 ? 'wide-only' : '' }, x) : null)))),
           h(
             'tbody',
             {},
@@ -3164,15 +3450,15 @@
                 h('td', { class: 'name' }, t.team, t.team === myTeam ? h('span', { class: 'faint' }, ' (you)') : null),
                 h('td', { class: 'mono' }, t.pointsPerMember),
                 h('td', { class: 'mono' }, t.done, t.upcoming ? h('span', { class: 'faint' }, ` +${t.upcoming}`) : null),
-                h('td', { class: `mono ${t.done < t.fairShare - 1 ? 'warn-t' : ''}` }, t.fairShare),
-                h('td', { class: 'mono wide-only' }, hrs(t.avgReplyHours)),
-                h('td', { class: 'mono wide-only' }, t.feedbackOnTimePct === null ? '–' : `${t.feedbackOnTimePct}%`),
+                show(4) ? h('td', { class: `mono ${t.done < t.fairShare - 1 ? 'warn-t' : ''}` }, t.fairShare) : null,
+                show(5) ? h('td', { class: 'mono wide-only' }, hrs(t.avgReplyHours)) : null,
+                show(6) ? h('td', { class: 'mono wide-only' }, t.feedbackOnTimePct === null ? '–' : `${t.feedbackOnTimePct}%`) : null,
               ),
             ),
           ),
         ),
       ),
-      h('p', { class: 'small faint' }, 'Ranked by points per person, so small teams can win. Fair share is the interviews a team would have done if load were spread evenly.'),
+      h('p', { class: 'small faint' }, compact ? 'Ranked by points per person, so small teams can win.' : 'Ranked by points per person, so small teams can win. Fair share is the interviews a team would have done if load were spread evenly.'),
     );
   }
 
@@ -3187,7 +3473,7 @@
       h('h2', {}, st.name),
       h('div', { class: 'row small muted' }, st.endDate ? `Runs until ${M.formatDay(st.endDate)}` : `Started ${M.formatDay(st.startDate)}`),
       h('div', {}, h('div', { class: 'row', style: 'justify-content:space-between' }, h('b', {}, `${p.hired || 0} of ${st.targetHires || '?'} hired`), h('span', { class: 'small muted' }, `${pct}%`)), h('div', { class: 'meter' }, h('i', { style: `width:${pct}%` }))),
-      h('div', { class: 'kpis' }, kpi('Interviews done', st.interviewsDone, st.targetInterviews ? `of about ${st.targetInterviews}` : ''), kpi('Next 7 days', st.interviewsNext7, 'interviews'), kpi('Candidates', p.total || 0, 'in total')),
+      h('div', { class: 'kpis' }, kpi('Interviews done', st.interviewsDone, st.targetInterviews ? `of about ${st.targetInterviews}` : ''), kpi('Next 7 days', st.interviewsNext7, 'interviews')),
       h('div', { class: 'bars' }, bars.map(([label, n]) => h('div', { class: 'bar-row' }, h('span', { class: 'small' }, label), h('div', { class: 'meter thin' }, h('i', { style: `width:${Math.round(((n || 0) / max) * 100)}%` })), h('span', { class: 'mono small' }, n || 0)))),
       h('p', { class: 'small faint' }, 'Counts only. Candidate names are visible to their interviewers and HR.'),
     );
@@ -3204,6 +3490,10 @@
       h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row and rank. This full list is for you.'),
       teamBoard(st, null),
       h(
+        'details',
+        { class: 'round-sum' },
+        h('summary', {}, h('b', {}, 'Everyone’s scores'), h('span', { class: 'muted' }, ` · ${sb.people.length} people`)),
+        h(
         'div',
         { class: 'sheet-wrap', style: 'border:1px solid var(--grid);border-radius:6px' },
         h(
@@ -3220,6 +3510,192 @@
           ),
         ),
       ),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // Feedback reports: everyone can send a screenshot and a note to the
+  // developer. Stored in reports/{id}; editors read them in the Developer view.
+  // ------------------------------------------------------------------
+  const BUILD = '__BUILD__';
+  const recentErrors = [];
+  window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
+  window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
+  const REPORT_KINDS = [['broken', 'Something’s broken'], ['confusing', 'Something’s confusing'], ['idea', 'An idea']];
+  const REPORT_STATUS = [['new', 'New'], ['seen', 'Seen'], ['fixing', 'Fixing'], ['fixed', 'Fixed'], ['wontfix', 'Won’t fix']];
+
+  function loadScript(src) {
+    return new Promise((res, rej) => {
+      const el = document.createElement('script');
+      el.src = src;
+      el.onload = res;
+      el.onerror = () => rej(new Error('could not load'));
+      document.head.appendChild(el);
+    });
+  }
+  async function captureScreen() {
+    if (!window.html2canvas) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    const canvas = await window.html2canvas(document.documentElement, {
+      backgroundColor: getComputedStyle(document.body).backgroundColor,
+      scale: 1,
+      logging: false,
+      x: window.scrollX,
+      y: window.scrollY,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      windowWidth: window.innerWidth,
+      windowHeight: window.innerHeight,
+      ignoreElements: (el) => el.classList && (el.classList.contains('report-fab') || el.classList.contains('toast')),
+    });
+    const max = 1100;
+    const k = Math.min(1, max / canvas.width);
+    const out = document.createElement('canvas');
+    out.width = Math.round(canvas.width * k);
+    out.height = Math.round(canvas.height * k);
+    out.getContext('2d').drawImage(canvas, 0, 0, out.width, out.height);
+    return out.toDataURL('image/jpeg', 0.62);
+  }
+
+  function reportContext() {
+    const iv = S.admin ? (ui.viewAs ? 'advisor/team lead (preview)' : 'admin') : 'advisor/team lead';
+    const p = !S.admin && S.state.mine.inbox ? S.state.mine.inbox : ui.viewAs ? personById(ui.viewAs) : null;
+    return {
+      view: iv,
+      page: S.admin && !ui.viewAs ? ui.view : 'my interviews',
+      drawer: ui.candId ? 'candidate drawer open' : '',
+      as: p ? `${p.name} (${p.team})` : '',
+      campaign: campaign() ? campaign().name : '',
+      mockDate: TODAY !== REAL_TODAY ? TODAY : '',
+      build: BUILD,
+      size: `${window.innerWidth}×${window.innerHeight}`,
+      agent: navigator.userAgent.slice(0, 160),
+      errors: recentErrors.slice(-5),
+    };
+  }
+
+  async function openReport() {
+    if (ui.reportBusy) return;
+    ui.reportBusy = true;
+    // Take the screenshot first, so it shows the screen without the dialog.
+    const r = { kind: 'broken', what: '', expected: '', shot: null, include: true, busy: false, error: '' };
+    try {
+      r.shot = await captureScreen();
+    } catch (e) {
+      r.error = 'Couldn’t take a screenshot here. You can still send the report.';
+      r.include = false;
+    }
+    ui.reportBusy = false;
+    ui.report = r;
+    rerender();
+  }
+
+  function reportFab() {
+    if (!S || ui.report) return null;
+    return h('button', { class: 'report-fab', onclick: openReport, disabled: !!ui.reportBusy, title: 'Send a screenshot and a note to the developer' }, ui.reportBusy ? '…' : 'Report');
+  }
+
+  function reportDialog() {
+    const r = ui.report;
+    if (!r) return null;
+    const close = () => ((ui.report = null), rerender());
+    const err = h('p', { class: 'err-line' }, r.error && !r.shot ? r.error : '');
+    return h(
+      'div',
+      { class: 'welcome-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'report-title' },
+      h(
+        'div',
+        { class: 'welcome report' },
+        h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', { id: 'report-title' }, 'Report to the developer'), h('button', { class: 'x', 'aria-label': 'Close', onclick: close }, '×')),
+        h('div', { class: 'seg' }, REPORT_KINDS.map(([k, l]) => h('button', { 'aria-pressed': r.kind === k, onclick: () => ((r.kind = k), rerender()) }, l))),
+        h('label', { class: 'f' }, 'What happened?', h('textarea', { id: 'report-what', rows: 3, value: r.what, placeholder: 'What were you doing, and what went wrong or felt odd?', oninput: (e) => (r.what = e.target.value) })),
+        h('label', { class: 'f' }, 'What did you expect? (optional)', h('textarea', { id: 'report-expected', rows: 2, value: r.expected, oninput: (e) => (r.expected = e.target.value) })),
+        r.busy
+          ? h('p', { class: 'muted' }, 'Taking a screenshot…')
+          : r.shot
+          ? h('div', { class: 'shot' }, h('img', { src: r.shot, alt: 'Screenshot of the app' }), h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'report-include', checked: r.include, onchange: (e) => (r.include = e.target.checked) }), 'Include this screenshot (it may show candidate names; only Natalie and the developer see reports)'))
+          : null,
+        err,
+        h(
+          'div',
+          { class: 'row end' },
+          h('button', { onclick: close }, 'Cancel'),
+          h(
+            'button',
+            {
+              class: 'p',
+              disabled: r.busy,
+              onclick: () => {
+                if (!r.what.trim()) return (err.textContent = 'Write a sentence about what happened.');
+                const who = !S.admin && S.state.mine.inbox ? S.state.mine.inbox.name : '';
+                const doc = { kind: r.kind, what: r.what.trim().slice(0, 3000), expected: r.expected.trim().slice(0, 2000), screenshot: r.include && r.shot ? r.shot : null, context: reportContext(), authorId: me || null, authorName: who, status: 'new', createdAt: new Date().toISOString(), mock: TODAY !== REAL_TODAY };
+                act(async () => {
+                  await S.add('reports', doc);
+                  ui.report = null;
+                  rerender();
+                }, 'Thanks. Your report is with the developer.');
+              },
+            },
+            'Send report',
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---- Developer view ----
+  function devView() {
+    const list = [...S.state.reports].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    resolveNames([...new Set(list.map((x) => x.authorId).filter(Boolean))]);
+    const filter = ui.devFilter || 'open';
+    const shown = list.filter((x) => (filter === 'open' ? !['fixed', 'wontfix'].includes(x.status) : filter === 'all' ? true : x.status === filter));
+    const count = (st) => list.filter((x) => x.status === st).length;
+    return h(
+      'div',
+      { class: 'section gutter dev' },
+      h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Reports'), h('p', {}, 'What people sent with the Report button, newest first. Copy one into Claude Code to fix it, then mark it fixed.'))),
+      h(
+        'div',
+        { class: 'seg' },
+        [['open', `Open (${list.length - count('fixed') - count('wontfix')})`], ['new', `New (${count('new')})`], ['fixed', `Fixed (${count('fixed')})`], ['all', `All (${list.length})`]].map(([k, l]) => h('button', { 'aria-pressed': filter === k, onclick: () => ((ui.devFilter = k), rerender()) }, l)),
+      ),
+      shown.length ? shown.map(reportCard) : h('div', { class: 'calm-empty' }, h('p', {}, list.length ? 'Nothing here.' : 'No reports yet. They arrive here when someone presses Report.')),
+      h('p', { class: 'small faint' }, `This build: ${BUILD}`),
+    );
+  }
+  function reportCard(x) {
+    const who = x.authorName || (x.authorId && names[x.authorId]) || (x.authorId ? 'A colleague' : 'Test mode');
+    const kind = (REPORT_KINDS.find((k) => k[0] === x.kind) || ['', 'Report'])[1];
+    const c = x.context || {};
+    const prompt = [
+      `A user of the Flux interview scheduling app (repo: scheduling-assistant, a claude.ai artifact built from src/) sent this feedback report.`,
+      `Kind: ${kind}`,
+      `What happened: ${x.what}`,
+      x.expected ? `What they expected: ${x.expected}` : '',
+      `Where: ${c.view || ''} view, page "${c.page || ''}"${c.drawer ? `, ${c.drawer}` : ''}${c.as ? `, seeing it as ${c.as}` : ''}, campaign "${c.campaign || ''}"${c.mockDate ? `, mock date ${c.mockDate}` : ''}`,
+      `Build: ${c.build || ''} · window ${c.size || ''} · ${c.agent || ''}`,
+      c.errors && c.errors.length ? `Recent errors:\n${c.errors.join('\n')}` : 'No script errors were recorded.',
+      x.screenshot ? 'A screenshot is attached to the report in the app (Developer view).' : '',
+      '',
+      'Find the cause in the code, fix it, add or adjust a test, and explain the change in one paragraph.',
+    ]
+      .filter((l) => l !== '')
+      .join('\n');
+    return h(
+      'article',
+      { class: 'report-card' },
+      h(
+        'div',
+        { class: 'row', style: 'justify-content:space-between;align-items:flex-start' },
+        h('div', {}, h('b', {}, kind), h('span', { class: 'muted' }, ` · ${who} · ${M.formatDay((x.createdAt || '').slice(0, 10))} ${(x.createdAt || '').slice(11, 16)}`), x.mock ? h('span', { class: 'chip warn' }, 'mock') : null),
+        h('select', { 'aria-label': 'Status', id: `rep-status-${x.id}`, onchange: (e) => act(() => S.update('reports', x.id, { status: e.target.value, statusAt: new Date().toISOString() }), 'Status saved') }, REPORT_STATUS.map(([k, l]) => h('option', { value: k, selected: (x.status || 'new') === k }, l))),
+      ),
+      h('p', { class: 'report-what' }, x.what),
+      x.expected ? h('p', { class: 'muted' }, `Expected: ${x.expected}`) : null,
+      h('p', { class: 'small faint' }, [c.view, c.page, c.as, c.campaign, c.mockDate ? `mock ${c.mockDate}` : '', c.size, c.build].filter(Boolean).join(' · ')),
+      c.errors && c.errors.length ? h('pre', { class: 'small err-pre' }, c.errors.join('\n')) : null,
+      x.screenshot ? h('a', { href: '#', class: 'shot', onclick: (e) => (e.preventDefault(), (ui.bigShot = ui.bigShot === x.id ? null : x.id), rerender()) }, h('img', { src: x.screenshot, alt: 'Screenshot sent with the report', class: ui.bigShot === x.id ? 'big' : '' })) : null,
+      h('div', { class: 'row' }, h('button', { onclick: (e) => copyText(prompt, e.target) }, 'Copy for Claude Code'), h('button', { class: 'link danger', onclick: () => act(() => S.remove('reports', x.id), 'Report deleted') }, 'Delete')),
     );
   }
 
@@ -3232,7 +3708,7 @@
       body: [
         'Flux Partners is small, and our people are everything, including the people we hire next. We want to find them ourselves instead of leaning on expensive agencies, and that only works if interviewing runs smoothly for you.',
         'This app is our first step. It spreads interviews fairly across teams, gives you notice when plans change, and gives you a short brief on each candidate before you walk in. You can keep answering in Outlook if you prefer.',
-        'It won’t be perfect yet. Tell us what’s annoying or missing (use the comment button or tell Natalie) and we’ll keep improving it.',
+        'This is a Claude app: a small tool built for us that runs inside Claude. Working this way is new for all of us, so your feedback matters. Whenever something is broken, confusing or could be better, press Report (bottom right). It sends a screenshot and your note straight to the person building the app, and we improve it for everyone.',
       ],
       privacy: 'Candidate details are only visible to the people interviewing them and to HR.',
       ok: 'I’m in',
@@ -3244,7 +3720,7 @@
       body: [
         'Flux Partners is klein, en onze mensen zijn alles, ook de mensen die we hierna aannemen. We willen ze zelf vinden in plaats van te leunen op dure bureaus, en dat lukt alleen als interviewen voor jou soepel loopt.',
         'Deze app is onze eerste stap. Hij verdeelt interviews eerlijk over de teams, laat het je op tijd weten als plannen veranderen, en geeft je voor elk gesprek een korte brief over de kandidaat. Je kunt ook gewoon in Outlook blijven reageren.',
-        'Hij is nog niet perfect. Vertel ons wat irritant is of ontbreekt (via de commentaarknop of tegen Natalie), dan blijven we hem verbeteren.',
+        'Dit is een Claude-app: een kleine tool, voor ons gebouwd, die in Claude draait. Op deze manier werken is voor ons allemaal nieuw, dus jouw feedback telt. Is er iets kapot, onduidelijk of kan het beter? Druk op Report (rechtsonder). Dan gaan een screenshot en jouw toelichting direct naar degene die de app bouwt, en verbeteren we hem voor iedereen.',
       ],
       privacy: 'Kandidaatgegevens zijn alleen zichtbaar voor de mensen die hen interviewen en voor HR.',
       ok: 'Ik doe mee',

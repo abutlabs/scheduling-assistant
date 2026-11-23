@@ -30,6 +30,20 @@ everyone. It's built to improve through the feedback of the people who use it.
   happened. You play Natalie: book, call and record results from the to-do list.
   Only demo data is touched.
 
+- **Report** (bottom right, every view) sends a screenshot, a note and the app
+  context (view, page, build, recent script errors) to `reports/`. The
+  **Developer** view lists them with a status and a *Copy for Claude Code* button
+  that turns a report into a ready-to-paste fix request.
+
+## Campaign structures
+
+Structures live in code (`STRUCTURES` in `src/model.js`). The first is the
+**3-round interview**: HR interview with Natalie, an advisor interview (two
+advisors from different teams) and a team lead deep dive. Creating a campaign
+picks a structure, lets Natalie tune each round's rules and choose who sits in
+each round, then gives her an invitation to send. A new structure (for example a
+2-round interview) is a new entry there plus its candidate steps.
+
 ## Phase 1 (this branch)
 
 - **Campaigns**: the first is Trainee hiring (target 10 hires, about 25 interviews).
@@ -105,7 +119,8 @@ Publish `dist/index.html` as a claude.ai artifact with these capabilities:
     { "path": "inbox", "read": "admin", "write": "admin" },
     { "path": "inbox/{self}", "read": "view", "write": "admin" },
     { "path": "replies", "read": "admin", "write": "owner" },
-    { "path": "replies/{self}", "read": "view", "write": "interact" }
+    { "path": "replies/{self}", "read": "view", "write": "interact" },
+    { "path": "reports", "read": "admin", "write": "interact" }
   ] },
   "user": { "scopes": ["profile"] },
   "sample": {}

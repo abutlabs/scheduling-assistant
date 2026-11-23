@@ -4,8 +4,15 @@
 // saves screenshots.
 const { chromium } = require('playwright');
 const path = require('path');
-const [, , pollFile, xlsxLib, outDir] = process.argv;
-const page_url = 'file://' + path.join(__dirname, '..', '..', 'dist', 'index.html');
+const [, , pollFile, xlsxLib, outDir, h2cLib] = process.argv;
+// Served over http (file:// storage proved flaky across reloads in headless Chromium).
+const http = require('http');
+const fs = require('fs');
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  res.end(fs.readFileSync(path.join(__dirname, '..', '..', 'dist', 'index.html')));
+});
+let page_url = '';
 
 const fakeClaude = () => {
   const sample = async (input, opts) => {
@@ -31,9 +38,11 @@ const fakeClaude = () => {
 };
 
 (async () => {
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  page_url = `http://127.0.0.1:${server.address().port}/`;
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1360, height: 900 } });
-  await ctx.route('https://cdnjs.cloudflare.com/**', (r) => r.fulfill({ path: xlsxLib, contentType: 'application/javascript' }));
+  await ctx.route('https://cdnjs.cloudflare.com/**', (r) => r.fulfill({ path: r.request().url().includes('html2canvas') ? h2cLib : xlsxLib, contentType: 'application/javascript' }));
   await ctx.route('https://fonts.googleapis.com/**', (r) => r.fulfill({ body: '', contentType: 'text/css' }));
   await ctx.addInitScript(fakeClaude);
   const page = await ctx.newPage();
@@ -52,7 +61,8 @@ const fakeClaude = () => {
   await page.getByRole('button', { name: 'Ik doe mee' }).click();
   await page.waitForSelector('text=Welcome aboard');
   await page.getByRole('button', { name: 'Create campaign' }).click();
-  await page.waitForSelector('text=To do');
+  await page.waitForSelector('css=.calm-head');
+  await page.evaluate(() => localStorage.setItem('flux.stepTable', '1'));
 
   // Seed the roster the way Claude will seed it after publishing.
   await page.evaluate(async () => {
@@ -150,7 +160,7 @@ const fakeClaude = () => {
   // Campaign rules: Natalie edits the advisor round to 10 days.
   await page.goto(page_url + '#campaign');
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
-  await page.fill('#r-max-0', '10');
+  await page.fill('#r-max-advisor', '10');
   await page.getByRole('button', { name: 'Save rules' }).click();
   await page.waitForSelector('text=Rules saved');
   await page.waitForSelector('text=10 days');
@@ -177,7 +187,7 @@ const fakeClaude = () => {
   await page.waitForSelector('text=/Team lead ·/');
   await page.screenshot({ path: path.join(outDir, '14b-teamlead-preview.png'), fullPage: false });
   await page.getByRole('button', { name: 'Admin', exact: true }).click();
-  await page.waitForSelector('text=To do');
+  await page.waitForSelector('css=.calm-head');
   await page.goto(page_url + '#campaign');
   await page.waitForSelector('text=Scoreboard');
   await page.screenshot({ path: path.join(outDir, '15-admin-scoreboard.png'), fullPage: true });
@@ -230,6 +240,39 @@ const fakeClaude = () => {
   await page.reload();
   await page.waitForTimeout(300);
   if (await page.getByText('Welcome to Flux Interviews').count()) errors.push('welcome card shown twice');
+  // Report button: screenshot + note, then the Developer view.
+  await page.goto(page_url + '#run');
+  await page.evaluate(() => localStorage.setItem('flux.stepTable', '0'));
+  await page.reload();
+  await page.waitForSelector('css=.calm-head');
+  await page.screenshot({ path: path.join(outDir, '18-run-calm.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Report', exact: true }).click();
+  await page.waitForSelector('#report-what', { timeout: 30000 });
+  await page.fill('#report-what', 'The Release button stays after the slot has passed.');
+  await page.screenshot({ path: path.join(outDir, '19-report.png'), fullPage: false });
+  await page.getByRole('button', { name: 'Send report' }).click();
+  await page.waitForSelector('text=Your report is with the developer');
+  await page.getByRole('button', { name: /^Developer/ }).click();
+  await page.waitForSelector('text=Copy for Claude Code');
+  if (!(await page.locator('.report-card img').count())) errors.push('report has no screenshot');
+  await page.screenshot({ path: path.join(outDir, '20-developer.png'), fullPage: false });
+  await page.getByRole('button', { name: 'Admin', exact: true }).click();
+
+  // A second campaign through the wizard, with people per round.
+  await page.goto(page_url + '#campaign');
+  await page.getByRole('button', { name: '+ New campaign' }).click();
+  await page.fill('#cf-name-new', 'Spring trainees');
+  await page.getByRole('button', { name: 'Bastiaan', exact: true }).click();
+  await page.screenshot({ path: path.join(outDir, '21-wizard.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Create campaign' }).click();
+  await page.waitForSelector('text=People in this campaign');
+  await page.waitForSelector('text=Invite them');
+  const sp = await page.evaluate(() => { const S = window.FluxApp.state(); const c = S.state.campaigns.find((x) => x.name === 'Spring trainees'); return c && c.members ? { adv: c.members.advisor.length, hasBas: c.members.advisor.some((id) => S.state.people.find((p) => p.id === id).name === 'Bastiaan'), rounds: c.rounds.map((r) => r.key).join(',') } : null; });
+  console.log('wizard campaign', JSON.stringify(sp));
+  if (!sp || sp.hasBas || sp.rounds !== 'hr,advisor,deepdive') errors.push('wizard members or rounds wrong');
+  await page.screenshot({ path: path.join(outDir, '22-campaign-people.png'), fullPage: true });
+  await page.selectOption('#campaign-pick', { label: 'Trainee hiring' });
+
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto(page_url + '#run');
   await page.screenshot({ path: path.join(outDir, '7-run-dark.png'), fullPage: true });
@@ -239,9 +282,11 @@ const fakeClaude = () => {
   console.log('phone horizontal overflow:', overflow);
   console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no page errors');
   await b.close();
+  server.close();
 })().catch(async (e) => {
   console.error('FAILED', e.message);
   if (global.__page) await global.__page.screenshot({ path: path.join(outDir, 'failed.png'), fullPage: true }).catch(() => {});
   if (global.__errors) console.error(global.__errors.join('\n'));
+  server.close();
   process.exit(1);
 });
