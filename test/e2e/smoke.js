@@ -209,6 +209,11 @@ const fakeClaude = () => {
   await page.getByRole('button', { name: 'Accept' }).first().click();
   await page.waitForSelector('text=You accepted');
   await page.screenshot({ path: path.join(outDir, '16-interviewer-real.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Report', exact: true }).click();
+  await page.waitForSelector('#report-what', { timeout: 30000 });
+  await page.fill('#report-what', 'I accepted but nothing told me the pair was confirmed.');
+  await page.getByRole('button', { name: 'Send report' }).click();
+  await page.waitForSelector('text=Your report is with the developer');
   await page.setViewportSize({ width: 400, height: 860 });
   await page.screenshot({ path: path.join(outDir, '17-interviewer-phone.png'), fullPage: true });
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) errors.push('interviewer view overflows on phone');
@@ -222,6 +227,7 @@ const fakeClaude = () => {
     const S = window.FluxApp.state();
     return S && S.state.invites.some((i) => i.via === 'app' && i.status === 'accepted');
   }, null, { timeout: 10000 }).catch(() => errors.push('viewer answer was not applied'));
+  await page.waitForFunction(() => window.FluxApp.state().state.reports.some((r) => r.what.startsWith('I accepted')), null, { timeout: 10000 }).catch(() => errors.push('viewer report was not copied to reports'));
 
   // Roster: a person without Claude, availability set by hand
   await page.goto(page_url + '#roster');

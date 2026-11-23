@@ -31,7 +31,9 @@ everyone. It's built to improve through the feedback of the people who use it.
   Only demo data is touched.
 
 - **Report** (bottom right, every view) sends a screenshot, a note and the app
-  context (view, page, build, recent script errors) to `reports/`. The
+  context (view, page, build, recent script errors). Editors write straight to
+  `reports/`; advisors and team leads send it through their `replies/` doc and
+  Natalie's page copies it over. The
   **Developer** view lists them with a status and a *Copy for Claude Code* button
   that turns a report into a ready-to-paste fix request.
 
@@ -120,7 +122,7 @@ Publish `dist/index.html` as a claude.ai artifact with these capabilities:
     { "path": "inbox/{self}", "read": "view", "write": "admin" },
     { "path": "replies", "read": "admin", "write": "owner" },
     { "path": "replies/{self}", "read": "view", "write": "interact" },
-    { "path": "reports", "read": "admin", "write": "interact" }
+    { "path": "reports", "read": "admin", "write": "admin" }
   ] },
   "user": { "scopes": ["profile"] },
   "sample": {}

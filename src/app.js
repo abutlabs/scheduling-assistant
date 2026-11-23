@@ -3084,6 +3084,11 @@
     const notes = S.state.notes;
     for (const r of S.state.replies) {
       const p = S.state.people.find((x) => x.accountId === r.id);
+      for (const [rid, rep] of Object.entries(r.reports || {})) {
+        if (applied.has(`r:${rid}`) || S.state.reports.some((x) => x.id === rid)) continue;
+        applied.add(`r:${rid}`);
+        await S.set('reports', rid, { ...rep, authorId: r.id, authorName: rep.authorName || (p ? p.name : ''), status: 'new' });
+      }
       if (!p) continue;
       for (const [iid, a] of Object.entries(r.invites || {})) {
         const inv = S.state.invites.find((i) => i.id === iid);
@@ -3245,7 +3250,11 @@
   }
   async function saveReply(ctx, patch) {
     const cur = ctx.replies || {};
-    const doc = { invites: { ...(cur.invites || {}), ...(patch.invites || {}) }, feedback: { ...(cur.feedback || {}), ...(patch.feedback || {}) } };
+    // Reports carry a screenshot, so only the 3 newest stay in this doc; Natalie's page copies them to reports/.
+    const reports = Object.entries({ ...(cur.reports || {}), ...(patch.reports || {}) })
+      .sort((a, b) => (b[1].createdAt || '').localeCompare(a[1].createdAt || ''))
+      .slice(0, 3);
+    const doc = { invites: { ...(cur.invites || {}), ...(patch.invites || {}) }, feedback: { ...(cur.feedback || {}), ...(patch.feedback || {}) }, reports: Object.fromEntries(reports) };
     await S.set('replies', S.myId || 'local', doc);
   }
   function ivAnswer(ctx, req, status, reason) {
@@ -3630,7 +3639,8 @@
                 const who = !S.admin && S.state.mine.inbox ? S.state.mine.inbox.name : '';
                 const doc = { kind: r.kind, what: r.what.trim().slice(0, 3000), expected: r.expected.trim().slice(0, 2000), screenshot: r.include && r.shot ? r.shot : null, context: reportContext(), authorId: me || null, authorName: who, status: 'new', createdAt: new Date().toISOString(), mock: TODAY !== REAL_TODAY };
                 act(async () => {
-                  await S.add('reports', doc);
+                  if (S.admin) await S.add('reports', doc);
+                  else await saveReply({ replies: S.state.mine.replies || null }, { reports: { [S.uid('rp_')]: doc } });
                   ui.report = null;
                   rerender();
                 }, 'Thanks. Your report is with the developer.');

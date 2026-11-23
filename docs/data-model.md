@@ -108,5 +108,7 @@ A feedback report from the Report button. `kind` (broken, confusing, idea),
 `what`, `expected`, `screenshot` (JPEG data URL, about 1100 px wide, or null),
 `context` {view, page, drawer, as, campaign, mockDate, build, size, agent,
 errors}, `authorId`, `authorName`, `status` (new, seen, fixing, fixed, wontfix),
-`createdAt`. Anyone who can use the app can add one; only editors read them.
+`createdAt`. Only editors read or write them; reports from advisors and team
+leads arrive via `replies/{userId}.reports` (newest 3 kept) and are copied here
+by Natalie's page.
 
