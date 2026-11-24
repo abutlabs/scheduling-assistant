@@ -263,3 +263,32 @@ test('slot suggestions need a free pair from different teams and ask those furth
   // One per team, furthest from goal first: Bob (TM, 3 left), Cas (PM), Dirk (CP).
   assert.deepEqual(res[0].ask, ['b', 'c', 'd']);
 });
+
+test('outlook links and calendar files carry the slot, people and room', () => {
+  assert.deepEqual(M.slotTimes('2026-11-27', '14:30', 60), { start: '2026-11-27T14:30:00', end: '2026-11-27T15:30:00' });
+  const url = new URL(M.outlookMeetingLink({ subject: 'Hold: advisor interview', body: 'Hi', date: '2026-11-27', time: '10:00', durationMin: 60, location: 'Room 1', to: ['a@flux.nl', '', 'room1@flux.nl'] }));
+  assert.equal(url.host, 'outlook.office.com');
+  assert.equal(url.searchParams.get('startdt'), '2026-11-27T10:00:00');
+  assert.equal(url.searchParams.get('enddt'), '2026-11-27T11:00:00');
+  assert.equal(url.searchParams.get('to'), 'a@flux.nl,room1@flux.nl');
+  assert.ok(!url.search.includes('+'), 'spaces are %20, not +');
+  assert.equal(url.searchParams.get('subject'), 'Hold: advisor interview');
+  const mail = new URL(M.outlookMailLink({ to: ['b@flux.nl'], subject: 'Released', body: 'Thanks' }));
+  assert.equal(mail.pathname, '/mail/deeplink/compose');
+  const ics = M.icsEvent({ uid: 'inv1@flux', method: 'CANCEL', subject: 'Hold; advisor', date: '2026-11-27', time: '10:00', durationMin: 60, attendees: ['a@flux.nl'] });
+  assert.match(ics, /METHOD:CANCEL/);
+  assert.match(ics, /DTSTART;TZID=Europe\/Amsterdam:20261127T100000/);
+  assert.match(ics, /SUMMARY:Hold\\; advisor/);
+  assert.match(ics, /STATUS:CANCELLED/);
+});
+
+test('rooms in use: bookings, holds and waiting requests in the same hour clash', () => {
+  const cands = [{ id: 'c1', campaignId: 'k', timeline: [{ id: 'e1', step: 'advisor_booked', at: '2026-11-20', data: { slotDate: '2026-11-27', time: '10:00', room: 'Room 1', interviewers: ['p1', 'p2'] } }] }, { id: 'c2', campaignId: 'k', timeline: [] }, { id: 'c3', campaignId: 'k', timeline: [] }];
+  const invites = [{ id: 'i1', candidateId: 'c2', round: 'advisor', personId: 'p3', slotDate: '2026-11-27', time: '10:30', room: 'Room 2', status: 'pending' }, { id: 'i2', candidateId: 'c2', round: 'advisor', personId: 'p4', slotDate: '2026-11-27', time: '14:00', room: 'Room 1', status: 'declined' }];
+  const busy = M.roomsInUse({ cands, invites, date: '2026-11-27', time: '10:00', exceptCandidateId: 'c3' });
+  assert.deepEqual([...busy.keys()].sort(), ['Room 1', 'Room 2']);
+  assert.equal(busy.get('Room 1').candidateId, 'c1');
+  assert.equal(M.roomsInUse({ cands, invites, date: '2026-11-27', time: '11:00', exceptCandidateId: 'c3' }).size, 1);
+  assert.equal(M.roomsInUse({ cands, invites, date: '2026-11-27', time: '14:00', exceptCandidateId: 'c3' }).size, 0);
+  assert.equal(M.roomsInUse({ cands, invites, date: '2026-11-27', time: '10:00', exceptCandidateId: 'c1' }).size, 1);
+});

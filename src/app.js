@@ -18,7 +18,13 @@
       return REAL_TODAY;
     }
   })();
-  const ROOMS = ['Room 1', 'Room 2'];
+  // Meeting rooms come from the campaign's settings (name plus the room's Outlook address).
+  const roomList = (camp) => {
+    const r = ((camp || campaign() || {}).settings || {}).rooms;
+    return r && r.length ? r : M.DEFAULT_SETTINGS.rooms;
+  };
+  const roomNames = (camp) => roomList(camp).map((r) => r.name);
+  const roomEmail = (name, camp) => ((roomList(camp).find((r) => r.name === name) || {}).email || '');
 
   // ------------------------------------------------------------------
   // Tiny DOM helper
@@ -766,7 +772,7 @@
       const r = roundInvites(c, key === 'deepdive_booked' ? 'deepdive' : 'advisor');
       if (r.state.complete) {
         const slot = r.list.find((i) => r.state.pair.includes(i.personId)) || r.list[0];
-        ui.forms[fk] = { at: TODAY, outcome: null, note: '', availability: '', slots: [], slotDate: slot.slotDate, time: slot.time || '', room: slot.room || ROOMS[0], interviewers: [...r.state.pair], reason: '' };
+        ui.forms[fk] = { at: TODAY, outcome: null, note: '', availability: '', slots: [], slotDate: slot.slotDate, time: slot.time || '', room: slot.room || roomNames()[0], interviewers: [...r.state.pair], reason: '' };
       }
     }
     const f = ui.forms[fk] || (ui.forms[fk] = {
@@ -777,7 +783,7 @@
       slots: pd.slots || [],
       slotDate: pd.slotDate || '',
       time: pd.time || '',
-      room: pd.room || ROOMS[0],
+      room: pd.room || roomNames()[0],
       interviewers: pd.interviewers ? [...pd.interviewers] : ['', ''],
       reason: pd.reason || '',
     });
@@ -820,7 +826,7 @@
         parts.push(h('label', { class: 'f' }, 'Reason', h('input', { id: 'sf-reason', value: f.reason, oninput: (e) => (f.reason = e.target.value) })));
       }
       if (step.fields && step.fields.includes('availability')) parts.push(availabilityFields(f, draw));
-      if (step.fields && step.fields.includes('slot')) parts.push(slotFields(f, round, draw));
+      if (step.fields && step.fields.includes('slot')) parts.push(slotFields(f, round, draw, c));
       parts.push(h('label', { class: 'f' }, 'Note', h('textarea', { id: `sf-note-${key}`, value: f.note, oninput: (e) => (f.note = e.target.value) })));
       parts.push(err);
       parts.push(
@@ -957,7 +963,7 @@
     );
   }
 
-  function slotFields(f, round, draw) {
+  function slotFields(f, round, draw, c) {
     const role = round ? round.role : 'advisor';
     const pool = people().filter((p) => p.active !== false && (M.personHasRole(p, role) || (role === 'teamlead' && (p.roles || []).includes('joker'))));
     const snaps = availSources();
@@ -998,7 +1004,7 @@
           ),
         ),
         h('label', { class: 'f' }, 'Start time', h('input', { type: 'time', id: 'sf-time', value: f.time, step: 900, oninput: (e) => (f.time = e.target.value) })),
-        h('label', { class: 'f' }, 'Room', h('select', { id: 'sf-room', onchange: (e) => (f.room = e.target.value) }, ROOMS.map((r) => h('option', { selected: f.room === r }, r)))),
+        h('label', { class: 'f' }, 'Room', h('select', { id: 'sf-room', onchange: (e) => ((f.room = e.target.value), draw()) }, roomNames().map((r) => h('option', { selected: f.room === r }, r))), roomClash(f.slotDate, f.time, f.room, c && c.id)),
       ),
       h(
         'div',
@@ -1200,7 +1206,20 @@
     return items;
   }
 
+  // Room clash check: other candidates' interviews, holds and waiting requests in the same hour.
+  const busyRooms = (date, time, exceptCand) => M.roomsInUse({ cands: S.state.candidates, invites: S.state.invites, date, time, exceptCandidateId: exceptCand });
+  function roomClash(date, time, room, exceptCand) {
+    if (!date || !time || !room) return null;
+    const busy = busyRooms(date, time, exceptCand);
+    const hit = busy.get(room);
+    if (!hit) return null;
+    const other = S.state.candidates.find((x) => x.id === hit.candidateId);
+    const free = roomNames().find((n) => !busy.has(n));
+    return h('span', { class: 'small warn-t' }, `Taken at ${hit.time} for ${other ? first(other) : 'another candidate'}. ${free ? `${free} is free.` : 'No room is free then.'}`);
+  }
+
   function releaseInvite(inv, why) {
+    ui.outlookDraft = releaseDraft(inv);
     return act(() => S.update('invites', inv.id, { status: 'released', releaseReason: why || 'pair_filled', releasedAt: nowIso(), noticeDays: M.daysBetween(TODAY, inv.slotDate) }), `${pname(inv.personId)} released`);
   }
   function answerInvite(inv, status, via, reason) {
@@ -1235,7 +1254,7 @@
       );
     const head = list.length
       ? state.complete
-        ? h('div', { class: 'row', style: 'justify-content:space-between;padding:8px 10px' }, h('span', { class: 'small' }, h('b', {}, 'Pair complete: '), state.pair.map(pname).join(' + ')), !s.done[bookedKey] ? h('button', { class: 'p', onclick: () => prefillBooking(c, bookedKey, list, state) }, 'Book with this pair') : h('span', { class: 'chip good' }, 'Booked'))
+        ? h('div', { class: 'row', style: 'justify-content:space-between;padding:8px 10px' }, h('span', { class: 'small' }, h('b', {}, 'Pair complete: '), state.pair.map(pname).join(' + ')), !s.done[bookedKey] ? h('button', { class: 'p', onclick: () => prefillBooking(c, bookedKey, list, state) }, 'Book with this pair') : h('span', { class: 'row' }, h('span', { class: 'chip good' }, 'Booked'), h('button', { onclick: () => ((ui.outlookDraft = bookingDraft(c, round, s.done[bookedKey].data || {})), rerender()) }, 'Outlook invite')))
         : h('p', { class: 'small', style: 'padding:8px 10px' }, `${M.formatDay(list[0].slotDate)} ${list[0].time || ''}, ${list[0].room || ''}: ${state.accepted.length} of ${roundObj.interviewers} accepted, ${state.pending.length} waiting${state.shortBy ? `. Ask ${plural(state.shortBy, 'more person', 'more people')}.` : '.'}`)
       : null;
     return h(
@@ -1243,7 +1262,11 @@
       { class: 'tpanel', 'aria-label': 'Interviewer requests' },
       h('div', { class: 'ph' }, `Interviewer requests · ${roundObj.name}`, h('span', { class: 'faint' }, 'replies come from Outlook or the app')),
       head,
+      s.done[bookedKey] && !(list.length && state.complete)
+        ? h('div', { class: 'row', style: 'justify-content:space-between;padding:8px 10px' }, h('span', { class: 'small' }, h('b', {}, 'Booked: '), `${M.formatDay((s.done[bookedKey].data || {}).slotDate || s.done[bookedKey].at)} ${(s.done[bookedKey].data || {}).time || ''}`), h('button', { onclick: () => ((ui.outlookDraft = bookingDraft(c, round, s.done[bookedKey].data || {})), rerender()) }, 'Outlook invite'))
+        : null,
       rows,
+      outlookPanel(c),
       !list.filter((i) => i.status === 'pending' || i.status === 'accepted').length && !s.done[bookedKey] ? slotSuggestions(c, s, round, roundObj) : null,
       !state.complete ? askForm(c, round, roundObj, list) : null,
     );
@@ -1252,7 +1275,7 @@
   function prefillBooking(c, key, list, state) {
     ui.forms = ui.forms || {};
     const slot = list.find((i) => state.pair.includes(i.personId)) || list[0];
-    ui.forms[`${c.id}:${key}:new`] = { at: TODAY, outcome: null, note: '', availability: '', slots: [], slotDate: slot.slotDate, time: slot.time || '', room: slot.room || ROOMS[0], interviewers: [...state.pair], reason: '' };
+    ui.forms[`${c.id}:${key}:new`] = { at: TODAY, outcome: null, note: '', availability: '', slots: [], slotDate: slot.slotDate, time: slot.time || '', room: slot.room || roomNames()[0], interviewers: [...state.pair], reason: '' };
     ui.openStep = key;
     rerender();
   }
@@ -1261,7 +1284,7 @@
     const key = `ask:${c.id}:${round}`;
     ui.forms = ui.forms || {};
     const asked = new Set(list.filter((i) => i.status !== 'cancelled').map((i) => i.personId));
-    const f = ui.forms[key] || (ui.forms[key] = { open: !list.length, slotDate: list[0] ? list[0].slotDate : '', time: list[0] ? list[0].time : '10:00', room: list[0] ? list[0].room : ROOMS[0], picked: [] });
+    const f = ui.forms[key] || (ui.forms[key] = { open: !list.length, slotDate: list[0] ? list[0].slotDate : '', time: list[0] ? list[0].time : '10:00', room: list[0] ? list[0].room : roomNames()[0], picked: [] });
     const box = h('div', { style: 'border-top:1px solid var(--line);padding:8px 10px;display:flex;flex-direction:column;gap:8px' });
     const role = roundObj.role;
     const load = interviewLoad();
@@ -1314,7 +1337,7 @@
           { class: 'fg' },
           h('label', { class: 'f' }, 'Date', h('input', { type: 'date', id: `ask-date-${c.id}`, value: f.slotDate, onchange: (e) => ((f.slotDate = e.target.value), suggest(), draw()) })),
           h('label', { class: 'f' }, 'Start', h('input', { type: 'time', id: `ask-time-${c.id}`, step: 900, value: f.time, onchange: (e) => ((f.time = e.target.value), suggest(), draw()) })),
-          h('label', { class: 'f' }, 'Room', h('select', { id: `ask-room-${c.id}`, onchange: (e) => (f.room = e.target.value) }, ROOMS.map((r) => h('option', { selected: f.room === r }, r)))),
+          h('label', { class: 'f' }, 'Room', h('select', { id: `ask-room-${c.id}`, onchange: (e) => ((f.room = e.target.value), draw()) }, roomNames().map((r) => h('option', { selected: f.room === r }, r))), roomClash(f.slotDate, f.time, f.room, c && c.id)),
         ),
         f.slotDate
           ? h(
@@ -1353,18 +1376,7 @@
       );
     }
     draw();
-    const txt = ui.inviteText && ui.inviteText.candId === c.id ? ui.inviteText.text : null;
-    return [
-      box,
-      txt
-        ? h(
-            'div',
-            { style: 'border-top:1px solid var(--line);padding:8px 10px;display:flex;flex-direction:column;gap:6px' },
-            h('div', { class: 'row', style: 'justify-content:space-between' }, h('b', { class: 'small' }, 'Invite text, ready to send from Outlook'), h('button', { onclick: (e) => copyText(txt, e.target) }, 'Copy')),
-            h('pre', { class: 'small', style: 'white-space:pre-wrap;margin:0;font-family:var(--font-ui);background:var(--s1);padding:8px;border-radius:4px' }, txt),
-          )
-        : null,
-    ];
+    return [box];
   }
 
   // Creates one request per picked person for the slot in f, and shows the Outlook text.
@@ -1372,7 +1384,7 @@
     const ids = [...f.picked];
     return act(async () => {
       for (const id of ids) await S.add('invites', { campaignId: c.campaignId, candidateId: c.id, round, personId: id, slotDate: f.slotDate, time: f.time, room: f.room, status: 'pending', sentAt: nowIso(), via: 'outlook', mock: !!c.mock });
-      ui.inviteText = { candId: c.id, text: inviteText(c, round, f) };
+      ui.outlookDraft = requestDraft(c, round, { ...f, picked: ids });
       rerender();
     }, `${plural(ids.length, 'request')} created`);
   }
@@ -1424,14 +1436,13 @@
       preferFridays: settings.preferFridays,
       max: 3,
     });
-    const busyRooms = (date, time) => new Set(M.interviewsOf(S.state.candidates, S.state.invites).filter((r) => r.slotDate === date && r.time === time && r.room).map((r) => r.room));
     return h(
       'div',
       { class: 'suggest' },
       h('div', { class: 'label' }, slots.length ? 'Suggested, from the candidate’s times and the poll' : `Suggested, before the deadline (${M.formatDay(until)}) and from the poll`),
       picks.length
         ? picks.map((o) => {
-            const room = ROOMS.find((r) => !busyRooms(o.date, o.time).has(r)) || ROOMS[0];
+            const room = roomNames(camp).find((r) => !busyRooms(o.date, o.time, c.id).has(r)) || roomNames(camp)[0];
             const ppl = o.ask.map((id) => personById(id)).filter(Boolean);
             return h(
               'div',
@@ -1444,9 +1455,73 @@
     );
   }
 
-  function inviteText(c, round, f) {
-    const what = round === 'deepdive' ? 'a deep dive (final round)' : 'an advisor interview';
-    return `Subject: Hold: ${what} on ${M.formatDay(f.slotDate)} ${f.time}, ${f.room}\n\nHi,\n\nCould you hold ${M.formatDay(f.slotDate)} from ${f.time} for ${what} with a trainee candidate (${first(c)})? It's 1 hour, in person, with a colleague from another team.\n\nPlease accept or decline this invite. If more people accept than we need, I'll release the extra slot with as much notice as I can.\n\nThanks,\nNatalie`;
+  // ------------------------------------------------------------------
+  // Outlook. Until the Flux Microsoft 365 connection exists, every invite,
+  // release and confirmation is a draft that opens in Outlook on the web,
+  // filled in (people, room, time, text), for Natalie to check and send.
+  // Replies come in through a provider (see outlookProviders below).
+  // ------------------------------------------------------------------
+  const roundWhat = (round) => (round === 'deepdive' ? 'a deep dive (final round)' : 'an advisor interview');
+  const draftLen = (round) => (roundByKey(campaign(), round) || {}).durationMin || 60;
+  const noEmail = (ids) => ids.map(personById).filter((p) => p && !p.email).map((p) => p.name);
+  const emailsOf = (ids) => ids.map(personById).filter((p) => p && p.email).map((p) => p.email);
+
+  // The hold request: one meeting to everyone asked, with the room as a resource.
+  function requestDraft(c, round, f) {
+    const what = roundWhat(round);
+    const subject = `Hold: ${what} on ${M.formatDay(f.slotDate)} ${f.time}, ${f.room}`;
+    const body = `Hi,\n\nCould you hold ${M.formatDay(f.slotDate)} from ${f.time} for ${what} with a trainee candidate (${first(c)})? It's ${draftLen(round)} minutes, in person, with a colleague from another team.\n\nPlease accept or decline this invite. If more people accept than we need, I'll release the extra slot with as much notice as I can.\n\nThanks,\nNatalie`;
+    const to = [...emailsOf(f.picked), roomEmail(f.room)];
+    return { candId: c.id, title: 'Hold request, ready in Outlook', hint: 'Opens a new meeting with everyone asked and the room filled in. Check it and press Send.', subject, body, missing: noEmail(f.picked), link: M.outlookMeetingLink({ subject, body, date: f.slotDate, time: f.time, durationMin: draftLen(round), location: f.room, to }) };
+  }
+  // Releasing someone: remove them from the hold meeting in Outlook (that sends the
+  // cancellation), and this note says thanks and why.
+  function releaseDraft(inv) {
+    const c = S.state.candidates.find((x) => x.id === inv.candidateId) || { name: 'the candidate' };
+    const p = personById(inv.personId) || { name: 'there' };
+    const subject = `Released: ${roundWhat(inv.round)} on ${M.formatDay(inv.slotDate)} ${inv.time || ''}`.trim();
+    const body = `Hi ${p.name.split(' ')[0]},\n\nThanks for holding ${M.formatDay(inv.slotDate)}${inv.time ? ` at ${inv.time}` : ''} for ${first(c)}. The pair is complete, so you're free again. I've taken you off the meeting.\n\nThanks,\nNatalie`;
+    return { candId: inv.candidateId, title: `Release ${p.name}`, hint: `Remove ${p.name} from the hold meeting in Outlook (that sends the cancellation), then send this note.`, subject, body, missing: noEmail([inv.personId]), link: M.outlookMailLink({ to: emailsOf([inv.personId]), subject, body }) };
+  }
+  // The booking: the confirmed meeting for the pair and the room, and a note to the candidate.
+  function bookingDraft(c, round, d) {
+    const what = roundWhat(round);
+    const ids = d.interviewers || [];
+    const names = ids.map((id) => (personById(id) || {}).name || 'a colleague').join(' and ');
+    const subject = `${round === 'deepdive' ? 'Deep dive' : 'Advisor interview'}: ${c.name.replace(/ \(demo\)$/, '')}, ${M.formatDay(d.slotDate)} ${d.time || ''}`.trim();
+    const body = `Hi,\n\nConfirmed: ${what} with ${c.name.replace(/ \(demo\)$/, '')} on ${M.formatDay(d.slotDate)}${d.time ? ` at ${d.time}` : ''} in ${d.room || 'the office'}, with ${names}. The interview brief is in the Flux interviews app.\n\nThanks,\nNatalie`;
+    const candSubject = `Your interview at Flux Partners on ${M.formatDay(d.slotDate)}`;
+    const candBody = `Hi ${first(c)},\n\nYour next interview is on ${M.formatDay(d.slotDate)}${d.time ? ` at ${d.time}` : ''}, at our office (${d.room || 'reception will show you the way'}). You'll meet ${names}. It takes about ${draftLen(round)} minutes.\n\nKind regards,\nNatalie`;
+    return {
+      candId: c.id,
+      title: 'Confirmed interview, ready in Outlook',
+      hint: 'Send the hold holders the confirmed meeting with the room, then let the candidate know.',
+      subject,
+      body,
+      missing: noEmail(ids),
+      link: M.outlookMeetingLink({ subject, body, date: d.slotDate, time: d.time, durationMin: draftLen(round), location: d.room, to: [...emailsOf(ids), roomEmail(d.room)] }),
+      extra: { label: c.email ? 'Email the candidate' : 'Email the candidate (no address yet)', link: M.outlookMailLink({ to: c.email ? [c.email] : [], subject: candSubject, body: candBody }) },
+    };
+  }
+  function outlookPanel(c) {
+    const d = ui.outlookDraft && ui.outlookDraft.candId === c.id ? ui.outlookDraft : null;
+    if (!d) return null;
+    const text = `Subject: ${d.subject}\n\n${d.body}`;
+    return h(
+      'div',
+      { class: 'outlook-draft' },
+      h('div', { class: 'row', style: 'justify-content:space-between' }, h('b', { class: 'small' }, d.title), h('button', { class: 'link small', 'aria-label': 'Close the draft', onclick: () => ((ui.outlookDraft = null), rerender()) }, 'Done')),
+      h('p', { class: 'small muted' }, d.hint),
+      d.missing && d.missing.length ? h('p', { class: 'small warn-t' }, `No email for ${d.missing.join(', ')}. Add it in Roster, or type it in Outlook.`) : null,
+      h(
+        'div',
+        { class: 'row' },
+        h('a', { class: 'btn p', href: d.link, target: '_blank', rel: 'noopener' }, 'Open in Outlook'),
+        d.extra ? h('a', { class: 'btn', href: d.extra.link, target: '_blank', rel: 'noopener' }, d.extra.label) : null,
+        h('button', { onclick: (e) => copyText(text, e.target) }, 'Copy text'),
+      ),
+      h('details', {}, h('summary', { class: 'small' }, 'Show the text'), h('pre', { class: 'small' }, text)),
+    );
   }
   function copyText(text, btn) {
     try {
@@ -1639,26 +1714,52 @@
     return chosen.map((d) => `${WEEKDAY[M.weekdayOf(d)]} ${Number(d.slice(8))} ${M.formatDay(d).split(' ').pop()} ${part()}`).join(', ');
   }
 
+  // Where Outlook replies come from. Each provider reads the answers to the
+  // requests it is given and returns [{ invite, status, reason, respondedAt }].
+  //  manual: Natalie reads Outlook and presses Accepted or Declined (nothing to read here).
+  //  mock:   Mock answers for colleagues, following the poll.
+  //  m365:   (later) reads the meeting responses through the Flux Microsoft 365 connection.
+  const outlookProviders = {
+    manual: { label: 'By hand', async readReplies() { return []; } },
+    mock: {
+      label: 'Mock',
+      async readReplies(pending, { day, srcs }) {
+        const out = [];
+        for (const i of pending) {
+          if ((i.sentAt || '').slice(0, 10) >= day) continue;
+          const role = i.round === 'deepdive' ? 'teamlead' : 'advisor';
+          const a = M.availabilityOn(srcs, i.personId, role, i.slotDate);
+          const half = Number((i.time || '10').slice(0, 2)) < 12 ? 'am' : 'pm';
+          const free = a && (a.value === 'all' || a.value === half);
+          const yes = free ? Math.random() < 0.85 : a && a.value === 'no' ? false : Math.random() < 0.4;
+          const reason = yes ? '' : free ? pick(['Client meeting came up', 'On a client site that day', 'Project deadline']) : 'Not available then';
+          out.push({ invite: i, status: yes ? 'accepted' : 'declined', reason, respondedAt: `${day}T${pick(['08:40', '10:15', '13:05', '16:30'])}:00.000Z`, via: 'mock' });
+        }
+        return out;
+      },
+    },
+  };
+  async function applyOutlookReplies(replies) {
+    let n = 0;
+    for (const r of replies) {
+      const i = r.invite;
+      const c = S.state.candidates.find((x) => x.id === i.candidateId);
+      await S.update('invites', i.id, { status: r.status, respondedAt: r.respondedAt || nowIso(), via: r.via || 'outlook', declineReason: r.reason || '' });
+      if (c) simLog((r.respondedAt || nowIso()).slice(0, 10), `${pname(i.personId)} ${r.status === 'accepted' ? 'accepted' : `declined (${(r.reason || 'no reason').toLowerCase()})`} ${first(c)}’s ${M.formatDay(i.slotDate)} request.`);
+      n++;
+    }
+    return n;
+  }
+
   async function simulateDay() {
     const day = TODAY;
     const srcs = availSources();
     const byId = new Map(S.state.candidates.map((c) => [c.id, c]));
     let n = 0;
-    // 1. Colleagues answer requests sent before today.
+    // 1. Colleagues answer requests sent before today, through the mock Outlook.
     if (sim.replies) {
-      for (const i of S.state.invites.filter((x) => x.status === 'pending' && x.mock && (x.sentAt || '').slice(0, 10) < day)) {
-        const c = byId.get(i.candidateId);
-        if (!c) continue;
-        const role = i.round === 'deepdive' ? 'teamlead' : 'advisor';
-        const a = M.availabilityOn(srcs, i.personId, role, i.slotDate);
-        const half = Number((i.time || '10').slice(0, 2)) < 12 ? 'am' : 'pm';
-        const free = a && (a.value === 'all' || a.value === half);
-        const yes = free ? Math.random() < 0.85 : a && a.value === 'no' ? false : Math.random() < 0.4;
-        const reason = yes ? '' : free ? pick(['Client meeting came up', 'On a client site that day', 'Project deadline']) : 'Not available then';
-        await S.update('invites', i.id, { status: yes ? 'accepted' : 'declined', respondedAt: `${day}T${pick(['08:40', '10:15', '13:05', '16:30'])}:00.000Z`, via: 'mock', declineReason: reason });
-        simLog(day, `${pname(i.personId)} ${yes ? 'accepted' : `declined (${reason.toLowerCase()})`} ${first(c)}’s ${M.formatDay(i.slotDate)} request.`);
-        n++;
-      }
+      const pending = S.state.invites.filter((x) => x.status === 'pending' && x.mock && byId.has(x.candidateId));
+      n += await applyOutlookReplies(await outlookProviders.mock.readReplies(pending, { day, srcs }));
     }
     // 2. Candidates send availability the day after Natalie asks.
     if (sim.candidates) {
@@ -2964,6 +3065,7 @@
         ),
       ),
       ),
+      roomsBlock(c, editing, f),
       editing && !draft
         ? h(
             'div',
@@ -2978,6 +3080,8 @@
                   const bad = roundProblem(f.rounds);
                   if (bad) return (err.textContent = bad);
                   if (!(f.settings.replyWindowWorkingDays >= 1)) return (err.textContent = 'The reply window needs at least 1 working day.');
+                  if ((f.settings.rooms || []).some((r) => !r.name.trim())) return (err.textContent = 'Every room needs a name.');
+                  if (new Set((f.settings.rooms || []).map((r) => r.name.trim())).size !== (f.settings.rooms || []).length) return (err.textContent = 'Two rooms have the same name.');
                   act(async () => {
                     await S.update('campaigns', c.id, { settings: f.settings, rounds: f.rounds });
                     ui.editRules = null;
@@ -2990,6 +3094,40 @@
             ),
           )
         : null,
+    );
+  }
+
+  // Rooms: a name for the app and the room's Outlook address, so the invite books it.
+  function roomsBlock(c, editing, f) {
+    const list = editing ? (f.settings.rooms = f.settings.rooms && f.settings.rooms.length ? f.settings.rooms : M.DEFAULT_SETTINGS.rooms.map((r) => ({ ...r }))) : roomList(c);
+    const withMail = list.filter((r) => r.email).length;
+    return h(
+      'details',
+      { class: 'round-sum', open: editing },
+      h('summary', {}, h('b', {}, 'Rooms'), h('span', { class: 'muted' }, ` · ${plural(list.length, 'room')}, ${withMail === list.length ? 'all booked with the invite' : `${withMail} with an Outlook address`}`)),
+      h(
+        'div',
+        { class: 'sheet-wrap room-list', style: 'border:1px solid var(--grid);border-radius:6px' },
+        h(
+          'table',
+          { class: 'x' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Room'), h('th', {}, 'Outlook address'), editing ? h('th', {}, '') : null)),
+          h(
+            'tbody',
+            {},
+            list.map((r, i) =>
+              h(
+                'tr',
+                {},
+                h('td', {}, editing ? h('input', { id: `room-name-${i}`, 'aria-label': 'Room name', value: r.name, oninput: (e) => (r.name = e.target.value) }) : r.name),
+                h('td', { class: 'mono' }, editing ? h('input', { id: `room-email-${i}`, type: 'email', 'aria-label': 'Room email', placeholder: 'room@fluxpartners.nl', value: r.email || '', oninput: (e) => (r.email = e.target.value.trim()) }) : r.email || h('span', { class: 'faint' }, 'none yet, Natalie books it by hand')),
+                editing ? h('td', {}, list.length > 1 ? h('button', { class: 'link', onclick: () => (list.splice(i, 1), rerender()) }, 'Remove') : null) : null,
+              ),
+            ),
+          ),
+        ),
+        editing ? h('div', { style: 'padding:8px 10px' }, h('button', { onclick: () => (list.push({ name: `Room ${list.length + 1}`, email: '' }), rerender()) }, 'Add room')) : null,
+      ),
     );
   }
 

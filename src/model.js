@@ -555,6 +555,11 @@
     cancellationWarningWorkingDays: 3,
     holdsPerMemberPerMonth: 2,
     preferFridays: true,
+    // Meeting rooms. The email is the room's Outlook address, so the room is booked with the invite.
+    rooms: [
+      { name: 'Room 1', email: '' },
+      { name: 'Room 2', email: '' },
+    ],
   };
 
   const HR_ROUND = { key: 'hr', name: 'HR interview', role: 'hr', interviewers: 1, differentTeams: false, durationMin: 45, maxDaysAfterPrevious: null, fallbacks: [] };
@@ -982,6 +987,88 @@
   }
 
   /**
+   * Rooms taken around a slot: booked interviews, accepted holds and requests
+   * still waiting, overlapping date + time for durationMin (default 60).
+   * Returns Map room -> { candidateId, time }. A candidate's own use is left out.
+   */
+  function roomsInUse({ cands, invites, date, time, durationMin, exceptCandidateId }) {
+    const toMin = (t) => {
+      const [a, b] = (t || '10:00').split(':').map(Number);
+      return a * 60 + (b || 0);
+    };
+    const len = Number(durationMin) || 60;
+    const out = new Map();
+    const uses = [...interviewsOf(cands, invites), ...invites.filter((i) => i.status === 'pending')];
+    for (const r of uses) {
+      if (r.slotDate !== date || !r.room || r.candidateId === exceptCandidateId) continue;
+      if (Math.abs(toMin(r.time) - toMin(time)) >= len) continue;
+      if (!out.has(r.room)) out.set(r.room, { candidateId: r.candidateId, time: r.time });
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // Outlook: prefilled drafts and calendar files
+  // ---------------------------------------------------------------------
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+  /** "2026-11-27" + "10:00" + 60 -> { start: "2026-11-27T10:00:00", end: "2026-11-27T11:00:00" } (local time). */
+  function slotTimes(date, time, durationMin) {
+    const [hh, mm] = (time || '10:00').split(':').map(Number);
+    const endMin = hh * 60 + mm + (Number(durationMin) || 60);
+    return { start: `${date}T${pad2(hh)}:${pad2(mm)}:00`, end: `${date}T${pad2(Math.floor(endMin / 60) % 24)}:${pad2(endMin % 60)}:00` };
+  }
+
+  // Outlook shows a '+' literally, so spaces are encoded as %20 (encodeURIComponent), not '+'.
+  const query = (o) => Object.entries(o).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+
+  /**
+   * A link that opens a new Outlook (web) meeting, filled in and ready to send.
+   * Attendees go in `to`; a room's address there books the room too.
+   */
+  function outlookMeetingLink({ subject, body, date, time, durationMin, location, to }) {
+    const t = slotTimes(date, time, durationMin);
+    return `https://outlook.office.com/calendar/deeplink/compose?${query({ path: '/calendar/action/compose', rru: 'addevent', subject, body, startdt: t.start, enddt: t.end, location, to: (to || []).filter(Boolean).join(',') })}`;
+  }
+
+  /** A link that opens a new Outlook (web) email, filled in and ready to send. */
+  function outlookMailLink({ to, subject, body }) {
+    return `https://outlook.office.com/mail/deeplink/compose?${query({ subject, body, to: (to || []).filter(Boolean).join(',') })}`;
+  }
+
+  /**
+   * An .ics calendar file. method "REQUEST" invites, "CANCEL" cancels the
+   * meeting with the same uid (Outlook removes it from the attendee's calendar).
+   */
+  function icsEvent({ uid, method, sequence, subject, body, date, time, durationMin, location, organizer, attendees }) {
+    const t = slotTimes(date, time, durationMin);
+    const flat = (iso) => iso.replace(/[-:]/g, '');
+    const esc = (x) => String(x || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Flux Partners//Flux Interviews//EN',
+      `METHOD:${method || 'REQUEST'}`,
+      'BEGIN:VEVENT',
+      `UID:${uid}`,
+      `SEQUENCE:${sequence || 0}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;TZID=Europe/Amsterdam:${flat(t.start)}`,
+      `DTEND;TZID=Europe/Amsterdam:${flat(t.end)}`,
+      `SUMMARY:${esc(subject)}`,
+      `DESCRIPTION:${esc(body)}`,
+      `LOCATION:${esc(location)}`,
+      organizer ? `ORGANIZER:mailto:${organizer}` : null,
+      ...(attendees || []).filter(Boolean).map((a) => `ATTENDEE;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${a}`),
+      `STATUS:${method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED'}`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].filter(Boolean);
+    return lines.join('\r\n');
+  }
+
+  /**
    * Personal interview goals. The campaign expects `expectedInterviews()`
    * interviews per round, and each needs `interviewers` people, so a round
    * needs expected x interviewers seats. Those are split evenly over
@@ -1135,6 +1222,11 @@
     interviewGoals,
     expectedInterviews,
     suggestSlots,
+    roomsInUse,
+    slotTimes,
+    outlookMeetingLink,
+    outlookMailLink,
+    icsEvent,
     pipelineCounts,
   };
 

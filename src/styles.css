@@ -743,3 +743,12 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
 .suggest .label { font-size: 13px; color: var(--accent); font-weight: 500; }
 .suggest-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface); border-radius: var(--r-md); }
 @media (max-width: 600px) { .suggest-row { flex-direction: column; align-items: stretch; } }
+
+/* Outlook drafts: a link that opens the filled-in meeting or email */
+a.btn { display: inline-flex; align-items: center; font: 500 15px/1.2 var(--font-ui); padding: 9px 18px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); color: var(--fg); text-decoration: none; white-space: nowrap; }
+a.btn.p { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+a.btn:hover { filter: brightness(1.05); }
+.outlook-draft { border-top: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.outlook-draft p { margin: 0; }
+.outlook-draft pre { white-space: pre-wrap; margin: 6px 0 0; font-family: var(--font-ui); background: var(--s1); padding: 8px; border-radius: 4px; }
+.room-list input { width: 100%; }
