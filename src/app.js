@@ -180,6 +180,7 @@
       ['availability', 'Availability'],
       ['roster', 'Roster'],
       ['campaign', 'Campaign'],
+      ['metrics', 'Metrics'],
     ];
     return h(
       'header',
@@ -235,7 +236,7 @@
         h(
           'nav',
           { class: 'phone-only', 'aria-label': 'Pages' },
-          [['run', 'Today'], ['availability', 'Availability'], ['roster', 'Roster'], ['campaign', 'Campaign']].map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
+          [['run', 'Today'], ['availability', 'Availability'], ['roster', 'Roster'], ['campaign', 'Campaign'], ['metrics', 'Metrics']].map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
         ),
         viewSwitch(),
         h('hr'),
@@ -250,6 +251,7 @@
     if (ui.view === 'availability') return availabilityView();
     if (ui.view === 'roster') return rosterView();
     if (ui.view === 'campaign') return campaignView();
+    if (ui.view === 'metrics') return metricsView();
     return runView();
   }
 
@@ -3449,6 +3451,92 @@
     });
   }
   const campCands = (campId) => S.state.candidates.filter((c) => c.campaignId === campId);
+
+  // ------------------------------------------------------------------
+  // Metrics: how the campaign is doing, for Natalie and for management
+  // ------------------------------------------------------------------
+  function metricsView() {
+    const camp = campaign();
+    const m = M.campaignMetrics({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().map((n) => ({ ...n, authorPersonId: n.personId })), people: S.state.people, today: TODAY });
+    const pct = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
+    const days = (x) => (x == null ? '–' : `${Math.round(x * 10) / 10} ${x === 1 ? 'day' : 'days'}`);
+    const hours = (x) => (x == null ? '–' : x < 24 ? `${Math.round(x)} h` : days(x / 24));
+    const tile = (label, value, sub) => h('div', { class: 'kpi' }, h('span', { class: 'small muted' }, label), h('b', {}, value), sub ? h('span', { class: 'small muted' }, sub) : null);
+    const weeksLeft = camp.endDate ? Math.max(1, Math.ceil(M.daysBetween(TODAY, camp.endDate) / 7)) : null;
+    const pace = weeksLeft && m.targetInterviews > m.interviewsHeld ? Math.ceil((m.targetInterviews - m.interviewsHeld) / weeksLeft) : null;
+    const maxF = Math.max(1, ...m.funnel.map((r) => r.n));
+    const maxW = Math.max(1, pace || 0, ...m.weeks.map((w) => w.n));
+    const table = (rows) => h('table', { class: 'x metrics-t' }, h('tbody', {}, rows.map(([k, v, note]) => h('tr', {}, h('td', {}, k), h('td', { class: 'num' }, v), h('td', { class: 'small muted wide-only' }, note || '')))));
+    const summary = [
+      `${camp.name}, ${M.formatDay(TODAY)}`,
+      `Hires: ${m.hires}${m.targetHires ? ` of ${m.targetHires}` : ''} (${m.offers} offers). Interviews held: ${m.interviewsHeld}${m.targetInterviews ? ` of ${m.targetInterviews}` : ''}.`,
+      `Funnel: ${m.funnel.map((r) => `${r.label} ${r.n}`).join(', ')}.`,
+      `Speed: HR to advisor interview ${days(m.speed.toAdvisor)}, advisor to deep dive ${days(m.speed.toDeepdive)}, HR to offer ${days(m.speed.toOffer)}.`,
+      `On time: advisor round ${pct(m.onTime.advisor.share)}, deep dive ${pct(m.onTime.deepdive.share)}.`,
+      `Requests: ${m.requests.sent} sent, ${pct(m.requests.acceptShare)} accepted, reply in ${hours(m.requests.replyHours)}.`,
+      `Feedback: ${pct(m.feedback.share)} of interviewers, after ${days(m.feedback.days)}.`,
+    ].join('\n');
+    return h(
+      'div',
+      { class: 'section gutter metrics' },
+      h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Metrics'), h('p', {}, `${camp.name}, up to ${M.formatDay(TODAY)}. Interviews count once they are booked and their day has come.`)), h('button', { onclick: (e) => copyText(summary, e.target) }, 'Copy summary')),
+      m.candidates
+        ? [
+            h('div', { class: 'kpis' }, tile('Hires', `${m.hires}${m.targetHires ? ` of ${m.targetHires}` : ''}`, `${plural(m.offers, 'offer')} made`), tile('Interviews held', `${m.interviewsHeld}${m.targetInterviews ? ` of ${m.targetInterviews}` : ''}`, pace ? `${pace} a week needed to ${M.formatDay(camp.endDate)}` : 'advisor rounds and deep dives'), tile('Candidates', String(m.candidates), `${m.open} open${m.withdrew ? `, ${m.withdrew} withdrew` : ''}`), tile('HR to offer', days(m.speed.toOffer), 'median')),
+            h(
+              'div',
+              { class: 'metrics-grid' },
+              h(
+                'section',
+                { class: 'tpanel', 'aria-label': 'Funnel' },
+                h('div', { class: 'ph' }, 'Funnel', h('span', { class: 'faint' }, 'share is of the step before')),
+                h(
+                  'div',
+                  { class: 'funnel' },
+                  m.funnel.map((r) => h('div', { class: 'f-row', title: `${r.label}: ${r.n}${r.ofPrev != null ? `, ${pct(r.ofPrev)} of the step before` : ''}` }, h('span', { class: 'f-label' }, r.label), h('span', { class: 'f-track' }, h('span', { class: 'f-bar', style: `width:${(r.n / maxF) * 100}%` })), h('span', { class: 'f-num' }, String(r.n)), h('span', { class: 'f-pct small muted' }, r.ofPrev != null ? pct(r.ofPrev) : ''))),
+                ),
+              ),
+              h(
+                'section',
+                { class: 'tpanel', 'aria-label': 'Interviews per week' },
+                h('div', { class: 'ph' }, 'Interviews per week', h('span', { class: 'faint' }, pace ? `line: ${pace} a week needed` : 'advisor rounds and deep dives')),
+                h(
+                  'div',
+                  { class: 'weeks', role: 'img', 'aria-label': m.weeks.map((w) => `week of ${M.formatDay(w.week)}: ${w.n}`).join('; ') },
+                  pace ? h('span', { class: 'w-pace', style: `bottom:calc(28px + ${Math.round((pace / maxW) * 130)}px)` }) : null,
+                  m.weeks.map((w) => h('div', { class: 'w-col', title: `Week of ${M.formatDay(w.week)}: ${plural(w.n, 'interview')}` }, h('span', { class: 'w-num small' }, w.n ? String(w.n) : ''), h('span', { class: 'w-bar', style: `height:${(w.n / maxW) * 100}%` }), h('span', { class: 'w-lab small muted' }, M.formatDay(w.week).replace(/^\w+ /, '')))),
+                ),
+              ),
+              h('section', { class: 'tpanel', 'aria-label': 'Speed' }, h('div', { class: 'ph' }, 'Speed', h('span', { class: 'faint' }, 'medians, calendar days')), table([['HR interview to advisor interview', days(m.speed.toAdvisor)], ['Advisor interview to deep dive', days(m.speed.toDeepdive)], ['HR interview to offer', days(m.speed.toOffer)], ['Candidate sends availability', days(m.speed.availReply), 'after Natalie asks'], ['Advisor round on time', pct(m.onTime.advisor.share), `${m.onTime.advisor.met} of ${m.onTime.advisor.all} within the round’s limit`], ['Deep dive on time', pct(m.onTime.deepdive.share), `${m.onTime.deepdive.met} of ${m.onTime.deepdive.all} within the round’s limit`]])),
+              h(
+                'section',
+                { class: 'tpanel', 'aria-label': 'Interviewer requests' },
+                h('div', { class: 'ph' }, 'Interviewer requests'),
+                table([
+                  ['Requests sent', String(m.requests.sent), m.requests.pending ? `${m.requests.pending} waiting` : ''],
+                  ['Accepted', pct(m.requests.acceptShare), `${m.requests.accepted} accepted, ${m.requests.declined} declined`],
+                  ['Reply time', hours(m.requests.replyHours), 'median'],
+                  ['Requests per booked interview', m.requests.perBooking == null ? '–' : String(Math.round(m.requests.perBooking * 10) / 10)],
+                  ['Released', String(m.requests.released), m.requests.releaseNoticeDays != null ? `median ${days(m.requests.releaseNoticeDays)} notice` : ''],
+                  ...m.requests.declineReasons.slice(0, 3).map(([r, n]) => [`Declined: ${r.toLowerCase()}`, String(n)]),
+                ]),
+              ),
+              h(
+                'section',
+                { class: 'tpanel', 'aria-label': 'Feedback and load' },
+                h('div', { class: 'ph' }, 'Feedback and load'),
+                table([
+                  ['Feedback written', pct(m.feedback.share), `${m.feedback.given} of ${m.feedback.expected} interviewers`],
+                  ['Feedback arrives', days(m.feedback.days), 'median, after the interview'],
+                  ['Interviewers involved', String(m.load.people), m.load.people ? `${m.load.min} to ${m.load.max} interviews each` : ''],
+                  ...m.load.byTeam.map(([t, n]) => [`Team ${t}`, plural(n, 'interview'), '']),
+                ]),
+              ),
+            ),
+          ]
+        : h('p', { class: 'muted' }, 'No candidates in this campaign yet. Metrics fill in as candidates move through the rounds.'),
+    );
+  }
   const campInvites = (campId) => S.state.invites.filter((i) => i.campaignId === campId);
 
   function scoresFor(camp) {
@@ -4347,7 +4435,7 @@
   // ------------------------------------------------------------------
   function route() {
     const v = (location.hash || '#run').slice(1);
-    ui.view = ['run', 'availability', 'roster', 'campaign'].includes(v) ? v : 'run';
+    ui.view = ['run', 'availability', 'roster', 'campaign', 'metrics'].includes(v) ? v : 'run';
     rerender();
   }
   window.addEventListener('hashchange', route);
