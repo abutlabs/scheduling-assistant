@@ -3231,12 +3231,13 @@
     // Only the people in this campaign's interview rounds take part.
     const ids = new Set((camp.rounds || []).filter((r) => r.role !== 'hr').flatMap((r) => M.roundMembers(camp, r.key, S.state.people).map((p) => p.id)));
     const sb = M.scoreboard({ cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().filter((n) => n.campaignId === camp.id), people: S.state.people.filter((p) => ids.has(p.id)), today: TODAY });
-    // Personal hiring goals: each person's share of the campaign target.
-    const goals = M.hiringGoals({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), people: S.state.people });
+    // Personal interview goals: each person's share of the campaign's expected interviews.
+    const goals = M.interviewGoals({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), people: S.state.people, today: TODAY });
     for (const x of sb.people) {
       const g = goals[x.personId];
       x.goal = g ? g.goal : 0;
-      x.hires = g ? g.hires : 0;
+      x.goalDone = g ? g.done : 0;
+      x.goalPlanned = g ? g.planned : 0;
     }
     return sb;
   }
@@ -3494,12 +3495,13 @@
           'div',
           {},
           h('div', { class: 'calm-head' }, h('p', { class: 'kicker' }, [role, inbox.team, st ? st.name : ''].filter(Boolean).join(' · ')), h('h1', {}, `Hi ${inbox.name.split(' ')[0]}.`), h('p', { class: 'lead' }, lead)),
+          st ? myGoal(inbox, st) : null,
           stats.length > 1 ? h('div', { class: 'row', style: 'margin-top:24px' }, stats.map((x) => h('button', { class: x === st ? 'p' : '', onclick: () => ((ui.ivCampaign = x.campaignId), rerender()) }, x.name))) : null,
           h('div', { style: 'margin-top:48px' }, ivRequests(ctx)),
           ivInterviews(ctx),
           h('div', { style: 'margin-top:8px' }, ivAvailability(inbox), ivRules(st)),
         ),
-        h('aside', { class: 'iv-aside' }, st ? myGoal(inbox, st) : null, st ? myScore(inbox, st) : null, st ? campaignBlock(st) : null),
+        h('aside', { class: 'iv-aside' }, st ? myScore(inbox, st) : null, st ? campaignBlock(st) : null),
       ),
     );
   }
@@ -3715,20 +3717,25 @@
     );
   }
 
-  // Your share of the campaign's hiring goal, and how far you are.
+  // Your share of the campaign's interviews, and how far you are. Shown on
+  // the home page right under the greeting.
   function myGoal(inbox, st) {
     const s = inbox.scores && inbox.scores[st.campaignId];
     if (!s || !s.goal) return null;
-    const pct = Math.min(100, Math.round((s.hires / s.goal) * 100));
-    const left = Math.max(0, s.goal - s.hires);
+    const done = s.goalDone || 0;
+    const planned = s.goalPlanned || 0;
+    const pct = Math.min(100, Math.round((done / s.goal) * 100));
+    const pctPlanned = Math.min(100 - pct, Math.round((planned / s.goal) * 100));
+    const left = Math.max(0, s.goal - done - planned);
+    const line = done >= s.goal ? 'Goal reached. Thank you. Every extra interview helps the campaign along.' : left ? `${plural(left, 'more interview')} to plan${planned ? `, ${planned} already booked` : ''}.` : `The rest is booked: ${plural(planned, 'interview')} coming up.`;
     return h(
       'section',
-      { class: 'blk goal', 'aria-label': 'Your hiring goal' },
-      h('span', { class: 'label' }, 'Your hiring goal'),
-      h('div', { class: 'big-num' }, String(s.hires), h('span', {}, ` of ${s.goal} hired`)),
-      h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
-      h('p', {}, left ? `${plural(left, 'more hire')} from candidates you interview reaches your goal.` : 'Goal reached. Every extra hire helps the campaign go past its target.'),
-      h('p', { class: 'small faint' }, `A hire counts for everyone who interviewed that candidate. ${st.targetHires || '?'} hires for ${st.name} are shared out over the interviewers, so if everyone reaches their goal, the campaign does too.`),
+      { class: 'my-goal', 'aria-label': 'Your interview goal' },
+      h('span', { class: 'label' }, `Your goal for ${st.name}`),
+      h('div', { class: 'big-num' }, String(done), h('span', {}, ` of ${plural(s.goal, 'interview')} done`)),
+      h('div', { class: 'track two' }, h('i', { style: `width:${pct}%` }), pctPlanned ? h('b', { style: `width:${pctPlanned}%` }) : null),
+      h('p', {}, line),
+      h('p', { class: 'small faint' }, `${st.name} expects about ${st.targetInterviews || '?'} interviews per round, each with two interviewers. Shared evenly, that's your part. If everyone reaches theirs, we reach ${st.targetHires || 'our'} hires together.`),
     );
   }
 
@@ -3739,7 +3746,7 @@
     return h(
       'section',
       { class: 'blk', 'aria-label': 'Campaign overview' },
-      h('span', { class: 'label' }, st.name),
+      h('span', { class: 'label' }, `Our hiring goal · ${st.name}`),
       h('div', { class: 'big-num' }, `${p.hired || 0}`, h('span', {}, ` of ${st.targetHires || '?'} hired`)),
       h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
       h('p', {}, `${plural(st.interviewsNext7 || 0, 'interview')} in the next 7 days`),
@@ -3812,7 +3819,7 @@
       'div',
       { class: 'section gutter' },
       h('h2', {}, 'Scoreboard'),
-      h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row, rank and hiring goal. Goals split this campaign\'s target hires over the people in each round, so they add up to at least the target. This full list is for you.'),
+      h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row, rank and interview goal. Goals split this campaign\'s expected interviews over the people in each round (two seats per interview), so they add up to at least what the campaign needs. This full list is for you.'),
       teamBoard(st, null),
       h(
         'details',
@@ -3824,13 +3831,13 @@
         h(
           'table',
           { class: 'x' },
-          h('thead', {}, h('tr', {}, ['#', 'Name', 'Team', 'Hired / goal', 'Points', 'Interviews', 'Coming up', 'Avg reply', 'Feedback on time', 'Badges', ''].map((x) => h('th', {}, x)))),
+          h('thead', {}, h('tr', {}, ['#', 'Name', 'Team', 'Interviews / goal', 'Points', 'Interviews', 'Coming up', 'Avg reply', 'Feedback on time', 'Badges', ''].map((x) => h('th', {}, x)))),
           h(
             'tbody',
             {},
             sb.people.map((x) => {
               const p = personById(x.personId);
-              return h('tr', {}, h('td', { class: 'mono' }, x.rank), h('td', { class: 'name' }, p ? p.name : '?'), h('td', { class: 'mono' }, x.team), h('td', { class: `mono ${x.goal && x.hires >= x.goal ? 'ok-t' : ''}` }, x.goal ? `${x.hires} / ${x.goal}` : '–'), h('td', { class: 'mono' }, x.points), h('td', { class: 'mono' }, x.done), h('td', { class: 'mono' }, x.upcoming || ''), h('td', { class: 'mono' }, hrs(x.avgReplyHours)), h('td', { class: 'mono' }, x.feedbackDue ? `${x.feedbackOnTime}/${x.feedbackDue}` : '–'), h('td', { class: 'small' }, x.badges.join(', ')), h('td', {}, h('button', { class: 'link', onclick: () => setViewAs(x.personId) }, 'View as')));
+              return h('tr', {}, h('td', { class: 'mono' }, x.rank), h('td', { class: 'name' }, p ? p.name : '?'), h('td', { class: 'mono' }, x.team), h('td', { class: `mono ${x.goal && x.goalDone >= x.goal ? 'ok-t' : ''}` }, x.goal ? `${x.goalDone} / ${x.goal}${x.goalPlanned ? ` +${x.goalPlanned}` : ''}` : '–'), h('td', { class: 'mono' }, x.points), h('td', { class: 'mono' }, x.done), h('td', { class: 'mono' }, x.upcoming || ''), h('td', { class: 'mono' }, hrs(x.avgReplyHours)), h('td', { class: 'mono' }, x.feedbackDue ? `${x.feedbackOnTime}/${x.feedbackDue}` : '–'), h('td', { class: 'small' }, x.badges.join(', ')), h('td', {}, h('button', { class: 'link', onclick: () => setViewAs(x.personId) }, 'View as')));
             }),
           ),
         ),
