@@ -610,6 +610,8 @@
       settings: JSON.parse(JSON.stringify(fields.settings || DEFAULT_SETTINGS)),
       members: fields.members ? JSON.parse(JSON.stringify(fields.members)) : null,
       invited: {},
+      // New campaigns start closed (except the very first): interviewers see them once Natalie opens them.
+      open: !!fields.open,
       archived: false,
       createdAt: new Date().toISOString(),
     };

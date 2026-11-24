@@ -4,6 +4,7 @@ All collections live in the artifact database at the root.
 
 ## campaigns/{id}
 `name`, `startDate`, `endDate`, `targetHires`, `targetInterviews`, `archived`, `createdAt`,
+`open` (false: only Natalie sees it; advisors and team leads see open campaigns they're part of. Missing counts as open; new campaigns after the first start closed),
 `rounds[]` (`key`, `name`, `role`, `interviewers`, `differentTeams`, `durationMin`, `maxDaysAfterPrevious`, `fallbacks`),
 `settings` (invites per slot, reply window, holds per week and so on; used from phase 2).
 
