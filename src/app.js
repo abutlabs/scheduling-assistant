@@ -940,8 +940,9 @@
       { class: 'dsec from-iv', 'aria-label': 'Interview feedback' },
       h('span', { class: 'label' }, round === 'deepdive' ? 'From the team leads' : 'From the advisors'),
       list.map((n) => {
-        const lean = LEANS.find((l) => n.text.startsWith(l[1]));
-        return h('div', { class: 'fb' }, h('span', {}, authorName(n)), h('span', { class: `lean ${lean ? (lean[0] === 'reject' ? 'no' : lean[0]) : ''}` }, lean ? lean[1] : 'Feedback'), h('p', {}, lean ? n.text.slice(lean[1].length).replace(/^[.\s]+/, '') : n.text));
+        const lab = leanLabelOf(n.text);
+        const lean = lab ? LEANS.find((l) => l[1] === lab) : null;
+        return h('div', { class: 'fb' }, h('span', {}, authorName(n)), h('span', { class: `lean ${lean ? (lean[0] === 'reject' || lean[0] === 'no' ? 'no' : lean[0] === 'yes' ? 'pass firm' : lean[0]) : ''}` }, lean ? lean[1] : 'Feedback'), h('p', {}, lean ? n.text.slice(lean[1].length).replace(/^[.\s]+/, '') : n.text));
       }),
     );
   }
@@ -2002,7 +2003,6 @@
       'Motivation seemed to be mainly about the salary; little interest in the work itself.',
     ],
   };
-  const LEAN_LABEL = { pass: 'Leaning yes', unsure: 'Unsure', reject: 'Leaning no' };
   const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   function candidateAvailabilityText() {
@@ -2081,11 +2081,11 @@
         if (notes.some((x) => x.kind === 'feedback' && x.personId === iv.personId && x.candidateId === iv.candidateId && x.round === iv.round)) continue;
         const p = personById(iv.personId);
         if (!p) continue;
-        const lean = pick(['pass', 'pass', 'pass', 'unsure', 'reject']);
+        const lean = pick(['yes', 'pass', 'pass', 'pass', 'unsure', 'reject', 'no']);
         // Feedback usually lands the day after, sometimes later.
         if (M.daysBetween(iv.slotDate, day) === 1 && Math.random() < 0.2) continue;
-        await S.add('notes', { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text: `${LEAN_LABEL[lean]}. ${pick(FEEDBACK[lean])}`, authorId: null, authorPersonId: p.id, authorLabel: p.name, mock: true, createdAt: `${day}T09:30:00.000Z` });
-        simLog(day, `${p.name} sent feedback on ${first(byId.get(iv.candidateId))} (${LEAN_LABEL[lean].toLowerCase()}).`);
+        await S.add('notes', { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text: `${verdictsFor(iv.round).find((x) => x[0] === lean)[1]}. ${pick(FEEDBACK[lean === 'yes' ? 'pass' : lean === 'no' ? 'reject' : lean])}`, authorId: null, authorPersonId: p.id, authorLabel: p.name, mock: true, createdAt: `${day}T09:30:00.000Z` });
+        simLog(day, `${p.name} sent feedback on ${first(byId.get(iv.candidateId))} (${verdictsFor(iv.round).find((x) => x[0] === lean)[1].toLowerCase()}).`);
         n++;
       }
     }
@@ -2351,7 +2351,7 @@
     const x = String(t || '').trim().toLowerCase();
     return /^(leaning yes|hire\b|yes\b)/.test(x) ? 'yes' : /^(unsure|maybe)/.test(x) ? 'unsure' : /^(leaning no|no hire|no\b)/.test(x) ? 'no' : null;
   };
-  const stripLean = (t) => String(t || '').replace(/^(leaning yes|leaning no|unsure|hire|no hire)[.:]?\s*/i, '');
+  const stripLean = (t) => String(t || '').replace(/^(leaning yes|leaning no|unsure|no hire|hire|yes|no)\b[.:]?\s*/i, '');
   function candidatesView() {
     const all = candidates();
     const q = (ui.candQuery || '').trim().toLowerCase();
@@ -2474,7 +2474,7 @@
                     return h(
                       'div',
                       { class: 'cp-note' },
-                      h('div', { class: 'meta small muted' }, h('b', {}, who), lean ? h('span', { class: `lean-chip ${lean}` }, LEAN_TXT[lean]) : n.kind === 'step' || n.kind === 'intake' ? h('span', { class: 'chip' }, n.label) : n.kind === 'feedback' ? h('span', { class: 'chip' }, 'Feedback') : null, n.createdAt ? h('span', {}, M.formatDay(n.createdAt.slice(0, 10))) : null),
+                      h('div', { class: 'meta small muted' }, h('b', {}, who), lean ? h('span', { class: `lean-chip ${lean}` }, leanLabelOf(n.text) || LEAN_TXT[lean]) : n.kind === 'step' || n.kind === 'intake' ? h('span', { class: 'chip' }, n.label) : n.kind === 'feedback' ? h('span', { class: 'chip' }, 'Feedback') : null, n.createdAt ? h('span', {}, M.formatDay(n.createdAt.slice(0, 10))) : null),
                       h('p', {}, lean ? stripLean(n.text) : n.text),
                     );
                   }),
@@ -4211,7 +4211,18 @@
   // page applies them to invites and notes.
   // ------------------------------------------------------------------
   const ROUND_LABEL = { advisor: 'Advisor interview', deepdive: 'Deep dive' };
-  const LEANS = [['pass', 'Leaning yes'], ['unsure', 'Unsure'], ['reject', 'Leaning no']];
+  // Verdicts an interviewer can give. Firm ones first and last, the leanings between.
+  const verdictsFor = (round) =>
+    round === 'deepdive'
+      ? [['yes', 'Hire'], ['pass', 'Leaning yes'], ['unsure', 'Unsure'], ['reject', 'Leaning no'], ['no', 'No hire']]
+      : [['yes', 'Yes'], ['pass', 'Leaning yes'], ['unsure', 'Unsure'], ['reject', 'Leaning no'], ['no', 'No']];
+  // Every label, longest first so "No hire" wins over "No".
+  const LEANS = [...verdictsFor('deepdive'), ['yes', 'Yes'], ['no', 'No']].sort((a, b) => b[1].length - a[1].length);
+  const leanLabelOf = (t) => {
+    const x = String(t || '').trim();
+    const l = LEANS.find(([, lab]) => x.toLowerCase().startsWith(lab.toLowerCase()) && !/[a-z]/i.test(x.charAt(lab.length)));
+    return l ? l[1] : null;
+  };
   const interviewerPeople = () => people().filter((p) => p.active !== false && (p.roles || []).some((r) => r === 'advisor' || r === 'teamlead' || r === 'joker'));
   function notesWithPerson() {
     return S.state.notes.map((n) => {
@@ -4286,7 +4297,7 @@
       h('p', { class: 'small faint', style: 'padding:0 14px 12px;margin:0' }, 'Bars show the median wait for candidates who got past the step. The dot marks the longest wait of someone still there. Calendar waits are the days until a booked interview, not delays.'),
     );
   }
-  const LEAN_TXT = { yes: 'Leaning yes', unsure: 'Unsure', no: 'Leaning no' };
+  const LEAN_TXT = { yes: 'Yes', unsure: 'Unsure', no: 'No' };
   function voicesPanel(m) {
     const v = m.voices;
     const rounds = Object.entries(v.rounds).filter(([, r]) => r.yes + r.unsure + r.no);
@@ -4306,7 +4317,7 @@
             'div',
             { class: 'lean-row' },
             h('span', { class: 'f-label' }, ROUND_LABEL[round] || round),
-            h('span', { class: 'lean-bar', role: 'img', 'aria-label': `${r.yes} leaning yes, ${r.unsure} unsure, ${r.no} leaning no` }, ['yes', 'unsure', 'no'].map((k) => (r[k] ? h('i', { class: k, style: `flex:${r[k]}`, title: `${LEAN_TXT[k]}: ${r[k]} of ${n}` }) : null))),
+            h('span', { class: 'lean-bar', role: 'img', 'aria-label': `${r.yes} yes, ${r.unsure} unsure, ${r.no} no` }, ['yes', 'unsure', 'no'].map((k) => (r[k] ? h('i', { class: k, style: `flex:${r[k]}`, title: `${LEAN_TXT[k]}: ${r[k]} of ${n}` }) : null))),
             h('span', { class: 'f-pct small muted' }, `${Math.round((r.yes / n) * 100)}% yes`),
           );
         }),
@@ -4803,7 +4814,7 @@
     const card = (iv, isPast) => {
       const sent = iv.feedbackSent + (ctx.mode === 'viewer' ? pendingFb(iv) : 0);
       const fk = `ivfb:${iv.key}:${ctx.inbox.personId}`;
-      const f = (ui.forms = ui.forms || {})[fk] || (ui.forms[fk] = { text: '', lean: 'pass', open: false });
+      const f = (ui.forms = ui.forms || {})[fk] || (ui.forms[fk] = { text: '', lean: '', open: false });
       return h(
         'div',
         { class: 'iv-row' },
@@ -4819,16 +4830,20 @@
               h(
                 'div',
                 { class: 'row' },
-                h('select', { id: `iv-lean-${iv.key}`, 'aria-label': 'Your verdict', onchange: (e) => (f.lean = e.target.value) }, LEANS.map(([v, l]) => h('option', { value: v, selected: f.lean === v }, l))),
+                h('select', { id: `iv-lean-${iv.key}`, 'aria-label': 'Your verdict', onchange: (e) => ((f.lean = e.target.value), (f.err = '')) }, h('option', { value: '', selected: !f.lean, disabled: true }, 'Your verdict…'), verdictsFor(iv.round).map(([v, l]) => h('option', { value: v, selected: f.lean === v }, l))),
                 h(
                   'button',
                   {
                     class: 'p',
                     onclick: () => {
-                      if (!f.text.trim()) return;
-                      const lean = LEANS.find((x) => x[0] === f.lean)[1];
+                      if (!f.lean || !f.text.trim()) {
+                        f.err = !f.lean ? 'Pick your verdict first.' : 'Add a line on how it went.';
+                        rerender();
+                        return;
+                      }
+                      const lean = verdictsFor(iv.round).find((x) => x[0] === f.lean)[1];
                       ivFeedback(ctx, iv, `${lean}. ${f.text.trim()}`).then(() => {
-                        ui.forms[fk] = { text: '', lean: 'pass' };
+                        ui.forms[fk] = { text: '', lean: '' };
                         rerender();
                       });
                     },
@@ -4837,6 +4852,7 @@
                 ),
                 h('span', { class: 'small faint' }, 'Within a day earns 3 points'),
               ),
+              f.err ? h('p', { class: 'err-line' }, f.err) : null,
             )
           : null,
       );
