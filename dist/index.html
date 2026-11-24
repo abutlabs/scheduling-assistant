@@ -743,6 +743,11 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
 @media (max-width: 600px) { .my-goal { padding: 20px; margin-top: 24px; } .my-goal .big-num { font-size: 44px; } }
 .camp-open { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 16px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--fg); }
 .camp-open.on { background: var(--ok-soft); }
+/* Slot suggestions in the candidate drawer */
+.suggest { border-top: 1px solid var(--line); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: var(--accent-soft); }
+.suggest .label { font-size: 13px; color: var(--accent); font-weight: 500; }
+.suggest-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface); border-radius: var(--r-md); }
+@media (max-width: 600px) { .suggest-row { flex-direction: column; align-items: stretch; } }
 
 </style>
 <div id="app"></div>
@@ -1742,6 +1747,42 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
    * Returns { [personId]: { goal, done, planned, byRound: { advisor: { goal, done, planned } } } }.
    */
   /**
+   * Slot and interviewer suggestions for one candidate's round.
+   * options: [{ date, time }] the candidate can do (ISO date, "HH:MM").
+   * members: roster people in the round. freeOn(personId, date, time) gives
+   * true (free in the poll), false (not free) or null (no answer).
+   * need(personId): interviews left to their goal (higher asks first).
+   * load(personId): interviews already done (lower asks first).
+   * Returns up to `max` options, best first: { date, time, ask: [ids], free }.
+   * An option is only offered when enough people from different teams are
+   * free for a full pair; earlier dates win, then Fridays if preferred.
+   */
+  function suggestSlots({ options, members, freeOn, need, load, interviewers, perSlot, differentTeams, preferFridays, max }) {
+    const want = Math.max(interviewers || 2, perSlot || 3);
+    const out = [];
+    for (const o of options) {
+      const free = members.filter((p) => freeOn(p.id, o.date, o.time) === true);
+      const ranked = [...free].sort((a, b) => (need ? need(b.id) - need(a.id) : 0) || (load ? load(a.id) - load(b.id) : 0) || a.name.localeCompare(b.name));
+      const ask = [];
+      const teams = new Set();
+      for (const p of ranked) {
+        if (ask.length >= want) break;
+        if (differentTeams !== false && teams.has(p.team)) continue;
+        ask.push(p.id);
+        teams.add(p.team);
+      }
+      if (ask.length < (interviewers || 2)) continue;
+      out.push({ date: o.date, time: o.time, ask, free: free.length });
+    }
+    out.sort((a, b) => a.date.localeCompare(b.date) || (preferFridays ? (weekdayOf(b.date) === 5) - (weekdayOf(a.date) === 5) : 0) || a.time.localeCompare(b.time));
+    // Spread the picks over different days where possible.
+    const picked = [];
+    for (const o of out) if (picked.length < (max || 3) && !picked.some((x) => x.date === o.date)) picked.push(o);
+    for (const o of out) if (picked.length < (max || 3) && !picked.includes(o)) picked.push(o);
+    return picked;
+  }
+
+  /**
    * Interviews a campaign expects in a round. A round can set `expected`;
    * otherwise the first interview round expects the campaign's
    * `targetInterviews` and later rounds 60% of it (not everyone gets that far).
@@ -1848,6 +1889,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
     scoreboard,
     interviewGoals,
     expectedInterviews,
+    suggestSlots,
     pipelineCounts,
   };
 
@@ -3317,6 +3359,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
       h('div', { class: 'ph' }, `Interviewer requests · ${roundObj.name}`, h('span', { class: 'faint' }, 'replies come from Outlook or the app')),
       head,
       rows,
+      !list.filter((i) => i.status === 'pending' || i.status === 'accepted').length && !s.done[bookedKey] ? slotSuggestions(c, s, round, roundObj) : null,
       !state.complete ? askForm(c, round, roundObj, list) : null,
     );
   }
@@ -3414,12 +3457,10 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
               class: 'p',
               disabled: !f.slotDate || !f.picked.length,
               onclick: () =>
-                act(async () => {
-                  for (const id of f.picked) await S.add('invites', { campaignId: c.campaignId, candidateId: c.id, round, personId: id, slotDate: f.slotDate, time: f.time, room: f.room, status: 'pending', sentAt: nowIso(), via: 'outlook', mock: !!c.mock });
+                createRequests(c, round, f).then(() => {
                   ui.forms[key] = { ...f, open: false, picked: [] };
-                  ui.inviteText = { candId: c.id, text: inviteText(c, round, f) };
                   rerender();
-                }, `${plural(f.picked.length, 'request')} created`),
+                }),
             },
             `Ask ${f.picked.length || ''}`.trim(),
           ),
@@ -3439,6 +3480,83 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
           )
         : null,
     ];
+  }
+
+  // Creates one request per picked person for the slot in f, and shows the Outlook text.
+  function createRequests(c, round, f) {
+    const ids = [...f.picked];
+    return act(async () => {
+      for (const id of ids) await S.add('invites', { campaignId: c.campaignId, candidateId: c.id, round, personId: id, slotDate: f.slotDate, time: f.time, room: f.room, status: 'pending', sentAt: nowIso(), via: 'outlook', mock: !!c.mock });
+      ui.inviteText = { candId: c.id, text: inviteText(c, round, f) };
+      rerender();
+    }, `${plural(ids.length, 'request')} created`);
+  }
+
+  // Suggested slots for a candidate whose availability is in and who has no requests out yet:
+  // the candidate's times (or the days before the deadline), checked against the poll, with the
+  // people furthest from their interview goal asked first.
+  function slotSuggestions(c, s, round, roundObj) {
+    const recv = s.done[round === 'deepdive' ? 'avail_received_final' : 'avail_received_r2'];
+    if (!recv) return null;
+    const camp = S.state.campaigns.find((x) => x.id === c.campaignId) || campaign();
+    const settings = camp.settings || M.DEFAULT_SETTINGS;
+    const until = (s.clock && s.clock.deadline) || M.addDays(TODAY, 7);
+    const isWd = (d) => M.weekdayOf(d) >= 1 && M.weekdayOf(d) <= 5;
+    const slots = (recv.data && recv.data.slots) || [];
+    const options = [];
+    const fits = (sl, t, end) => (!sl.from || sl.from <= t) && (!sl.to || sl.to >= end);
+    if (slots.length) {
+      for (const sl of slots) {
+        if (sl.date <= TODAY || !isWd(sl.date)) continue;
+        if (fits(sl, '10:00', '11:00')) options.push({ date: sl.date, time: '10:00' });
+        if (fits(sl, '14:00', '15:00')) options.push({ date: sl.date, time: '14:00' });
+      }
+    } else {
+      for (let d = M.addDays(TODAY, 1); d <= until; d = M.addDays(d, 1)) if (isWd(d)) options.push({ date: d, time: '10:00' }, { date: d, time: '14:00' });
+    }
+    const snaps = availSources();
+    const freeOn = (pid, date, time) => {
+      const a = M.availabilityOn(snaps, pid, roundObj.role, date);
+      if (!a || !a.value) return null;
+      if (a.value === 'no') return false;
+      const half = time < '12:00' ? 'am' : 'pm';
+      if (a.value !== 'all' && a.value !== half) return false;
+      if (a.window && ((a.window.from && a.window.from > time) || (a.window.to && a.window.to < `${String(Number(time.slice(0, 2)) + 1).padStart(2, '0')}${time.slice(2)}`))) return false;
+      return a.tentative ? null : true;
+    };
+    const goals = M.interviewGoals({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), people: S.state.people, today: TODAY });
+    const load = interviewLoad();
+    const members = people().filter((p) => p.active !== false && inRound(c, round, p));
+    const picks = M.suggestSlots({
+      options,
+      members,
+      freeOn,
+      need: (id) => (goals[id] ? goals[id].goal - goals[id].done - goals[id].planned : 0),
+      load: (id) => load[id] || 0,
+      interviewers: roundObj.interviewers || 2,
+      perSlot: settings.invitesPerSlot || 3,
+      differentTeams: roundObj.differentTeams,
+      preferFridays: settings.preferFridays,
+      max: 3,
+    });
+    const busyRooms = (date, time) => new Set(M.interviewsOf(S.state.candidates, S.state.invites).filter((r) => r.slotDate === date && r.time === time && r.room).map((r) => r.room));
+    return h(
+      'div',
+      { class: 'suggest' },
+      h('div', { class: 'label' }, slots.length ? 'Suggested, from the candidate’s times and the poll' : `Suggested, before the deadline (${M.formatDay(until)}) and from the poll`),
+      picks.length
+        ? picks.map((o) => {
+            const room = ROOMS.find((r) => !busyRooms(o.date, o.time).has(r)) || ROOMS[0];
+            const ppl = o.ask.map((id) => personById(id)).filter(Boolean);
+            return h(
+              'div',
+              { class: 'suggest-row' },
+              h('div', {}, h('b', {}, `${M.formatDay(o.date)}, ${o.time}`), h('span', { class: 'muted' }, ` · ${room}`), h('div', { class: 'small muted' }, `Ask ${ppl.map((p) => `${p.name} (${p.team})`).join(', ')} · ${o.free} free in the poll`)),
+              h('button', { class: 'p', onclick: () => createRequests(c, round, { slotDate: o.date, time: o.time, room, picked: o.ask }) }, `Ask these ${ppl.length}`),
+            );
+          })
+        : h('p', { class: 'small muted' }, 'No slot has a free pair from different teams in the poll. Pick a slot by hand below.'),
+    );
   }
 
   function inviteText(c, round, f) {
@@ -3530,7 +3648,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
       h('p', { class: 'small muted' }, 'You play Natalie. Move the days forward and the colleagues and candidates answer on their own, so you can watch an interview go from request to feedback. Only demo candidates are touched, and everything is marked as mock.'),
       mockCands.length
         ? null
-        : h('div', { class: 'mock-card' }, h('p', { class: 'small' }, 'Start with a demo campaign: 15 candidates in every stage, three weeks of interviews, feedback and scores, and requests out for the week ahead.'), h('div', { class: 'row' }, h('button', { class: 'p', onclick: loadFullDemo }, 'Load demo campaign'), h('button', { onclick: loadDemo }, 'Load demo candidates'))),
+        : h('div', { class: 'mock-card' }, h('p', { class: 'small' }, 'Start with a demo campaign: 16 candidates in every stage, three weeks of interviews, feedback and scores, and requests out for the week ahead.'), h('div', { class: 'row' }, h('button', { class: 'p', onclick: loadFullDemo }, 'Load demo campaign'), h('button', { onclick: loadDemo }, 'Load demo candidates'))),
       h(
         'section',
         { class: 'mock-sec' },
@@ -3809,7 +3927,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
       ['Bram Smit', 'dd_reject', -13], ['Lotte Visser', 'dd_booked', -9], ['Jesse van Dijk', 'dd_past', -10],
       ['Fleur de Boer', 'dd_requests', -8], ['Daan Bakker', 'adv_reject', -9], ['Emma Jansen', 'adv_call', -6],
       ['Lucas Meijer', 'adv_booked', -4], ['Sophie Bos', 'adv_past', -5], ['Milan de Groot', 'adv_requests', -3],
-      ['Julia Peters', 'asked', -2], ['Ruben Kok', 'hr_reject', -4], ['Eva van Leeuwen', 'hr_today', 0],
+      ['Julia Peters', 'asked', -2], ['Tim Vos', 'avail_in', -2], ['Ruben Kok', 'hr_reject', -4], ['Eva van Leeuwen', 'hr_today', 0],
     ];
     const hrNotes = ['Strong on tender writing. Available from January.', 'Background in civil engineering; sharp on numbers.', 'Came via a referral from a former trainee.', 'Very motivated, a little nervous at the start.', '', ''];
     let made = 0;
@@ -3835,7 +3953,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
       const feedback = (round, pair_, slot, lean, both) => {
         pair_.slice(0, both ? 2 : 1).forEach((p, i) => notes.push({ round, kind: 'feedback', authorPersonId: p.id, authorLabel: p.name, text: FB[lean][(i + made) % FB[lean].length], createdAt: `${M.addDays(slot, i && rnd() < 0.3 ? 2 : 1)}T09:${10 + i * 20}:00.000Z` }));
       };
-      const advFlow = ['hired', 'offer', 'dd_reject', 'dd_booked', 'dd_past', 'dd_requests', 'adv_reject', 'adv_call', 'adv_booked', 'adv_past', 'adv_requests', 'asked'];
+      const advFlow = ['hired', 'offer', 'dd_reject', 'dd_booked', 'dd_past', 'dd_requests', 'adv_reject', 'adv_call', 'adv_booked', 'adv_past', 'adv_requests', 'asked', 'avail_in'];
       if (advFlow.includes(kind)) {
         tl.push(ev('avail_asked_r2', hr));
         if (kind !== 'asked') tl.push(ev('avail_received_r2', wd(hrN + 1), null, { availability: avail[made % avail.length] }));
@@ -5939,7 +6057,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
   // Feedback reports: everyone can send a screenshot and a note to the
   // developer. Stored in reports/{id}; editors read them in the Developer view.
   // ------------------------------------------------------------------
-  const BUILD = '2026-11-24 01:16 2967f4c';
+  const BUILD = '2026-11-24 01:17 26b5db2';
   const recentErrors = [];
   window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
   window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());

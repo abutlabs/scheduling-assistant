@@ -240,3 +240,26 @@ test('interview goals split the expected interviews per round and count what is 
   assert.deepEqual([g.a1.done, g.a2.done, g.a3.done, g.t1.done], [1, 1, 0, 1]);
   assert.deepEqual([g.a1.planned, g.a3.planned], [1, 1]);
 });
+
+test('slot suggestions need a free pair from different teams and ask those furthest from their goal', () => {
+  const members = [
+    { id: 'a', name: 'Ann', team: 'TM' },
+    { id: 'b', name: 'Bob', team: 'TM' },
+    { id: 'c', name: 'Cas', team: 'PM' },
+    { id: 'd', name: 'Dirk', team: 'CP' },
+  ];
+  const free = { '2026-11-26|10:00': ['a', 'b'], '2026-11-27|10:00': ['a', 'b', 'c', 'd'], '2026-11-27|14:00': ['b', 'c'] };
+  const res = M.suggestSlots({
+    options: [{ date: '2026-11-26', time: '10:00' }, { date: '2026-11-27', time: '10:00' }, { date: '2026-11-27', time: '14:00' }],
+    members,
+    freeOn: (id, d, t) => (free[`${d}|${t}`] || []).includes(id),
+    need: (id) => ({ a: 1, b: 3, c: 2, d: 0 })[id],
+    load: () => 0,
+    interviewers: 2,
+    perSlot: 3,
+  });
+  // Thursday has only TM people free, so it isn't offered.
+  assert.deepEqual(res.map((x) => `${x.date} ${x.time}`), ['2026-11-27 10:00', '2026-11-27 14:00']);
+  // One per team, furthest from goal first: Bob (TM, 3 left), Cas (PM), Dirk (CP).
+  assert.deepEqual(res[0].ask, ['b', 'c', 'd']);
+});
