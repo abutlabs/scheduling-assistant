@@ -305,6 +305,7 @@
         k = 'Overdue';
         t = 'bad';
         reason = `Day ${s.clock.day} of ${s.clock.max}: the ${s.clock.round === 'advisor' ? 'advisor interview' : 'deep dive'} deadline was ${M.formatDay(s.clock.deadline)}.`;
+        if (/^avail_received/.test(s.next)) prompt = `Chase ${first(c)} for availability`;
       } else if (s.clock && (s.clock.state === 'urgent' || s.clock.state === 'booked_late')) {
         group = 'today';
         t = 'warn';
@@ -349,7 +350,7 @@
       const c = S.state.candidates.find((x) => x.id === n.candidateId);
       const b = c && cstate(c).done[n.round === 'deepdive' ? 'deepdive_booked' : 'advisor_booked'];
       const when = b && b.data ? `${M.formatDay(b.data.slotDate)}${b.data.time ? ` ${b.data.time}` : ''}` : '';
-      items.push({ group: 'today', kind: 'Cancel?', tone: 'warn', who: pname(n.authorPersonId), text: `Asks to cancel ${first(c)}’s ${(ROUND_LABEL[n.round] || 'interview').toLowerCase()}${when ? ` on ${when}` : ''}${n.text ? `: “${n.text}”` : ''}. Talk to them, then rebook or keep it.`, title: `${pname(n.authorPersonId)} asks to cancel ${first(c)}’s interview.`, sub: `${when}${n.text ? ` · “${n.text}”` : ''}`, btn: 'Talked, open', resolveNote: n.id, cand: c.id, sortKey: 1 });
+      items.push({ group: 'today', kind: 'Cancel?', tone: 'warn', who: pname(n.authorPersonId), role: roleOf([n.authorPersonId]), text: `Asks to cancel ${first(c)}’s ${(ROUND_LABEL[n.round] || 'interview').toLowerCase()}${when ? ` on ${when}` : ''}${n.text ? `: “${n.text}”` : ''}. Talk to them, then rebook or keep it.`, title: `${pname(n.authorPersonId)} asks to cancel ${first(c)}’s interview.`, sub: `${when}${n.text ? ` · “${n.text}”` : ''}`, btn: 'Talked, open', resolveNote: n.id, cand: c.id, sortKey: 1 });
     }
     // Availability housekeeping
     const snaps = snapshots();
@@ -367,7 +368,17 @@
     if (S.state.loaded.people && !S.state.people.length) {
       items.push({ group: 'today', kind: 'Set up', tone: 'accent', who: 'Roster', text: 'The roster is empty. Import a poll and add people from it, or add them by hand.', btn: 'Open', go: 'roster', sortKey: 0 });
     }
+    // Say who each to-do is about: the candidate, or an advisor / team lead.
+    for (const i of items) if (!i.role && i.cand && i.who === (S.state.candidates.find((x) => x.id === i.cand) || {}).name) i.role = 'Candidate';
     return items.sort((a, b) => a.sortKey - b.sortKey);
+  }
+  function roleOf(ids) {
+    const labels = [...new Set(ids.map((id) => {
+      const r = (personById(id) || {}).roles || [];
+      return r.includes('advisor') ? 'Advisor' : r.some((x) => x === 'teamlead' || x === 'joker') ? 'Team lead' : 'Interviewer';
+    }))];
+    if (labels.length !== 1) return 'Interviewers';
+    return ids.length > 1 ? `${labels[0]}s` : labels[0];
   }
 
   const DAYNAME = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -410,6 +421,7 @@
         kind: 'Feedback',
         tone: late ? 'bad' : 'warn',
         who,
+        role: roleOf(list.map((x) => x.personId)),
         text: `No feedback yet on ${what}, which ended ${ended}. Ask ${names.length > 1 ? 'them' : names[0]} for it.`,
         title: `Get ${who}’s feedback on ${what}.`,
         sub: `Ended ${ended}${late ? `, ${plural(Math.floor(g.lateMin / (24 * 60)), 'day')} ago` : ''}`,
@@ -449,7 +461,7 @@
   function todoRow(i) {
     const cand = i.cand && S.state.candidates.find((x) => x.id === i.cand);
     return [
-      h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.who), h('p', {}, i.text)), h('div', { class: 'row act-btns' }, cand && sample ? adviceButton(cand, true) : null, h('button', { onclick: todoAction(i) }, i.btn))),
+      h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.role ? h('span', { class: 'role-tag' }, i.role) : null, i.who), h('p', {}, i.text)), h('div', { class: 'row act-btns' }, cand && sample ? adviceButton(cand, true) : null, h('button', { onclick: todoAction(i) }, i.btn))),
       cand ? advicePanel(cand) : null,
     ];
   }
@@ -645,7 +657,7 @@
       { class: `act-hero tone-${i.tone || 'plain'}`, 'aria-label': 'Start here' },
       h('span', { class: 'kicker' }, ['Start here', i.due].filter(Boolean).join(' · ')),
       h('h2', {}, i.title || i.who),
-      h('p', {}, i.title ? i.sub : i.text),
+      h('p', {}, i.role ? h('span', { class: 'role-tag' }, i.role) : null, i.title ? i.sub : i.text),
       h(
         'div',
         { class: 'row' },
@@ -1461,14 +1473,14 @@
       for (const r of state.toRelease) {
         if (r.invite.slotDate < TODAY) continue;
         const notice = M.daysBetween(TODAY, r.invite.slotDate);
-        items.push({ group: 'today', kind: 'Release', tone: 'accent', who: pname(r.invite.personId), text: `Release from ${first(c)}'s ${when} slot: ${M.RELEASE_REASONS[r.why]}. Notice: ${plural(notice, 'day')}.`, btn: 'Release', invite: r.invite, why: r.why, sortKey: 6 });
+        items.push({ group: 'today', kind: 'Release', tone: 'accent', who: pname(r.invite.personId), role: roleOf([r.invite.personId]), text: `Release from ${first(c)}'s ${when} slot: ${M.RELEASE_REASONS[r.why]}. Notice: ${plural(notice, 'day')}.`, btn: 'Release', invite: r.invite, why: r.why, sortKey: 6 });
       }
       if (!state.complete && state.shortBy > 0) {
         items.push({ group: 'today', kind: 'Top up', tone: 'warn', who: c.name, text: `${state.declined.length ? `${state.declined.map((i) => `${pname(i.personId)} ${/^Gave up the hold/.test(i.declineReason || '') ? 'gave up their hold' : 'declined'}`).join(', ')}. ` : ''}Ask ${plural(state.shortBy, 'more person', 'more people')} for ${when}.`, btn: 'Ask', cand: c.id, step: null, sortKey: 4 });
       }
       for (const i of state.overdue) {
         if (state.complete) continue;
-        items.push({ group: 'today', kind: 'Chase', tone: 'warn', who: pname(i.personId), text: `No reply to ${first(c)}'s ${when} request since ${M.formatDay(i.sentAt.slice(0, 10))}. Chase, or ask someone else.`, btn: 'Open', cand: c.id, step: null, sortKey: 7 });
+        items.push({ group: 'today', kind: 'Chase', tone: 'warn', who: pname(i.personId), role: roleOf([i.personId]), text: `No reply to ${first(c)}'s ${when} request since ${M.formatDay(i.sentAt.slice(0, 10))}. Chase, or ask someone else.`, btn: 'Open', cand: c.id, step: null, sortKey: 7 });
       }
     }
     return items;
