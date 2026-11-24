@@ -1244,6 +1244,7 @@
       h('div', { class: 'ph' }, `Interviewer requests · ${roundObj.name}`, h('span', { class: 'faint' }, 'replies come from Outlook or the app')),
       head,
       rows,
+      !list.filter((i) => i.status === 'pending' || i.status === 'accepted').length && !s.done[bookedKey] ? slotSuggestions(c, s, round, roundObj) : null,
       !state.complete ? askForm(c, round, roundObj, list) : null,
     );
   }
@@ -1341,12 +1342,10 @@
               class: 'p',
               disabled: !f.slotDate || !f.picked.length,
               onclick: () =>
-                act(async () => {
-                  for (const id of f.picked) await S.add('invites', { campaignId: c.campaignId, candidateId: c.id, round, personId: id, slotDate: f.slotDate, time: f.time, room: f.room, status: 'pending', sentAt: nowIso(), via: 'outlook', mock: !!c.mock });
+                createRequests(c, round, f).then(() => {
                   ui.forms[key] = { ...f, open: false, picked: [] };
-                  ui.inviteText = { candId: c.id, text: inviteText(c, round, f) };
                   rerender();
-                }, `${plural(f.picked.length, 'request')} created`),
+                }),
             },
             `Ask ${f.picked.length || ''}`.trim(),
           ),
@@ -1366,6 +1365,83 @@
           )
         : null,
     ];
+  }
+
+  // Creates one request per picked person for the slot in f, and shows the Outlook text.
+  function createRequests(c, round, f) {
+    const ids = [...f.picked];
+    return act(async () => {
+      for (const id of ids) await S.add('invites', { campaignId: c.campaignId, candidateId: c.id, round, personId: id, slotDate: f.slotDate, time: f.time, room: f.room, status: 'pending', sentAt: nowIso(), via: 'outlook', mock: !!c.mock });
+      ui.inviteText = { candId: c.id, text: inviteText(c, round, f) };
+      rerender();
+    }, `${plural(ids.length, 'request')} created`);
+  }
+
+  // Suggested slots for a candidate whose availability is in and who has no requests out yet:
+  // the candidate's times (or the days before the deadline), checked against the poll, with the
+  // people furthest from their interview goal asked first.
+  function slotSuggestions(c, s, round, roundObj) {
+    const recv = s.done[round === 'deepdive' ? 'avail_received_final' : 'avail_received_r2'];
+    if (!recv) return null;
+    const camp = S.state.campaigns.find((x) => x.id === c.campaignId) || campaign();
+    const settings = camp.settings || M.DEFAULT_SETTINGS;
+    const until = (s.clock && s.clock.deadline) || M.addDays(TODAY, 7);
+    const isWd = (d) => M.weekdayOf(d) >= 1 && M.weekdayOf(d) <= 5;
+    const slots = (recv.data && recv.data.slots) || [];
+    const options = [];
+    const fits = (sl, t, end) => (!sl.from || sl.from <= t) && (!sl.to || sl.to >= end);
+    if (slots.length) {
+      for (const sl of slots) {
+        if (sl.date <= TODAY || !isWd(sl.date)) continue;
+        if (fits(sl, '10:00', '11:00')) options.push({ date: sl.date, time: '10:00' });
+        if (fits(sl, '14:00', '15:00')) options.push({ date: sl.date, time: '14:00' });
+      }
+    } else {
+      for (let d = M.addDays(TODAY, 1); d <= until; d = M.addDays(d, 1)) if (isWd(d)) options.push({ date: d, time: '10:00' }, { date: d, time: '14:00' });
+    }
+    const snaps = availSources();
+    const freeOn = (pid, date, time) => {
+      const a = M.availabilityOn(snaps, pid, roundObj.role, date);
+      if (!a || !a.value) return null;
+      if (a.value === 'no') return false;
+      const half = time < '12:00' ? 'am' : 'pm';
+      if (a.value !== 'all' && a.value !== half) return false;
+      if (a.window && ((a.window.from && a.window.from > time) || (a.window.to && a.window.to < `${String(Number(time.slice(0, 2)) + 1).padStart(2, '0')}${time.slice(2)}`))) return false;
+      return a.tentative ? null : true;
+    };
+    const goals = M.interviewGoals({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), people: S.state.people, today: TODAY });
+    const load = interviewLoad();
+    const members = people().filter((p) => p.active !== false && inRound(c, round, p));
+    const picks = M.suggestSlots({
+      options,
+      members,
+      freeOn,
+      need: (id) => (goals[id] ? goals[id].goal - goals[id].done - goals[id].planned : 0),
+      load: (id) => load[id] || 0,
+      interviewers: roundObj.interviewers || 2,
+      perSlot: settings.invitesPerSlot || 3,
+      differentTeams: roundObj.differentTeams,
+      preferFridays: settings.preferFridays,
+      max: 3,
+    });
+    const busyRooms = (date, time) => new Set(M.interviewsOf(S.state.candidates, S.state.invites).filter((r) => r.slotDate === date && r.time === time && r.room).map((r) => r.room));
+    return h(
+      'div',
+      { class: 'suggest' },
+      h('div', { class: 'label' }, slots.length ? 'Suggested, from the candidate’s times and the poll' : `Suggested, before the deadline (${M.formatDay(until)}) and from the poll`),
+      picks.length
+        ? picks.map((o) => {
+            const room = ROOMS.find((r) => !busyRooms(o.date, o.time).has(r)) || ROOMS[0];
+            const ppl = o.ask.map((id) => personById(id)).filter(Boolean);
+            return h(
+              'div',
+              { class: 'suggest-row' },
+              h('div', {}, h('b', {}, `${M.formatDay(o.date)}, ${o.time}`), h('span', { class: 'muted' }, ` · ${room}`), h('div', { class: 'small muted' }, `Ask ${ppl.map((p) => `${p.name} (${p.team})`).join(', ')} · ${o.free} free in the poll`)),
+              h('button', { class: 'p', onclick: () => createRequests(c, round, { slotDate: o.date, time: o.time, room, picked: o.ask }) }, `Ask these ${ppl.length}`),
+            );
+          })
+        : h('p', { class: 'small muted' }, 'No slot has a free pair from different teams in the poll. Pick a slot by hand below.'),
+    );
   }
 
   function inviteText(c, round, f) {
@@ -1457,7 +1533,7 @@
       h('p', { class: 'small muted' }, 'You play Natalie. Move the days forward and the colleagues and candidates answer on their own, so you can watch an interview go from request to feedback. Only demo candidates are touched, and everything is marked as mock.'),
       mockCands.length
         ? null
-        : h('div', { class: 'mock-card' }, h('p', { class: 'small' }, 'Start with a demo campaign: 15 candidates in every stage, three weeks of interviews, feedback and scores, and requests out for the week ahead.'), h('div', { class: 'row' }, h('button', { class: 'p', onclick: loadFullDemo }, 'Load demo campaign'), h('button', { onclick: loadDemo }, 'Load demo candidates'))),
+        : h('div', { class: 'mock-card' }, h('p', { class: 'small' }, 'Start with a demo campaign: 16 candidates in every stage, three weeks of interviews, feedback and scores, and requests out for the week ahead.'), h('div', { class: 'row' }, h('button', { class: 'p', onclick: loadFullDemo }, 'Load demo campaign'), h('button', { onclick: loadDemo }, 'Load demo candidates'))),
       h(
         'section',
         { class: 'mock-sec' },
@@ -1736,7 +1812,7 @@
       ['Bram Smit', 'dd_reject', -13], ['Lotte Visser', 'dd_booked', -9], ['Jesse van Dijk', 'dd_past', -10],
       ['Fleur de Boer', 'dd_requests', -8], ['Daan Bakker', 'adv_reject', -9], ['Emma Jansen', 'adv_call', -6],
       ['Lucas Meijer', 'adv_booked', -4], ['Sophie Bos', 'adv_past', -5], ['Milan de Groot', 'adv_requests', -3],
-      ['Julia Peters', 'asked', -2], ['Ruben Kok', 'hr_reject', -4], ['Eva van Leeuwen', 'hr_today', 0],
+      ['Julia Peters', 'asked', -2], ['Tim Vos', 'avail_in', -2], ['Ruben Kok', 'hr_reject', -4], ['Eva van Leeuwen', 'hr_today', 0],
     ];
     const hrNotes = ['Strong on tender writing. Available from January.', 'Background in civil engineering; sharp on numbers.', 'Came via a referral from a former trainee.', 'Very motivated, a little nervous at the start.', '', ''];
     let made = 0;
@@ -1762,7 +1838,7 @@
       const feedback = (round, pair_, slot, lean, both) => {
         pair_.slice(0, both ? 2 : 1).forEach((p, i) => notes.push({ round, kind: 'feedback', authorPersonId: p.id, authorLabel: p.name, text: FB[lean][(i + made) % FB[lean].length], createdAt: `${M.addDays(slot, i && rnd() < 0.3 ? 2 : 1)}T09:${10 + i * 20}:00.000Z` }));
       };
-      const advFlow = ['hired', 'offer', 'dd_reject', 'dd_booked', 'dd_past', 'dd_requests', 'adv_reject', 'adv_call', 'adv_booked', 'adv_past', 'adv_requests', 'asked'];
+      const advFlow = ['hired', 'offer', 'dd_reject', 'dd_booked', 'dd_past', 'dd_requests', 'adv_reject', 'adv_call', 'adv_booked', 'adv_past', 'adv_requests', 'asked', 'avail_in'];
       if (advFlow.includes(kind)) {
         tl.push(ev('avail_asked_r2', hr));
         if (kind !== 'asked') tl.push(ev('avail_received_r2', wd(hrN + 1), null, { availability: avail[made % avail.length] }));
@@ -2810,7 +2886,7 @@
     const err = h('p', { class: 'err-line' });
     const numIn = (id, val, onv) => h('input', { type: 'number', min: 0, max: 60, id, value: val, style: 'width:70px', oninput: (e) => onv(Number(e.target.value)) });
     const boolIn = (id, val, onv) => h('input', { type: 'checkbox', id, checked: !!val, onchange: (e) => onv(e.target.checked) });
-    const roundCols = ['Round', 'Interviewers', 'Different teams', 'Length (min)', 'Max days after previous', 'Fallbacks'];
+    const roundCols = ['Round', 'Expected interviews', 'Interviewers', 'Different teams', 'Length (min)', 'Max days after previous', 'Fallbacks'];
     return h(
       'div',
       { class: 'section gutter', 'aria-label': 'Rounds and scheduling settings' },
@@ -2835,6 +2911,7 @@
                 'tr',
                 {},
                 h('td', { class: 'name' }, r.name),
+                h('td', {}, r.role === 'hr' ? '–' : editing ? numIn(`r-exp-${r.key}`, M.expectedInterviews({ ...c, rounds: f.rounds }, r), (v) => (r.expected = v)) : `about ${M.expectedInterviews(c, r)}`),
                 h('td', {}, r.role === 'hr' ? 'Natalie (HR)' : editing ? numIn(`r-int-${r.key}`, r.interviewers, (v) => (r.interviewers = v)) : `${r.interviewers} ${r.role === 'teamlead' ? 'team leads' : 'advisors'}`),
                 h('td', {}, r.role === 'hr' ? '–' : editing ? boolIn(`r-diff-${r.key}`, r.differentTeams, (v) => (r.differentTeams = v)) : r.differentTeams ? 'Yes' : 'No'),
                 h('td', {}, editing ? numIn(`r-len-${r.key}`, r.durationMin, (v) => (r.durationMin = v)) : `${r.durationMin} min`),
@@ -3265,6 +3342,7 @@
       endDate: camp.endDate || '',
       targetHires: camp.targetHires || 0,
       targetInterviews: camp.targetInterviews || 0,
+      expectedByRound: Object.fromEntries((camp.rounds || []).filter((r) => r.role !== 'hr').map((r) => [r.key, M.expectedInterviews(camp, r)])),
       pipeline: M.pipelineCounts(cands, TODAY),
       interviewsDone: dates.filter((d) => d <= TODAY).length,
       interviewsNext7: dates.filter((d) => d > TODAY && d <= M.addDays(TODAY, 7)).length,
@@ -3749,7 +3827,7 @@
       h('div', { class: 'big-num' }, String(done), h('span', {}, ` of ${plural(s.goal, 'interview')} done`)),
       h('div', { class: 'track two' }, h('i', { style: `width:${pct}%` }), pctPlanned ? h('b', { style: `width:${pctPlanned}%` }) : null),
       h('p', {}, line),
-      h('p', { class: 'small faint' }, `${st.name} expects about ${st.targetInterviews || '?'} interviews per round, each with two interviewers. Shared evenly, that's your part. If everyone reaches theirs, we reach ${st.targetHires || 'our'} hires together.`),
+      h('p', { class: 'small faint' }, `${st.name} needs about ${(st.expectedByRound || {})[/team lead|joker/i.test(inbox.role || '') ? 'deepdive' : 'advisor'] || st.targetInterviews || '?'} ${/team lead|joker/i.test(inbox.role || '') ? 'deep dives' : 'advisor interviews'}, each with two interviewers. Shared evenly, this is your part. If everyone reaches theirs, we reach ${st.targetHires || 'our'} hires together.`),
     );
   }
 

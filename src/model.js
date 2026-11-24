@@ -982,29 +982,78 @@
   }
 
   /**
-   * Personal interview goals. The campaign expects `targetInterviews`
+   * Personal interview goals. The campaign expects `expectedInterviews()`
    * interviews per round, and each needs `interviewers` people, so a round
-   * needs targetInterviews x interviewers seats. Those are split evenly over
+   * needs expected x interviewers seats. Those are split evenly over
    * the round's members (remainder to the first by name, at least 1 each), so
    * if everyone meets their goal the campaign gets its interviews. Someone in
    * two rounds gets both shares. `done` counts interviews held up to today,
    * `planned` the ones booked or accepted after today.
    * Returns { [personId]: { goal, done, planned, byRound: { advisor: { goal, done, planned } } } }.
    */
+  /**
+   * Slot and interviewer suggestions for one candidate's round.
+   * options: [{ date, time }] the candidate can do (ISO date, "HH:MM").
+   * members: roster people in the round. freeOn(personId, date, time) gives
+   * true (free in the poll), false (not free) or null (no answer).
+   * need(personId): interviews left to their goal (higher asks first).
+   * load(personId): interviews already done (lower asks first).
+   * Returns up to `max` options, best first: { date, time, ask: [ids], free }.
+   * An option is only offered when enough people from different teams are
+   * free for a full pair; earlier dates win, then Fridays if preferred.
+   */
+  function suggestSlots({ options, members, freeOn, need, load, interviewers, perSlot, differentTeams, preferFridays, max }) {
+    const want = Math.max(interviewers || 2, perSlot || 3);
+    const out = [];
+    for (const o of options) {
+      const free = members.filter((p) => freeOn(p.id, o.date, o.time) === true);
+      const ranked = [...free].sort((a, b) => (need ? need(b.id) - need(a.id) : 0) || (load ? load(a.id) - load(b.id) : 0) || a.name.localeCompare(b.name));
+      const ask = [];
+      const teams = new Set();
+      for (const p of ranked) {
+        if (ask.length >= want) break;
+        if (differentTeams !== false && teams.has(p.team)) continue;
+        ask.push(p.id);
+        teams.add(p.team);
+      }
+      if (ask.length < (interviewers || 2)) continue;
+      out.push({ date: o.date, time: o.time, ask, free: free.length });
+    }
+    out.sort((a, b) => a.date.localeCompare(b.date) || (preferFridays ? (weekdayOf(b.date) === 5) - (weekdayOf(a.date) === 5) : 0) || a.time.localeCompare(b.time));
+    // Spread the picks over different days where possible.
+    const picked = [];
+    for (const o of out) if (picked.length < (max || 3) && !picked.some((x) => x.date === o.date)) picked.push(o);
+    for (const o of out) if (picked.length < (max || 3) && !picked.includes(o)) picked.push(o);
+    return picked;
+  }
+
+  /**
+   * Interviews a campaign expects in a round. A round can set `expected`;
+   * otherwise the first interview round expects the campaign's
+   * `targetInterviews` and later rounds 60% of it (not everyone gets that far).
+   */
+  function expectedInterviews(camp, round) {
+    if (round && round.expected != null && round.expected !== '') return Number(round.expected) || 0;
+    const target = Number(camp && camp.targetInterviews) || 0;
+    const rounds = ((camp && camp.rounds) || []).filter((r) => r.role !== 'hr');
+    const idx = rounds.findIndex((r) => r.key === (round && round.key));
+    return idx <= 0 ? target : Math.round(target * 0.6);
+  }
+
   function interviewGoals({ camp, cands, invites, people, today }) {
     today = today || todayIso();
-    const target = Number(camp && camp.targetInterviews) || 0;
     const out = {};
     const ivs = interviewsOf(cands, invites);
     for (const round of (camp && camp.rounds) || []) {
       if (round.role === 'hr') continue;
       const members = roundMembers(camp, round.key, people).sort((a, b) => a.name.localeCompare(b.name));
       if (!members.length) continue;
-      const need = target * (Number(round.interviewers) || 2);
+      const expected = expectedInterviews(camp, round);
+      const need = expected * (Number(round.interviewers) || 2);
       const base = Math.floor(need / members.length);
       const rem = need % members.length;
       members.forEach((p, i) => {
-        const goal = target ? Math.max(1, base + (i < rem ? 1 : 0)) : 0;
+        const goal = expected ? Math.max(1, base + (i < rem ? 1 : 0)) : 0;
         const mine = ivs.filter((r) => r.personId === p.id && r.round === round.key);
         const done = mine.filter((r) => r.slotDate <= today).length;
         const planned = mine.length - done;
@@ -1084,6 +1133,8 @@
     interviewsOf,
     scoreboard,
     interviewGoals,
+    expectedInterviews,
+    suggestSlots,
     pipelineCounts,
   };
 
