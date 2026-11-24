@@ -5722,6 +5722,21 @@
       r.syncedAt ? h('p', { class: 'small' }, `${r.offerTitle || 'Vacancy'} · ${plural(counts.planned || 0, 'candidate')} to plan, ${plural(counts.interviews || 0, 'interview')} booked. Synced ${when}.`) : h('p', { class: 'small muted' }, 'Not synced yet.'),
       counts.unmatched && counts.unmatched.length ? h('p', { class: 'small warn-line' }, `Not on the roster: ${counts.unmatched.slice(0, 4).join(', ')}${counts.unmatched.length > 4 ? '…' : ''}. Add them, or an alias, so their interviews count.`) : null,
       rcState.error ? h('p', { class: 'small warn-line', role: 'status' }, rcState.error.text) : null,
+      r.mode !== 'live'
+        ? h(
+            'details',
+            { class: 'fold', open: !!ui.rcHelp, ontoggle: (e) => (ui.rcHelp = e.target.open) },
+            h('summary', {}, 'Connect Recruitee (API key)'),
+            h(
+              'ol',
+              { class: 'small', style: 'padding-left:18px;display:flex;flex-direction:column;gap:6px' },
+              h('li', {}, 'In Recruitee (app.tellent.com): Settings › Apps and plugins › Personal API tokens › New token. Note the company ID shown there too.'),
+              h('li', {}, 'Double-click recruitee.mcpb to add the “Recruitee (read-only)” extension to the Claude desktop app.'),
+              h('li', {}, 'In Claude: Settings › Extensions › Recruitee › Configure. Paste the token and company ID. They stay in this computer’s keychain, never in this app.'),
+              h('li', {}, 'Open this app in the Claude desktop app and press Sync now.'),
+            ),
+          )
+        : null,
       h(
         'div',
         { class: 'row' },
