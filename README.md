@@ -198,7 +198,10 @@ Publish `dist/index.html` as a claude.ai artifact with these capabilities:
   ] },
   "user": { "scopes": ["profile"] },
   "sample": {},
-  "mcp": { "servers": [{ "server": "host:recruitee", "tools": ["status", "list_offers", "list_candidates", "list_interviews"] }] }
+  "mcp": { "servers": [
+    { "server": "host:recruitee", "tools": ["status", "list_offers", "list_candidates", "list_interviews"] },
+    { "server": "host:Recruitee__read-only_", "tools": ["status", "list_offers", "list_candidates", "list_interviews"] }
+  ] }
 }
 ```
 

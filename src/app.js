@@ -5609,11 +5609,26 @@
   // page can load mock data in the same shapes to try it out.
   // ------------------------------------------------------------------
   const RC = window.FluxRecruitee;
-  const RC_SERVER = 'host:recruitee';
-  const rcState = { busy: false, error: null, autoDone: false };
+  // The desktop app names a local server after the extension; which spelling it uses
+  // isn't documented, so the page declares both and remembers the one that answers.
+  const RC_SERVERS = ['host:recruitee', 'host:Recruitee__read-only_'];
+  const rcState = { busy: false, error: null, autoDone: false, server: null };
   async function rcCall(tool, input) {
     if (!mcp) throw { code: 'server_not_connected', message: 'No connection to the Claude app here.' };
-    const res = await mcp.callTool(RC_SERVER, tool, input || {});
+    let res;
+    let lastErr;
+    for (const name of rcState.server ? [rcState.server] : RC_SERVERS) {
+      try {
+        res = await mcp.callTool(name, tool, input || {});
+        rcState.server = name;
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (!e || e.code !== 'server_not_connected') break;
+      }
+    }
+    if (lastErr) throw lastErr;
     const out = res && res.payload !== undefined ? res.payload : res;
     if (out && out.error) throw { code: 'tool_error', message: out.error };
     return out;
