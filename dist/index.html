@@ -758,6 +758,25 @@ a.btn:hover { filter: brightness(1.05); }
 .outlook-draft pre { white-space: pre-wrap; margin: 6px 0 0; font-family: var(--font-ui); background: var(--s1); padding: 8px; border-radius: 4px; }
 .room-list input { width: 100%; }
 
+/* Metrics */
+.metrics .kpis { margin: 4px 0 20px; }
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+@media (max-width: 600px) { .metrics-grid { grid-template-columns: 1fr; } }
+.metrics-t td.num { text-align: right; font-family: var(--font-data); white-space: nowrap; }
+.funnel { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.f-row { display: grid; grid-template-columns: 150px 1fr 32px 40px; align-items: center; gap: 10px; }
+.f-track { height: 14px; }
+.f-bar { display: block; height: 100%; min-width: 2px; background: var(--accent); border-radius: 0 4px 4px 0; }
+.f-num { text-align: right; font-family: var(--font-data); }
+.weeks { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 180px; padding: 22px 14px 28px; }
+.w-col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; }
+.w-bar { width: 70%; max-width: 36px; min-height: 0; background: var(--accent); border-radius: 4px 4px 0 0; }
+.w-num { color: var(--fg); }
+.w-lab { position: absolute; bottom: -20px; white-space: nowrap; }
+.w-col:hover .w-bar { filter: brightness(1.15); }
+.w-pace { position: absolute; left: 14px; right: 14px; border-top: 2px dashed var(--muted, #888); pointer-events: none; }
+@media (max-width: 600px) { .f-row { grid-template-columns: 110px 1fr 28px 36px; gap: 6px; } }
+
 </style>
 <div id="app"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1930,6 +1949,139 @@ a.btn:hover { filter: brightness(1.05); }
     return out;
   }
 
+  /**
+   * The campaign report: funnel, speed, requests, feedback and load.
+   * Only data up to `today` counts. Medians ignore missing values; a metric
+   * with nothing to measure is null.
+   */
+  function campaignMetrics({ camp, cands, invites, notes, people, today }) {
+    today = today || todayIso();
+    const median = (xs) => {
+      const v = xs.filter((x) => x != null && !Number.isNaN(x)).sort((a, b) => a - b);
+      if (!v.length) return null;
+      const m = Math.floor(v.length / 2);
+      return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+    };
+    const day = (e) => (e && e.at ? e.at.slice(0, 10) : null);
+    const span = (a, b) => (a && b ? daysBetween(a, b) : null);
+    const ids = new Set(cands.map((c) => c.id));
+    const inv = invites.filter((i) => ids.has(i.candidateId));
+    const states = cands.map((c) => ({ c, s: candidateState(c, today) }));
+
+    // Funnel: how many reached each point.
+    const count = (fn) => states.filter(fn).length;
+    const outcome = (s) => (s.done.closed && s.done.closed.outcome) || null;
+    const funnelRows = [
+      { key: 'hr', label: 'HR interview', n: count(({ s }) => s.done.hr_done) },
+      { key: 'advisor', label: 'Advisor interview', n: count(({ s }) => s.done.advisor_done) },
+      { key: 'deepdive', label: 'Deep dive', n: count(({ s }) => s.done.deepdive_done) },
+      { key: 'offer', label: 'Offer', n: count(({ s }) => s.done.deepdive_done && s.done.deepdive_done.outcome === 'hire') },
+      { key: 'hired', label: 'Hired', n: count(({ s }) => outcome(s) === 'hired') },
+    ];
+    funnelRows.forEach((r, i) => (r.ofPrev = i && funnelRows[i - 1].n ? r.n / funnelRows[i - 1].n : null));
+
+    // Speed, in calendar days.
+    const speed = {
+      toAdvisor: median(states.map(({ s }) => span(day(s.done.hr_done), day(s.done.advisor_done)))),
+      toDeepdive: median(states.map(({ s }) => span(day(s.done.advisor_done), day(s.done.deepdive_done)))),
+      toOffer: median(states.map(({ s }) => (s.done.deepdive_done && s.done.deepdive_done.outcome === 'hire' ? span(day(s.done.hr_done), day(s.done.deepdive_done)) : null))),
+      availReply: median(states.map(({ s }) => span(day(s.done.avail_asked_r2), day(s.done.avail_received_r2)))),
+    };
+    // On time: the round's interview held by its clock deadline.
+    const limits = (camp && camp.rounds) || [];
+    const maxFor = (key) => ((limits.find((r) => r.key === key) || {}).maxDaysAfterPrevious) || 7;
+    const onTime = {};
+    for (const [key, startOf, heldOf] of [
+      ['advisor', (d) => day(d.avail_asked_r2 || d.hr_done), (d) => day(d.advisor_done)],
+      ['deepdive', (d) => day(d.result_call_r2), (d) => day(d.deepdive_done)],
+    ]) {
+      let met = 0;
+      let all = 0;
+      for (const { s } of states) {
+        const a = startOf(s.done);
+        const b = heldOf(s.done);
+        if (!a || !b) continue;
+        all++;
+        if (b <= addDays(a, maxFor(key))) met++;
+      }
+      onTime[key] = { met, all, share: all ? met / all : null };
+    }
+
+    // Interviewer requests.
+    const answered = inv.filter((i) => i.respondedAt && (i.status === 'accepted' || i.status === 'declined'));
+    const accepted = inv.filter((i) => i.status === 'accepted').length;
+    const declined = inv.filter((i) => i.status === 'declined').length;
+    const released = inv.filter((i) => i.status === 'released');
+    const booked = count(({ s }) => s.done.advisor_booked) + count(({ s }) => s.done.deepdive_booked);
+    const requests = {
+      sent: inv.length,
+      accepted,
+      declined,
+      pending: inv.filter((i) => i.status === 'pending').length,
+      acceptShare: accepted + declined ? accepted / (accepted + declined) : null,
+      replyHours: median(answered.map((i) => (i.sentAt ? (Date.parse(i.respondedAt) - Date.parse(i.sentAt)) / 36e5 : null)).filter((x) => x == null || x >= 0)),
+      released: released.length,
+      releaseNoticeDays: median(released.map((i) => (i.noticeDays != null ? i.noticeDays : i.releasedAt ? daysBetween(i.releasedAt.slice(0, 10), i.slotDate) : null))),
+      perBooking: booked ? inv.length / booked : null,
+      declineReasons: Object.entries(inv.filter((i) => i.declineReason).reduce((m, i) => ((m[i.declineReason] = (m[i.declineReason] || 0) + 1), m), {})).sort((a, b) => b[1] - a[1]),
+    };
+
+    // Interviews held, feedback and load.
+    const held = interviewsOf(cands, invites).filter((r) => r.booked && r.slotDate && r.slotDate <= today);
+    const fb = (notes || []).filter((n) => n.kind === 'feedback' && ids.has(n.candidateId));
+    const fbDelay = [];
+    let withFb = 0;
+    const due = held.filter((r) => r.slotDate < today);
+    for (const r of due) {
+      const n = fb.find((x) => x.candidateId === r.candidateId && x.round === r.round && x.authorPersonId === r.personId);
+      if (!n) continue;
+      withFb++;
+      fbDelay.push(daysBetween(r.slotDate, (n.createdAt || '').slice(0, 10) || r.slotDate));
+    }
+    const feedback = { expected: due.length, given: withFb, share: due.length ? withFb / due.length : null, days: median(fbDelay) };
+    const per = {};
+    for (const r of held) per[r.personId] = (per[r.personId] || 0) + 1;
+    const byTeam = {};
+    for (const [pid, n] of Object.entries(per)) {
+      const p = (people || []).find((x) => x.id === pid);
+      const t = (p && p.team) || '?';
+      byTeam[t] = (byTeam[t] || 0) + n;
+    }
+    const loads = Object.values(per);
+    const load = { people: loads.length, min: loads.length ? Math.min(...loads) : 0, max: loads.length ? Math.max(...loads) : 0, byTeam: Object.entries(byTeam).sort((a, b) => b[1] - a[1]) };
+
+    // Interviews (advisor rounds and deep dives, one per candidate per round) by week.
+    const sessions = new Map();
+    for (const r of held) sessions.set(`${r.candidateId}|${r.round}`, r.slotDate);
+    const weeks = [];
+    const lastWeek = weekStart(today);
+    // From the campaign start or the first HR interview, whichever is earlier.
+    const starts = [camp && camp.startDate, ...states.map(({ s }) => day(s.done.hr_done)), ...sessions.values()].filter(Boolean).sort();
+    let first = starts.length ? weekStart(starts[0] < lastWeek ? starts[0] : lastWeek) : addDays(lastWeek, -35);
+    if (daysBetween(first, lastWeek) > 7 * 11) first = addDays(lastWeek, -7 * 11);
+    for (let w = first; w <= lastWeek; w = addDays(w, 7)) weeks.push({ week: w, n: [...sessions.values()].filter((d) => weekStart(d) === w).length });
+
+    const hires = funnelRows[4].n;
+    const offers = funnelRows[3].n;
+    return {
+      candidates: cands.length,
+      open: count(({ s }) => s.status === 'open'),
+      withdrew: count(({ s }) => outcome(s) === 'withdrew' || outcome(s) === 'no_show'),
+      hires,
+      offers,
+      targetHires: (camp && camp.targetHires) || 0,
+      interviewsHeld: sessions.size,
+      targetInterviews: (camp && camp.targetInterviews) || 0,
+      funnel: funnelRows,
+      speed,
+      onTime,
+      requests,
+      feedback,
+      load,
+      weeks,
+    };
+  }
+
   const api = {
     TEAMS,
     TEAM_CODES,
@@ -1992,6 +2144,7 @@ a.btn:hover { filter: brightness(1.05); }
     outlookMailLink,
     icsEvent,
     pipelineCounts,
+    campaignMetrics,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -2396,6 +2549,7 @@ a.btn:hover { filter: brightness(1.05); }
       ['availability', 'Availability'],
       ['roster', 'Roster'],
       ['campaign', 'Campaign'],
+      ['metrics', 'Metrics'],
     ];
     return h(
       'header',
@@ -2451,7 +2605,7 @@ a.btn:hover { filter: brightness(1.05); }
         h(
           'nav',
           { class: 'phone-only', 'aria-label': 'Pages' },
-          [['run', 'Today'], ['availability', 'Availability'], ['roster', 'Roster'], ['campaign', 'Campaign']].map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
+          [['run', 'Today'], ['availability', 'Availability'], ['roster', 'Roster'], ['campaign', 'Campaign'], ['metrics', 'Metrics']].map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
         ),
         viewSwitch(),
         h('hr'),
@@ -2466,6 +2620,7 @@ a.btn:hover { filter: brightness(1.05); }
     if (ui.view === 'availability') return availabilityView();
     if (ui.view === 'roster') return rosterView();
     if (ui.view === 'campaign') return campaignView();
+    if (ui.view === 'metrics') return metricsView();
     return runView();
   }
 
@@ -5665,6 +5820,92 @@ a.btn:hover { filter: brightness(1.05); }
     });
   }
   const campCands = (campId) => S.state.candidates.filter((c) => c.campaignId === campId);
+
+  // ------------------------------------------------------------------
+  // Metrics: how the campaign is doing, for Natalie and for management
+  // ------------------------------------------------------------------
+  function metricsView() {
+    const camp = campaign();
+    const m = M.campaignMetrics({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().map((n) => ({ ...n, authorPersonId: n.personId })), people: S.state.people, today: TODAY });
+    const pct = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
+    const days = (x) => (x == null ? '–' : `${Math.round(x * 10) / 10} ${x === 1 ? 'day' : 'days'}`);
+    const hours = (x) => (x == null ? '–' : x < 24 ? `${Math.round(x)} h` : days(x / 24));
+    const tile = (label, value, sub) => h('div', { class: 'kpi' }, h('span', { class: 'small muted' }, label), h('b', {}, value), sub ? h('span', { class: 'small muted' }, sub) : null);
+    const weeksLeft = camp.endDate ? Math.max(1, Math.ceil(M.daysBetween(TODAY, camp.endDate) / 7)) : null;
+    const pace = weeksLeft && m.targetInterviews > m.interviewsHeld ? Math.ceil((m.targetInterviews - m.interviewsHeld) / weeksLeft) : null;
+    const maxF = Math.max(1, ...m.funnel.map((r) => r.n));
+    const maxW = Math.max(1, pace || 0, ...m.weeks.map((w) => w.n));
+    const table = (rows) => h('table', { class: 'x metrics-t' }, h('tbody', {}, rows.map(([k, v, note]) => h('tr', {}, h('td', {}, k), h('td', { class: 'num' }, v), h('td', { class: 'small muted wide-only' }, note || '')))));
+    const summary = [
+      `${camp.name}, ${M.formatDay(TODAY)}`,
+      `Hires: ${m.hires}${m.targetHires ? ` of ${m.targetHires}` : ''} (${m.offers} offers). Interviews held: ${m.interviewsHeld}${m.targetInterviews ? ` of ${m.targetInterviews}` : ''}.`,
+      `Funnel: ${m.funnel.map((r) => `${r.label} ${r.n}`).join(', ')}.`,
+      `Speed: HR to advisor interview ${days(m.speed.toAdvisor)}, advisor to deep dive ${days(m.speed.toDeepdive)}, HR to offer ${days(m.speed.toOffer)}.`,
+      `On time: advisor round ${pct(m.onTime.advisor.share)}, deep dive ${pct(m.onTime.deepdive.share)}.`,
+      `Requests: ${m.requests.sent} sent, ${pct(m.requests.acceptShare)} accepted, reply in ${hours(m.requests.replyHours)}.`,
+      `Feedback: ${pct(m.feedback.share)} of interviewers, after ${days(m.feedback.days)}.`,
+    ].join('\n');
+    return h(
+      'div',
+      { class: 'section gutter metrics' },
+      h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Metrics'), h('p', {}, `${camp.name}, up to ${M.formatDay(TODAY)}. Interviews count once they are booked and their day has come.`)), h('button', { onclick: (e) => copyText(summary, e.target) }, 'Copy summary')),
+      m.candidates
+        ? [
+            h('div', { class: 'kpis' }, tile('Hires', `${m.hires}${m.targetHires ? ` of ${m.targetHires}` : ''}`, `${plural(m.offers, 'offer')} made`), tile('Interviews held', `${m.interviewsHeld}${m.targetInterviews ? ` of ${m.targetInterviews}` : ''}`, pace ? `${pace} a week needed to ${M.formatDay(camp.endDate)}` : 'advisor rounds and deep dives'), tile('Candidates', String(m.candidates), `${m.open} open${m.withdrew ? `, ${m.withdrew} withdrew` : ''}`), tile('HR to offer', days(m.speed.toOffer), 'median')),
+            h(
+              'div',
+              { class: 'metrics-grid' },
+              h(
+                'section',
+                { class: 'tpanel', 'aria-label': 'Funnel' },
+                h('div', { class: 'ph' }, 'Funnel', h('span', { class: 'faint' }, 'share is of the step before')),
+                h(
+                  'div',
+                  { class: 'funnel' },
+                  m.funnel.map((r) => h('div', { class: 'f-row', title: `${r.label}: ${r.n}${r.ofPrev != null ? `, ${pct(r.ofPrev)} of the step before` : ''}` }, h('span', { class: 'f-label' }, r.label), h('span', { class: 'f-track' }, h('span', { class: 'f-bar', style: `width:${(r.n / maxF) * 100}%` })), h('span', { class: 'f-num' }, String(r.n)), h('span', { class: 'f-pct small muted' }, r.ofPrev != null ? pct(r.ofPrev) : ''))),
+                ),
+              ),
+              h(
+                'section',
+                { class: 'tpanel', 'aria-label': 'Interviews per week' },
+                h('div', { class: 'ph' }, 'Interviews per week', h('span', { class: 'faint' }, pace ? `line: ${pace} a week needed` : 'advisor rounds and deep dives')),
+                h(
+                  'div',
+                  { class: 'weeks', role: 'img', 'aria-label': m.weeks.map((w) => `week of ${M.formatDay(w.week)}: ${w.n}`).join('; ') },
+                  pace ? h('span', { class: 'w-pace', style: `bottom:calc(28px + ${Math.round((pace / maxW) * 130)}px)` }) : null,
+                  m.weeks.map((w) => h('div', { class: 'w-col', title: `Week of ${M.formatDay(w.week)}: ${plural(w.n, 'interview')}` }, h('span', { class: 'w-num small' }, w.n ? String(w.n) : ''), h('span', { class: 'w-bar', style: `height:${(w.n / maxW) * 100}%` }), h('span', { class: 'w-lab small muted' }, M.formatDay(w.week).replace(/^\w+ /, '')))),
+                ),
+              ),
+              h('section', { class: 'tpanel', 'aria-label': 'Speed' }, h('div', { class: 'ph' }, 'Speed', h('span', { class: 'faint' }, 'medians, calendar days')), table([['HR interview to advisor interview', days(m.speed.toAdvisor)], ['Advisor interview to deep dive', days(m.speed.toDeepdive)], ['HR interview to offer', days(m.speed.toOffer)], ['Candidate sends availability', days(m.speed.availReply), 'after Natalie asks'], ['Advisor round on time', pct(m.onTime.advisor.share), `${m.onTime.advisor.met} of ${m.onTime.advisor.all} within the round’s limit`], ['Deep dive on time', pct(m.onTime.deepdive.share), `${m.onTime.deepdive.met} of ${m.onTime.deepdive.all} within the round’s limit`]])),
+              h(
+                'section',
+                { class: 'tpanel', 'aria-label': 'Interviewer requests' },
+                h('div', { class: 'ph' }, 'Interviewer requests'),
+                table([
+                  ['Requests sent', String(m.requests.sent), m.requests.pending ? `${m.requests.pending} waiting` : ''],
+                  ['Accepted', pct(m.requests.acceptShare), `${m.requests.accepted} accepted, ${m.requests.declined} declined`],
+                  ['Reply time', hours(m.requests.replyHours), 'median'],
+                  ['Requests per booked interview', m.requests.perBooking == null ? '–' : String(Math.round(m.requests.perBooking * 10) / 10)],
+                  ['Released', String(m.requests.released), m.requests.releaseNoticeDays != null ? `median ${days(m.requests.releaseNoticeDays)} notice` : ''],
+                  ...m.requests.declineReasons.slice(0, 3).map(([r, n]) => [`Declined: ${r.toLowerCase()}`, String(n)]),
+                ]),
+              ),
+              h(
+                'section',
+                { class: 'tpanel', 'aria-label': 'Feedback and load' },
+                h('div', { class: 'ph' }, 'Feedback and load'),
+                table([
+                  ['Feedback written', pct(m.feedback.share), `${m.feedback.given} of ${m.feedback.expected} interviewers`],
+                  ['Feedback arrives', days(m.feedback.days), 'median, after the interview'],
+                  ['Interviewers involved', String(m.load.people), m.load.people ? `${m.load.min} to ${m.load.max} interviews each` : ''],
+                  ...m.load.byTeam.map(([t, n]) => [`Team ${t}`, plural(n, 'interview'), '']),
+                ]),
+              ),
+            ),
+          ]
+        : h('p', { class: 'muted' }, 'No candidates in this campaign yet. Metrics fill in as candidates move through the rounds.'),
+    );
+  }
   const campInvites = (campId) => S.state.invites.filter((i) => i.campaignId === campId);
 
   function scoresFor(camp) {
@@ -6296,7 +6537,7 @@ a.btn:hover { filter: brightness(1.05); }
   // Feedback reports: everyone can send a screenshot and a note to the
   // developer. Stored in reports/{id}; editors read them in the Developer view.
   // ------------------------------------------------------------------
-  const BUILD = '2026-11-24 01:30 8f44d4f';
+  const BUILD = '2026-11-24 01:34 9f6bd0e';
   const recentErrors = [];
   window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
   window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
@@ -6563,7 +6804,7 @@ a.btn:hover { filter: brightness(1.05); }
   // ------------------------------------------------------------------
   function route() {
     const v = (location.hash || '#run').slice(1);
-    ui.view = ['run', 'availability', 'roster', 'campaign'].includes(v) ? v : 'run';
+    ui.view = ['run', 'availability', 'roster', 'campaign', 'metrics'].includes(v) ? v : 'run';
     rerender();
   }
   window.addEventListener('hashchange', route);

@@ -92,6 +92,10 @@ each round, then gives her an invitation to send. A new structure (for example a
   send. Rooms have an Outlook address (Campaign, Rooms) so the invite books the room,
   and the app warns when a room is already taken. Replies come in through a provider
   that Mock stands in for until the Microsoft 365 connection exists.
+- **Metrics**: the campaign report. Hires and interviews against target, the funnel,
+  interviews per week (with the pace needed when the campaign has an end date),
+  speed and on-time share per round, request acceptance and reply time, released
+  holds, feedback and load per team. *Copy summary* gives a short text for management.
 - **Mock sidecar** (test tool, the Mock button): act as any colleague to accept or
   decline requests and leave feedback, answer every waiting request at once, move
   the date to watch clocks run, give everyone mock accounts, and load or clear demo

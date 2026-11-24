@@ -1166,6 +1166,139 @@
     return out;
   }
 
+  /**
+   * The campaign report: funnel, speed, requests, feedback and load.
+   * Only data up to `today` counts. Medians ignore missing values; a metric
+   * with nothing to measure is null.
+   */
+  function campaignMetrics({ camp, cands, invites, notes, people, today }) {
+    today = today || todayIso();
+    const median = (xs) => {
+      const v = xs.filter((x) => x != null && !Number.isNaN(x)).sort((a, b) => a - b);
+      if (!v.length) return null;
+      const m = Math.floor(v.length / 2);
+      return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+    };
+    const day = (e) => (e && e.at ? e.at.slice(0, 10) : null);
+    const span = (a, b) => (a && b ? daysBetween(a, b) : null);
+    const ids = new Set(cands.map((c) => c.id));
+    const inv = invites.filter((i) => ids.has(i.candidateId));
+    const states = cands.map((c) => ({ c, s: candidateState(c, today) }));
+
+    // Funnel: how many reached each point.
+    const count = (fn) => states.filter(fn).length;
+    const outcome = (s) => (s.done.closed && s.done.closed.outcome) || null;
+    const funnelRows = [
+      { key: 'hr', label: 'HR interview', n: count(({ s }) => s.done.hr_done) },
+      { key: 'advisor', label: 'Advisor interview', n: count(({ s }) => s.done.advisor_done) },
+      { key: 'deepdive', label: 'Deep dive', n: count(({ s }) => s.done.deepdive_done) },
+      { key: 'offer', label: 'Offer', n: count(({ s }) => s.done.deepdive_done && s.done.deepdive_done.outcome === 'hire') },
+      { key: 'hired', label: 'Hired', n: count(({ s }) => outcome(s) === 'hired') },
+    ];
+    funnelRows.forEach((r, i) => (r.ofPrev = i && funnelRows[i - 1].n ? r.n / funnelRows[i - 1].n : null));
+
+    // Speed, in calendar days.
+    const speed = {
+      toAdvisor: median(states.map(({ s }) => span(day(s.done.hr_done), day(s.done.advisor_done)))),
+      toDeepdive: median(states.map(({ s }) => span(day(s.done.advisor_done), day(s.done.deepdive_done)))),
+      toOffer: median(states.map(({ s }) => (s.done.deepdive_done && s.done.deepdive_done.outcome === 'hire' ? span(day(s.done.hr_done), day(s.done.deepdive_done)) : null))),
+      availReply: median(states.map(({ s }) => span(day(s.done.avail_asked_r2), day(s.done.avail_received_r2)))),
+    };
+    // On time: the round's interview held by its clock deadline.
+    const limits = (camp && camp.rounds) || [];
+    const maxFor = (key) => ((limits.find((r) => r.key === key) || {}).maxDaysAfterPrevious) || 7;
+    const onTime = {};
+    for (const [key, startOf, heldOf] of [
+      ['advisor', (d) => day(d.avail_asked_r2 || d.hr_done), (d) => day(d.advisor_done)],
+      ['deepdive', (d) => day(d.result_call_r2), (d) => day(d.deepdive_done)],
+    ]) {
+      let met = 0;
+      let all = 0;
+      for (const { s } of states) {
+        const a = startOf(s.done);
+        const b = heldOf(s.done);
+        if (!a || !b) continue;
+        all++;
+        if (b <= addDays(a, maxFor(key))) met++;
+      }
+      onTime[key] = { met, all, share: all ? met / all : null };
+    }
+
+    // Interviewer requests.
+    const answered = inv.filter((i) => i.respondedAt && (i.status === 'accepted' || i.status === 'declined'));
+    const accepted = inv.filter((i) => i.status === 'accepted').length;
+    const declined = inv.filter((i) => i.status === 'declined').length;
+    const released = inv.filter((i) => i.status === 'released');
+    const booked = count(({ s }) => s.done.advisor_booked) + count(({ s }) => s.done.deepdive_booked);
+    const requests = {
+      sent: inv.length,
+      accepted,
+      declined,
+      pending: inv.filter((i) => i.status === 'pending').length,
+      acceptShare: accepted + declined ? accepted / (accepted + declined) : null,
+      replyHours: median(answered.map((i) => (i.sentAt ? (Date.parse(i.respondedAt) - Date.parse(i.sentAt)) / 36e5 : null)).filter((x) => x == null || x >= 0)),
+      released: released.length,
+      releaseNoticeDays: median(released.map((i) => (i.noticeDays != null ? i.noticeDays : i.releasedAt ? daysBetween(i.releasedAt.slice(0, 10), i.slotDate) : null))),
+      perBooking: booked ? inv.length / booked : null,
+      declineReasons: Object.entries(inv.filter((i) => i.declineReason).reduce((m, i) => ((m[i.declineReason] = (m[i.declineReason] || 0) + 1), m), {})).sort((a, b) => b[1] - a[1]),
+    };
+
+    // Interviews held, feedback and load.
+    const held = interviewsOf(cands, invites).filter((r) => r.booked && r.slotDate && r.slotDate <= today);
+    const fb = (notes || []).filter((n) => n.kind === 'feedback' && ids.has(n.candidateId));
+    const fbDelay = [];
+    let withFb = 0;
+    const due = held.filter((r) => r.slotDate < today);
+    for (const r of due) {
+      const n = fb.find((x) => x.candidateId === r.candidateId && x.round === r.round && x.authorPersonId === r.personId);
+      if (!n) continue;
+      withFb++;
+      fbDelay.push(daysBetween(r.slotDate, (n.createdAt || '').slice(0, 10) || r.slotDate));
+    }
+    const feedback = { expected: due.length, given: withFb, share: due.length ? withFb / due.length : null, days: median(fbDelay) };
+    const per = {};
+    for (const r of held) per[r.personId] = (per[r.personId] || 0) + 1;
+    const byTeam = {};
+    for (const [pid, n] of Object.entries(per)) {
+      const p = (people || []).find((x) => x.id === pid);
+      const t = (p && p.team) || '?';
+      byTeam[t] = (byTeam[t] || 0) + n;
+    }
+    const loads = Object.values(per);
+    const load = { people: loads.length, min: loads.length ? Math.min(...loads) : 0, max: loads.length ? Math.max(...loads) : 0, byTeam: Object.entries(byTeam).sort((a, b) => b[1] - a[1]) };
+
+    // Interviews (advisor rounds and deep dives, one per candidate per round) by week.
+    const sessions = new Map();
+    for (const r of held) sessions.set(`${r.candidateId}|${r.round}`, r.slotDate);
+    const weeks = [];
+    const lastWeek = weekStart(today);
+    // From the campaign start or the first HR interview, whichever is earlier.
+    const starts = [camp && camp.startDate, ...states.map(({ s }) => day(s.done.hr_done)), ...sessions.values()].filter(Boolean).sort();
+    let first = starts.length ? weekStart(starts[0] < lastWeek ? starts[0] : lastWeek) : addDays(lastWeek, -35);
+    if (daysBetween(first, lastWeek) > 7 * 11) first = addDays(lastWeek, -7 * 11);
+    for (let w = first; w <= lastWeek; w = addDays(w, 7)) weeks.push({ week: w, n: [...sessions.values()].filter((d) => weekStart(d) === w).length });
+
+    const hires = funnelRows[4].n;
+    const offers = funnelRows[3].n;
+    return {
+      candidates: cands.length,
+      open: count(({ s }) => s.status === 'open'),
+      withdrew: count(({ s }) => outcome(s) === 'withdrew' || outcome(s) === 'no_show'),
+      hires,
+      offers,
+      targetHires: (camp && camp.targetHires) || 0,
+      interviewsHeld: sessions.size,
+      targetInterviews: (camp && camp.targetInterviews) || 0,
+      funnel: funnelRows,
+      speed,
+      onTime,
+      requests,
+      feedback,
+      load,
+      weeks,
+    };
+  }
+
   const api = {
     TEAMS,
     TEAM_CODES,
@@ -1228,6 +1361,7 @@
     outlookMailLink,
     icsEvent,
     pipelineCounts,
+    campaignMetrics,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

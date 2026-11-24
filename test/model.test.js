@@ -292,3 +292,34 @@ test('rooms in use: bookings, holds and waiting requests in the same hour clash'
   assert.equal(M.roomsInUse({ cands, invites, date: '2026-11-27', time: '14:00', exceptCandidateId: 'c3' }).size, 0);
   assert.equal(M.roomsInUse({ cands, invites, date: '2026-11-27', time: '10:00', exceptCandidateId: 'c1' }).size, 1);
 });
+
+test('campaign metrics: funnel, speed, requests and feedback', () => {
+  const e = (step, at, outcome, data) => ({ id: step + at, step, at, outcome: outcome || null, data });
+  const cands = [
+    { id: 'a', name: 'A', timeline: [e('hr_done', '2026-11-02', 'pass'), e('avail_asked_r2', '2026-11-02'), e('avail_received_r2', '2026-11-03'), e('advisor_booked', '2026-11-04', null, { slotDate: '2026-11-06', time: '10:00', room: 'Room 1', interviewers: ['p1', 'p2'] }), e('advisor_done', '2026-11-06', 'pass'), e('result_call_r2', '2026-11-06'), e('deepdive_booked', '2026-11-09', null, { slotDate: '2026-11-12', time: '14:00', room: 'Room 2', interviewers: ['t1', 't2'] }), e('deepdive_done', '2026-11-12', 'hire')] },
+    { id: 'b', name: 'B', timeline: [e('hr_done', '2026-11-02', 'pass'), e('avail_asked_r2', '2026-11-02'), e('avail_received_r2', '2026-11-05'), e('advisor_booked', '2026-11-06', null, { slotDate: '2026-11-13', time: '10:00', room: 'Room 1', interviewers: ['p1', 'p3'] }), e('advisor_done', '2026-11-13', 'reject')] },
+    { id: 'c', name: 'C', timeline: [e('hr_done', '2026-11-10', 'reject')] },
+  ];
+  const people = [{ id: 'p1', team: 'TM' }, { id: 'p2', team: 'PM' }, { id: 'p3', team: 'OM' }, { id: 't1', team: 'TM' }, { id: 't2', team: 'PM' }];
+  const invites = [
+    { candidateId: 'a', status: 'accepted', sentAt: '2026-11-04T08:00:00Z', respondedAt: '2026-11-04T12:00:00Z' },
+    { candidateId: 'a', status: 'released', sentAt: '2026-11-04T08:00:00Z', noticeDays: 2, slotDate: '2026-11-06' },
+    { candidateId: 'b', status: 'declined', declineReason: 'Client meeting', sentAt: '2026-11-06T08:00:00Z', respondedAt: '2026-11-06T16:00:00Z' },
+  ];
+  const notes = [{ kind: 'feedback', candidateId: 'a', round: 'advisor', authorPersonId: 'p1', createdAt: '2026-11-07T09:00:00Z' }];
+  const m = M.campaignMetrics({ camp: { targetHires: 10, targetInterviews: 25, startDate: '2026-11-02' }, cands, invites, notes, people, today: '2026-11-20' });
+  assert.deepEqual(m.funnel.map((r) => r.n), [3, 2, 1, 1, 0]);
+  assert.equal(m.funnel[1].ofPrev, 2 / 3);
+  assert.equal(m.interviewsHeld, 3);
+  assert.equal(m.speed.toAdvisor, 7.5);
+  assert.equal(m.speed.toOffer, 10);
+  assert.deepEqual(m.onTime.advisor, { met: 1, all: 2, share: 0.5 });
+  assert.equal(m.requests.acceptShare, 0.5);
+  assert.equal(m.requests.replyHours, 6);
+  assert.equal(m.requests.releaseNoticeDays, 2);
+  assert.equal(m.feedback.expected, 6);
+  assert.equal(m.feedback.given, 1);
+  assert.equal(m.feedback.days, 1);
+  assert.equal(m.load.max, 2);
+  assert.deepEqual(m.weeks.map((w) => w.n), [1, 2, 0]);
+});
