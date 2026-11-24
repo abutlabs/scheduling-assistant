@@ -299,6 +299,7 @@
       const [kind, tone] = KIND[s.next] || ['Do', ''];
       let k = kind;
       let t = tone;
+      let prompt = s.prompt;
       if (s.clock && s.clock.state === 'overdue') {
         group = 'overdue';
         k = 'Overdue';
@@ -307,6 +308,10 @@
       } else if (s.clock && (s.clock.state === 'urgent' || s.clock.state === 'booked_late')) {
         group = 'today';
         t = 'warn';
+        if (s.clock.state === 'booked_late' && s.clock.interviewDate > TODAY) {
+          prompt = `${first(c)}’s ${s.clock.round === 'advisor' ? 'advisor interview' : 'deep dive'} is late`;
+          k = 'Late';
+        }
         reason = s.clock.state === 'booked_late' ? `Booked for ${M.formatDay(s.clock.interviewDate)}, after the ${s.clock.max}-day deadline (${M.formatDay(s.clock.deadline)}).` : `Day ${s.clock.day} of ${s.clock.max}, deadline ${M.formatDay(s.clock.deadline)}.`;
       } else if (s.clock && s.clock.state === 'booked' && s.clock.interviewDate <= TODAY) {
         group = 'today';
@@ -333,7 +338,7 @@
       }
       if (s.skipped.length) reason += ` ${plural(s.skipped.length, 'earlier step')} not recorded.`;
       const due = s.clock && s.clock.deadline && s.clock.state !== 'booked' ? (s.clock.state === 'overdue' ? 'past the deadline' : `due ${longDay(s.clock.deadline).split(' ')[0]}`) : '';
-      items.push({ group, kind: k, tone: t, who: c.name, text: `${s.prompt}. ${reason}`.trim(), title: `${s.prompt}.`, sub: `${c.name} · ${reason}`.trim(), due, btn: k === 'Overdue' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
+      items.push({ group, kind: k, tone: t, who: c.name, text: `${prompt}. ${reason}`.trim(), title: `${prompt}.`, sub: `${c.name} · ${reason}`.trim(), due, btn: k === 'Overdue' || k === 'Late' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
     }
     items.push(...inviteTodoItems());
     // Interviews that ended (plus 10 minutes) without feedback from someone.
@@ -1459,7 +1464,7 @@
         items.push({ group: 'today', kind: 'Release', tone: 'accent', who: pname(r.invite.personId), text: `Release from ${first(c)}'s ${when} slot: ${M.RELEASE_REASONS[r.why]}. Notice: ${plural(notice, 'day')}.`, btn: 'Release', invite: r.invite, why: r.why, sortKey: 6 });
       }
       if (!state.complete && state.shortBy > 0) {
-        items.push({ group: 'today', kind: 'Top up', tone: 'warn', who: c.name, text: `${state.declined.length ? `${state.declined.map((i) => pname(i.personId)).join(', ')} declined. ` : ''}Ask ${plural(state.shortBy, 'more person', 'more people')} for ${when}.`, btn: 'Ask', cand: c.id, step: null, sortKey: 4 });
+        items.push({ group: 'today', kind: 'Top up', tone: 'warn', who: c.name, text: `${state.declined.length ? `${state.declined.map((i) => `${pname(i.personId)} ${/^Gave up the hold/.test(i.declineReason || '') ? 'gave up their hold' : 'declined'}`).join(', ')}. ` : ''}Ask ${plural(state.shortBy, 'more person', 'more people')} for ${when}.`, btn: 'Ask', cand: c.id, step: null, sortKey: 4 });
       }
       for (const i of state.overdue) {
         if (state.complete) continue;
@@ -2267,7 +2272,7 @@
       ['Bram Smit', 'dd_reject', -13], ['Lotte Visser', 'dd_booked', -9], ['Jesse van Dijk', 'dd_past', -10],
       ['Fleur de Boer', 'dd_requests', -8], ['Daan Bakker', 'adv_reject', -9], ['Emma Jansen', 'adv_call', -6],
       ['Lucas Meijer', 'adv_booked', -4], ['Sophie Bos', 'adv_past', -5], ['Milan de Groot', 'adv_requests', -3],
-      ['Julia Peters', 'asked', -2], ['Tim Vos', 'avail_in', -2], ['Ruben Kok', 'hr_reject', -4], ['Eva van Leeuwen', 'hr_today', 0],
+      ['Julia Peters', 'asked', -8], ['Tim Vos', 'avail_in', -2], ['Ruben Kok', 'hr_reject', -4], ['Eva van Leeuwen', 'hr_today', 0],
     ];
     // Older history, different every load, so the weekly chart and funnel have some shape.
     const older = ['Anouk Dekker', 'Stijn de Wit', 'Iris Willems', 'Koen Vermeulen', 'Maud Brouwer', 'Sem Hoekstra', 'Lieke Postma', 'Jasper Kuipers', 'Roos van den Berg', 'Niels Prins'];
@@ -2324,7 +2329,7 @@
         const slot = wd(3);
         const ps = others(advisors, [], 3);
         const t = '10:00';
-        [['accepted', 2], ['declined', 4], ['pending', 0]].forEach(([st, h], i) => ps[i] && invites.push({ round: 'advisor', personId: ps[i].id, slotDate: slot, time: t, room: 'Room 1', status: st, sentAt: `${wd(-1)}T08:30:00.000Z`, ...(st !== 'pending' ? { respondedAt: `${wd(-1)}T${10 + h}:05:00.000Z` } : {}), via: 'outlook', ...(st === 'declined' ? { declineReason: 'On a client site that day' } : {}) }));
+        [['accepted', 2], ['declined', 4], ['pending', 0]].forEach(([st, h], i) => ps[i] && invites.push({ round: 'advisor', personId: ps[i].id, slotDate: slot, time: t, room: 'Room 1', status: st, sentAt: `${wd(-1)}T08:30:00.000Z`, ...(st !== 'pending' ? { respondedAt: `${wd(-1)}T${10 + h}:05:00.000Z` } : {}), ...(st === 'declined' ? { declineReason: 'Gave up the hold: a client deadline moved to that morning', withdrawnAt: `${T}T08:15:00.000Z` } : {}), via: 'outlook' }));
       }
       const pastAdv = ['hired', 'offer', 'dd_reject', 'dd_booked', 'dd_past', 'dd_requests', 'adv_reject'];
       if (pastAdv.includes(kind)) {
@@ -2357,6 +2362,12 @@
       for (const n of notes) await S.add('notes', { candidateId: id, campaignId: camp.id, authorId: null, mock: true, ...n });
       if (made % 3 === 0 && hrNotes[made % hrNotes.length]) await S.add('notes', { candidateId: id, campaignId: camp.id, round: 'hr', kind: 'note', text: `HR: ${hrNotes[made % hrNotes.length]}`, authorId: null, authorLabel: 'Natalie (HR)', mock: true, createdAt: `${hr}T13:00:00.000Z` });
       made++;
+      // A team lead asks Natalie to cancel Lotte's booked deep dive.
+      if (kind === 'dd_booked') {
+        const bk = tl.find((e) => e.step === 'deepdive_booked');
+        const by = bk && bk.data && bk.data.interviewers && bk.data.interviewers[1];
+        if (by) await S.add('notes', { candidateId: id, campaignId: camp.id, round: 'deepdive', kind: 'cancel_request', text: 'A client workshop moved to that afternoon. Sorry, can we swap me out?', authorId: null, authorPersonId: by, resolved: false, mock: true, createdAt: `${T}T08:40:00.000Z` });
+      }
     }
     return made;
   }
