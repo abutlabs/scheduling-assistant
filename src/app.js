@@ -2793,11 +2793,45 @@
     const sel = ui.pairCell && cells.find((c) => `${c.date}|${c.half}` === ui.pairCell);
     const total = cells.reduce((n, c) => n + (c.pairs.length ? 1 : 0), 0);
     const level = (n) => (n === 0 ? 'none' : n <= 2 ? 'few' : 'many');
+    // Candidates waiting to be booked for this round, with no requests out.
+    const round = role === 'advisor' ? 'advisor' : 'deepdive';
+    const waiting = candidates().filter((c) => {
+      const st = cstate(c);
+      return st.next === `${round}_booked` && !S.state.invites.some((i) => i.candidateId === c.id && i.round === round && ['pending', 'accepted'].includes(i.status));
+    });
+    const candFits = (c, date, half) => {
+      const recv = cstate(c).done[round === 'deepdive' ? 'avail_received_final' : 'avail_received_r2'];
+      const slots = (recv && recv.data && recv.data.slots) || [];
+      if (!slots.length) return true;
+      const [t, end] = half === 'am' ? ['10:00', '11:00'] : ['14:00', '15:00'];
+      return slots.some((sl) => sl.date === date && (!sl.from || sl.from <= t) && (!sl.to || sl.to >= end));
+    };
     const label = role === 'advisor' ? 'advisors' : 'team leads';
     const halfName = { am: 'Morning', pm: 'Afternoon' };
     const pick = (id) => {
       ui.pairPerson = ui.pairPerson === id ? null : id;
       rerender();
+    };
+    // Booking straight from the finder: pick who it is for, then ask a pair.
+    const bookable = (cell) => cell.date > TODAY && waiting.length;
+    const pfBook = (cell) => {
+      if (!bookable(cell)) return cell.date <= TODAY ? null : h('p', { class: 'small muted' }, `No candidate is waiting for ${round === 'advisor' ? 'an advisor interview' : 'a deep dive'} right now.`);
+      const fit = waiting.filter((c) => candFits(c, cell.date, cell.half));
+      if (!ui.pairFor || !waiting.some((c) => c.id === ui.pairFor)) ui.pairFor = (fit[0] || waiting[0]).id;
+      return h(
+        'label',
+        { class: 'row pf-for' },
+        h('span', { class: 'small' }, 'Book for'),
+        h('select', { id: 'pf-for', onchange: (e) => ((ui.pairFor = e.target.value), rerender()) }, waiting.map((c) => h('option', { value: c.id, selected: ui.pairFor === c.id }, `${c.name}${candFits(c, cell.date, cell.half) ? '' : ' (said they can’t then)'}`))),
+      );
+    };
+    const pfAsk = (cell, pr) => {
+      if (!bookable(cell)) return null;
+      const c = waiting.find((x) => x.id === ui.pairFor);
+      if (!c) return null;
+      const time = cell.half === 'am' ? '10:00' : '14:00';
+      const room = roomNames().find((r) => !busyRooms(cell.date, time, c.id).has(r)) || roomNames()[0];
+      return h('button', { class: 'pf-ask', onclick: () => createRequests(c, round, { slotDate: cell.date, time, room, picked: pr.map((x) => x.id) }).then(() => { if (ui.outlookDraft) ui.outlookDraft.fromFinder = true; rerender(); }) }, `Ask these 2 for ${first(c)}, ${time}`);
     };
     const personChip = (p) => h('button', { class: `pf-person${focus === p.id ? ' on' : ''}`, onclick: () => pick(p.id), title: 'Show every half-day this person is free' }, p.name, p.team ? h('span', { class: 'faint' }, ` · ${p.team}`) : null);
 
@@ -2858,14 +2892,26 @@
             'div',
             { class: 'pf-detail' },
             h('h3', {}, `${M.formatDay(sel.date)}, ${halfName[sel.half].toLowerCase()}`),
-            sel.free.length ? h('div', { class: 'pf-people' }, h('span', { class: 'small muted' }, 'Free: '), sel.free.map(personChip)) : h('p', { class: 'muted' }, `Nobody in the ${label} poll is free then.`),
+            (() => {
+              const asked = S.state.invites.filter((i) => i.slotDate === sel.date && ['pending', 'accepted'].includes(i.status) && ((i.time || '09:00') < '12:00' ? 'am' : 'pm') === sel.half && pool.some((p) => p.id === i.personId));
+              if (!asked.length) return null;
+              const byCand = new Map();
+              for (const i of asked) byCand.set(i.candidateId, [...(byCand.get(i.candidateId) || []), i]);
+              return [...byCand].map(([cid, list]) => {
+                const c = S.state.candidates.find((x) => x.id === cid);
+                return h('p', { class: 'small' }, h('b', {}, c ? first(c) : 'A candidate'), `: ${list.map((i) => `${(personById(i.personId) || {}).name || '?'} ${i.status === 'accepted' ? 'holds it' : 'is asked'}`).join(', ')} (${list[0].time}).`);
+              });
+            })(),
+            sel.free.length ? h('div', { class: 'pf-people' }, h('span', { class: 'small muted' }, 'Free: '), sel.free.map(personChip)) : h('p', { class: 'muted' }, `Nobody else in the ${label} poll is free then.`),
+            sel.pairs.length ? pfBook(sel) : null,
             sel.pairs.length
-              ? h('ul', { class: 'pf-pairs' }, sel.pairs.filter((pr) => !focus || pr.some((x) => x.id === focus)).map((pr) => h('li', {}, pr.map((x) => h('span', {}, x.name, x.team ? h('span', { class: 'faint' }, ` (${x.team})`) : null)).reduce((a, b) => [a, h('span', { class: 'faint' }, ' + '), b]))))
+              ? h('ul', { class: 'pf-pairs' }, sel.pairs.filter((pr) => !focus || pr.some((x) => x.id === focus)).map((pr) => h('li', {}, pr.map((x) => h('span', {}, x.name, x.team ? h('span', { class: 'faint' }, ` (${x.team})`) : null)).reduce((a, b) => [a, h('span', { class: 'faint' }, ' + '), b]), pfAsk(sel, pr))))
               : sel.free.length
                 ? h('p', { class: 'muted' }, 'No pair from two different teams here.')
                 : null,
           )
         : h('p', { class: 'small muted' }, 'Pick a half-day to see who is free and every pair that works.'),
+      ui.outlookDraft && ui.outlookDraft.fromFinder ? (() => { const c = S.state.candidates.find((x) => x.id === ui.outlookDraft.candId); return c ? outlookPanel(c) : null; })() : null,
       h('div', { class: 'pf-people pf-all' }, h('span', { class: 'small muted' }, `All ${label}: `), pool.map(personChip)),
     );
   }
