@@ -724,3 +724,5 @@ details.fold .fold-body > .section { padding: 12px 0 0; margin: 0; }
 details.fold .fold-body > .section.gutter { padding-inline: 0; }
 details.fold .fold-body > .section > .head h2 { font: 400 20px/1.3 var(--font-ui); }
 details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px; }
+.ok-t { color: var(--ok); font-weight: 600; }
+.iv-aside .goal + .score { margin-top: 8px; }

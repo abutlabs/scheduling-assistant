@@ -212,3 +212,27 @@ test('scoreboard: points, ranks within team, fair share, feedback on time', () =
   assert.equal(M.interviewsOf(cands, invites).length, 3);
   assert.deepEqual(M.pipelineCounts(cands, '2026-11-20'), { total: 2, hr: 1, advisor: 1, deepdive: 0, hired: 0, closed: 0 });
 });
+
+test('hiring goals add up to at least the campaign target and count hires', () => {
+  const people = [
+    { id: 'a1', name: 'Ann', team: 'TM', roles: ['advisor'] },
+    { id: 'a2', name: 'Bob', team: 'PM', roles: ['advisor'] },
+    { id: 'a3', name: 'Cas', team: 'CP', roles: ['advisor'] },
+    { id: 't1', name: 'Tim', team: 'TM', roles: ['teamlead'] },
+    { id: 't2', name: 'Uma', team: 'PM', roles: ['teamlead'] },
+  ];
+  const camp = M.newCampaign({ name: 'X', targetHires: 4 });
+  const booked = (step, slotDate, interviewers) => ({ id: step, step, at: slotDate, data: { slotDate, time: '10:00', interviewers } });
+  const cands = [
+    { id: 'c1', campaignId: camp.id, timeline: [booked('advisor_booked', '2026-11-02', ['a1', 'a2']), booked('deepdive_booked', '2026-11-09', ['t1', 't2']), { id: 'x', step: 'closed', at: '2026-11-12', outcome: 'hired' }] },
+    { id: 'c2', campaignId: camp.id, timeline: [booked('advisor_booked', '2026-11-03', ['a1', 'a3'])] },
+  ];
+  const g = M.hiringGoals({ camp, cands, invites: [], people });
+  // Advisors: 4 hires x 2 interviewers = 8 credits over 3 people -> 3, 3, 2.
+  assert.deepEqual([g.a1.goal, g.a2.goal, g.a3.goal], [3, 3, 2]);
+  assert.equal(g.a1.goal + g.a2.goal + g.a3.goal, 8);
+  // Team leads: 8 credits over 2 -> 4 each.
+  assert.deepEqual([g.t1.goal, g.t2.goal], [4, 4]);
+  // c1 was hired: its four interviewers get a hire; c2 isn't hired yet.
+  assert.deepEqual([g.a1.hires, g.a2.hires, g.a3.hires, g.t1.hires], [1, 1, 0, 1]);
+});

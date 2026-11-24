@@ -112,3 +112,13 @@ errors}, `authorId`, `authorName`, `status` (new, seen, fixing, fixed, wontfix),
 leads arrive via `replies/{userId}.reports` (newest 3 kept) and are copied here
 by Natalie's page.
 
+
+## Hiring goals
+
+Each advisor and team lead gets a share of the campaign's target hires
+(`M.hiringGoals`). A round needs `targetHires × interviewers` credits; they are
+split evenly over that round's members (the remainder goes to the first by name,
+with at least 1 each), so the goals add up to at least the target. A hire
+(deep dive verdict "hire" or closed as hired) counts for everyone who
+interviewed that candidate. Each person's `goal` and `hires` travel in their
+`inbox` scores; Natalie sees everyone's in the scoreboard.
