@@ -2971,6 +2971,7 @@
           'details',
           { class: 'round-sum' },
           h('summary', {}, h('b', {}, r.name), h('span', { class: 'muted' }, ` · ${plural(ps.length, 'person', 'people')} · ${inv} invited · ${joined} joined`)),
+          ps.length ? null : h('p', { class: 'small muted' }, 'Nobody is in this round yet. Use Change people to add someone.'),
           h('div', { class: 'people-list' }, ps.map((p) => h('div', { class: 'person-row' }, h('span', {}, h('b', {}, p.name), h('span', { class: 'muted' }, ` · ${p.team}`)), h('span', { class: 'row' }, p.accountId ? null : h('span', { class: 'small faint' }, 'Outlook only'), status(p))))),
         );
       }),
@@ -3322,7 +3323,7 @@
   function ivRules(st) {
     const camp = st && S.state.campaigns.find((x) => x.id === st.campaignId);
     if (!camp) return null;
-    return h('details', { class: 'fold', open: !!ui.ivRulesOpen, ontoggle: (e) => (ui.ivRulesOpen = e.target.open) }, h('summary', {}, 'How interviews are planned'), ui.ivRulesOpen ? h('div', { class: 'fold-body' }, rulesSection(camp, false)) : null);
+    return h('details', { class: 'fold', open: !!ui.ivRulesOpen, ontoggle: (e) => (ui.ivRulesOpen = e.target.open) }, h('summary', {}, 'How interviews are planned'), h('div', { class: 'fold-body' }, rulesSection(camp, false)));
   }
   function replyFor(ctx, id) {
     return ctx.replies && ctx.replies.invites && ctx.replies.invites[id];

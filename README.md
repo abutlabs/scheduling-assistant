@@ -45,6 +45,9 @@ PNG previews in `preview/`). `src/styles.css` starts with those tokens; the
 sheet styles for the poll import, step matrix and roster follow, and the calm
 layer at the end applies the design to the top bar, Today, the candidate
 drawer, the advisor and team lead home, the welcome card and the Report dialog.
+The working screens (Availability and the poll import, Roster, Campaign and
+Developer reports) share the same page head and framed sheets, and every fold
+opens to real content.
 
 ## Campaign structures
 
