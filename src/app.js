@@ -247,7 +247,7 @@
   }
 
   function view() {
-    if (!campaign()) return setupView();
+    if (!campaign()) return [setupView(), archivedCampaigns()];
     if (ui.view === 'availability') return availabilityView();
     if (ui.view === 'roster') return rosterView();
     if (ui.view === 'campaign') return campaignView();
@@ -3368,7 +3368,57 @@
       ui.newCampaign ? null : campaignPeople(c),
       ui.newCampaign ? null : rulesSection(c, true),
       ui.newCampaign ? null : adminScoreboard(c),
+      ui.newCampaign ? null : archivedCampaigns(),
     ];
+  }
+
+  // Archive keeps everything (candidates, interviews, counts) but hides the campaign;
+  // it can be restored. Delete is only offered when nothing real hangs off it
+  // (demo data goes with it), since it can't be undone.
+  function campaignEnd(c) {
+    const real = S.state.candidates.filter((x) => x.campaignId === c.id && !x.mock).length + S.state.invites.filter((x) => x.campaignId === c.id && !x.mock).length;
+    const leave = () => {
+      ui.endCampaign = null;
+      const next = campaigns().find((x) => x.id !== c.id);
+      ui.campaignId = next ? next.id : null;
+      store('flux.campaign', ui.campaignId || '');
+    };
+    const archive = () =>
+      act(async () => {
+        await S.update('campaigns', c.id, { archived: true, open: false, archivedAt: nowIso() });
+        leave();
+      }, `${c.name} archived`);
+    const remove = () =>
+      act(async () => {
+        for (const coll of ['invites', 'notes', 'candidates']) for (const d of S.state[coll].filter((x) => x.campaignId === c.id)) await S.remove(coll, d.id);
+        await S.remove('campaigns', c.id);
+        leave();
+      }, `${c.name} deleted`);
+    if (ui.endCampaign !== c.id)
+      return h('div', { class: 'camp-end', style: 'flex-basis:100%' }, h('button', { class: 'link small', onclick: () => ((ui.endCampaign = c.id), rerender()) }, real ? 'Archive this campaign' : 'Archive or delete this campaign'));
+    return h(
+      'div',
+      { class: 'camp-end confirm', style: 'flex-basis:100%' },
+      h('p', { class: 'small' }, real ? `Archive ${c.name}? It leaves the campaign picker and interviewers’ home pages. Candidates and interview history are kept, and you can restore it from this page.` : `${c.name} has no real candidates or requests. Archive it to keep it, or delete it for good${S.state.candidates.some((x) => x.campaignId === c.id) ? ' (its demo data goes too)' : ''}.`),
+      h('div', { class: 'row' }, h('button', { class: 'p', onclick: archive }, 'Archive'), real ? null : h('button', { class: 'danger', onclick: remove }, 'Delete for good'), h('button', { class: 'quiet', onclick: () => ((ui.endCampaign = null), rerender()) }, 'Cancel')),
+    );
+  }
+  function archivedCampaigns() {
+    const list = S.state.campaigns.filter((c) => c.archived);
+    if (!list.length) return null;
+    return h(
+      'details',
+      { class: 'round-sum section gutter' },
+      h('summary', {}, h('b', {}, 'Archived campaigns'), h('span', { class: 'muted' }, ` · ${list.length}`)),
+      list.map((c) =>
+        h(
+          'div',
+          { class: 'row', style: 'justify-content:space-between;border-top:1px solid var(--line);padding:8px 0' },
+          h('span', {}, h('b', {}, c.name), h('span', { class: 'small muted' }, c.archivedAt ? ` · archived ${M.formatDay(c.archivedAt.slice(0, 10))}` : '')),
+          h('button', { onclick: () => act(() => S.update('campaigns', c.id, { archived: false }), `${c.name} restored (closed to interviewers)`) }, 'Restore'),
+        ),
+      ),
+    );
   }
 
   function campaignForm(c) {
@@ -3387,6 +3437,7 @@
           h('span', {}, isOpen(c) ? 'Open: advisors and team leads in this campaign see it on their home.' : 'Not open: only you see this campaign. Open it when you’re ready to invite people.'),
           h('button', { class: isOpen(c) ? 'quiet' : 'p', onclick: () => act(() => S.update('campaigns', c.id, { open: !isOpen(c) }), isOpen(c) ? `${c.name} is closed to interviewers` : `${c.name} is open to interviewers`) }, isOpen(c) ? 'Close to interviewers' : 'Open to interviewers'),
         ),
+        campaignEnd(c),
       );
     }
     const f = c ? { name: c.name, startDate: c.startDate, endDate: c.endDate || '', targetHires: c.targetHires || '', targetInterviews: c.targetInterviews || '' } : { name: campaigns().length ? '' : 'Trainee hiring', startDate: TODAY, endDate: '', targetHires: campaigns().length ? '' : 10, targetInterviews: campaigns().length ? '' : 25 };
