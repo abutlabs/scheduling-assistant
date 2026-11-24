@@ -158,7 +158,11 @@ brief), the campaign overview, the scoreboard and the rules. Candidates, notes,
 invites and availability are readable by editors only. Natalie's page copies
 each linked person's own slice into `inbox/{userId}` and the campaign overview
 into `stats/{campaignId}`. Interviewers' answers and feedback go to
-`replies/{userId}` and are applied when Natalie's page is next open.
+`replies/{userId}`. They are applied when Natalie's page is open, and by an
+hourly routine on weekdays (8:00 to 18:00 Amsterdam time) that runs
+`tools/apply-replies.js` against the live database, so answers and feedback land
+without her page open. Both use the same rules (`planReplyWrites` in
+`src/model.js`), and applying twice writes nothing new.
 
 Candidate records and notes are readable by editors only. Each person writes
 only their own `members/{userId}` doc when they press "I'm in" on the welcome card. Interviewers get

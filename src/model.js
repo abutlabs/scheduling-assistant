@@ -1299,6 +1299,48 @@
     };
   }
 
+  /**
+   * What interviewers wrote to replies/{accountId} that hasn't been applied yet,
+   * as database writes: [{ op, collection, doc_id, data }]. Pure, so Natalie's
+   * page and the hourly routine (tools/apply-replies.js) apply answers the same
+   * way. Ids are derived from the reply, so applying twice writes nothing new.
+   *  - an answer to a pending request -> update invites/{id}
+   *  - feedback on an interview the person is in -> set notes/{no_<account>:<key>}
+   *  - a Report sent by an interviewer -> set reports/{id}
+   */
+  function planReplyWrites({ replies, people, invites, candidates, notes, reports, now }) {
+    now = now || new Date().toISOString();
+    const out = [];
+    const noteKeys = new Set((notes || []).map((n) => n.replyKey).filter(Boolean));
+    const noteIds = new Set((notes || []).map((n) => n.id));
+    const reportIds = new Set((reports || []).map((r) => r.id));
+    const interviews = interviewsOf(candidates || [], invites || []);
+    for (const r of replies || []) {
+      const p = (people || []).find((x) => x.accountId && x.accountId === r.id);
+      for (const [rid, rep] of Object.entries(r.reports || {})) {
+        if (reportIds.has(rid)) continue;
+        out.push({ op: 'set', collection: 'reports', doc_id: rid, data: { ...rep, authorId: r.id, authorName: rep.authorName || (p ? p.name : ''), status: 'new' } });
+      }
+      if (!p) continue;
+      for (const [iid, a] of Object.entries(r.invites || {})) {
+        const inv = (invites || []).find((i) => i.id === iid);
+        if (!inv || inv.personId !== p.id || inv.status !== 'pending') continue;
+        if (!a || (a.status !== 'accepted' && a.status !== 'declined')) continue;
+        out.push({ op: 'update', collection: 'invites', doc_id: iid, data: { status: a.status, respondedAt: a.at || now, via: 'app', declineReason: String(a.reason || '').slice(0, 300) } });
+      }
+      const mine = interviews.filter((x) => x.personId === p.id);
+      for (const [k, fb] of Object.entries(r.feedback || {})) {
+        const key = `${r.id}:${k}`;
+        const id = `no_${key}`.replace(/[^A-Za-z0-9_\-.~:@+]/g, '_').slice(0, 200);
+        if (noteKeys.has(key) || noteIds.has(id)) continue;
+        const iv = mine.find((x) => x.candidateId === fb.candidateId && x.round === fb.round);
+        if (!iv || !String(fb.text || '').trim()) continue;
+        out.push({ op: 'set', collection: 'notes', doc_id: id, data: { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text: String(fb.text).slice(0, 4000), authorId: r.id, authorPersonId: p.id, replyKey: key, createdAt: fb.at || now } });
+      }
+    }
+    return out;
+  }
+
   const api = {
     TEAMS,
     TEAM_CODES,
@@ -1362,6 +1404,7 @@
     icsEvent,
     pipelineCounts,
     campaignMetrics,
+    planReplyWrites,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

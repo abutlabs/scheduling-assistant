@@ -3661,32 +3661,15 @@
     const keep = new Set(linked.map((p) => p.accountId));
     for (const d of S.state.inbox) if (!keep.has(d.id)) await S.remove('inbox', d.id);
   }
+  // Same rules as the hourly routine (tools/apply-replies.js): M.planReplyWrites.
   async function applyReplies() {
-    const notes = S.state.notes;
-    for (const r of S.state.replies) {
-      const p = S.state.people.find((x) => x.accountId === r.id);
-      for (const [rid, rep] of Object.entries(r.reports || {})) {
-        if (applied.has(`r:${rid}`) || S.state.reports.some((x) => x.id === rid)) continue;
-        applied.add(`r:${rid}`);
-        await S.set('reports', rid, { ...rep, authorId: r.id, authorName: rep.authorName || (p ? p.name : ''), status: 'new' });
-      }
-      if (!p) continue;
-      for (const [iid, a] of Object.entries(r.invites || {})) {
-        const inv = S.state.invites.find((i) => i.id === iid);
-        if (!inv || inv.personId !== p.id || inv.status !== 'pending' || applied.has(`i:${iid}`)) continue;
-        if (a.status !== 'accepted' && a.status !== 'declined') continue;
-        applied.add(`i:${iid}`);
-        await S.update('invites', iid, { status: a.status, respondedAt: a.at || nowIso(), via: 'app', declineReason: String(a.reason || '').slice(0, 300) });
-      }
-      const mine = M.interviewsOf(S.state.candidates, S.state.invites).filter((x) => x.personId === p.id);
-      for (const [k, fb] of Object.entries(r.feedback || {})) {
-        const key = `${r.id}:${k}`;
-        if (applied.has(key) || notes.some((n) => n.replyKey === key)) continue;
-        const iv = mine.find((x) => x.candidateId === fb.candidateId && x.round === fb.round);
-        if (!iv || !String(fb.text || '').trim()) continue;
-        applied.add(key);
-        await S.add('notes', { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text: String(fb.text).slice(0, 4000), authorId: r.id, authorPersonId: p.id, replyKey: key, createdAt: fb.at || new Date().toISOString() });
-      }
+    const writes = M.planReplyWrites({ replies: S.state.replies, people: S.state.people, invites: S.state.invites, candidates: S.state.candidates, notes: S.state.notes, reports: S.state.reports, now: nowIso() });
+    for (const w of writes) {
+      const k = `${w.collection}:${w.doc_id}`;
+      if (applied.has(k)) continue;
+      applied.add(k);
+      if (w.op === 'update') await S.update(w.collection, w.doc_id, w.data);
+      else await S.set(w.collection, w.doc_id, w.data);
     }
   }
 
