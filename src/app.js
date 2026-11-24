@@ -268,11 +268,11 @@
     hr_done: ['Record', ''],
     reject_call_hr: ['Call', 'accent'],
     avail_asked_r2: ['Ask', 'accent'],
-    avail_received_r2: ['Match', 'accent'],
+    avail_received_r2: ['Note', ''],
     advisor_booked: ['Book', 'accent'],
     advisor_done: ['Record', ''],
     result_call_r2: ['Call', 'accent'],
-    avail_received_final: ['Match', 'accent'],
+    avail_received_final: ['Note', ''],
     deepdive_booked: ['Book', 'accent'],
     deepdive_done: ['Record', ''],
     final_call: ['Call', 'accent'],
@@ -441,7 +441,7 @@
       return ui.candFilter === 'all' ? true : ui.candFilter === 'closed' ? st !== 'open' : st === 'open';
     });
     if (!list.length) return h('p', { class: 'muted', style: 'padding:18px 0' }, 'No candidates here.');
-    const stageName = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Hired' };
+    const stageName = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Offer' };
     return h(
       'div',
       { class: 'cand-list' },
@@ -632,7 +632,7 @@
     return act(() => S.set('candidates', c.id, withSummary(next)), msg);
   }
 
-  const STAGE_NAME = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Hired' };
+  const STAGE_NAME = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Offer stage' };
 
   // Candidate drawer: who, the one next step, progress (done steps folded), brief, notes.
   function candidateDetail(c) {
