@@ -373,7 +373,194 @@
   }
 
   function todoRow(i) {
-    return h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.who), h('p', {}, i.text)), h('button', { onclick: todoAction(i) }, i.btn));
+    const cand = i.cand && S.state.candidates.find((x) => x.id === i.cand);
+    return [
+      h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.who), h('p', {}, i.text)), h('div', { class: 'row act-btns' }, cand && sample ? adviceButton(cand, true) : null, h('button', { onclick: todoAction(i) }, i.btn))),
+      cand ? advicePanel(cand) : null,
+    ];
+  }
+
+  // ------------------------------------------------------------------
+  // Ask Claude: send everything the app knows about a candidate's next step
+  // (record, requests, replies, the poll, rooms, load) and get back up to
+  // three options, best first. Natalie picks one; nothing happens on its own.
+  // Each option maps to an action the app already has, with checked inputs.
+  // ------------------------------------------------------------------
+  const advice = {};
+  function adviceButton(c, small) {
+    const a = advice[c.id];
+    return h('button', { class: `ask-claude${small ? ' small' : ''}`, disabled: a && a.busy, 'aria-expanded': a && a.open ? 'true' : 'false', onclick: () => (a && a.open && !a.busy ? ((a.open = false), rerender()) : askAdvice(c)) }, a && a.busy ? 'Claude is thinking…' : a && a.open ? 'Hide advice' : '✦ Ask Claude');
+  }
+  function adviceContext(c) {
+    const s = cstate(c);
+    const { round, list, state } = roundInvites(c);
+    const roundObj = roundByKey(campaign(), round) || { interviewers: 2, differentTeams: true, name: round };
+    const bookedKey = round === 'deepdive' ? 'deepdive_booked' : 'advisor_booked';
+    const sp = s.stage !== 'hr' ? slotPicks(c, s, round, roundObj) : null;
+    const load = interviewLoad();
+    const camp = S.state.campaigns.find((x) => x.id === c.campaignId) || campaign();
+    const goals = M.interviewGoals({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), people: S.state.people, today: TODAY });
+    const members = people().filter((p) => p.active !== false && inRound(c, round, p));
+    const toRelease = new Set(state.toRelease.map((r) => r.invite.id));
+    const overdue = new Set(state.overdue.map((i) => i.id));
+    const lines = [
+      `Today is ${TODAY} (${M.formatDay(TODAY)}).`,
+      briefRecord(c),
+      '',
+      `Round being planned: ${roundObj.name} (${round}). Needs ${roundObj.interviewers || 2} interviewers${roundObj.differentTeams ? ' from different teams' : ''}, ${draftLen(round)} minutes.`,
+      s.clock ? `Clock: started ${s.clock.start.slice(0, 10)}, deadline ${s.clock.deadline}, state ${s.clock.state}${s.clock.daysLeft != null ? `, ${s.clock.daysLeft} days left` : ''}.` : 'No clock running.',
+      s.done[bookedKey] ? `Already booked: ${JSON.stringify(s.done[bookedKey].data || {})}` : 'Not booked yet.',
+      `Candidate email: ${c.email ? 'known' : 'missing'}.`,
+      '',
+      'Requests for this round (id | person | status | slot | sent | replied | note):',
+      list.length ? list.map((i) => `- ${i.id} | ${i.personId} ${pname(i.personId)} | ${i.status}${toRelease.has(i.id) ? ' (extra, can be released)' : ''}${overdue.has(i.id) ? ' (no reply past the reply window)' : ''} | ${i.slotDate} ${i.time || ''} ${i.room || ''} | ${(i.sentAt || '').slice(0, 16)} | ${(i.respondedAt || '').slice(0, 16)} | ${i.declineReason || ''}`).join('\n') : '- none',
+      `Pair complete: ${state.complete ? `yes (${state.pair.map(pname).join(' + ')})` : `no, short by ${state.shortBy || 0}`}.`,
+      '',
+      'Suggested slots from the candidate’s times and the poll (date time | room | people to ask | free in poll):',
+      sp && sp.picks.length ? sp.picks.map((o) => `- ${o.date} ${o.time} | ${roomNames(camp).find((r) => !busyRooms(o.date, o.time, c.id).has(r)) || roomNames(camp)[0]} | ${o.ask.join(', ')} | ${o.free}`).join('\n') : '- none',
+      `Rooms: ${roomNames(camp).join(', ')}.`,
+      '',
+      'People in this round (id | name | team | interviews accepted so far | interviews still to reach their goal):',
+      members.map((p) => `- ${p.id} | ${p.name} | ${p.team} | ${load[p.id] || 0} | ${goals[p.id] ? Math.max(0, goals[p.id].goal - goals[p.id].done - goals[p.id].planned) : 0}`).join('\n'),
+    ];
+    return { text: lines.join('\n'), s, round, list, state, members, bookedKey, camp };
+  }
+  function advicePrompt(ctx) {
+    return [
+      'You help Natalie, HR at Flux Partners (a Dutch consultancy), plan trainee interviews. Read the situation below and recommend what she should do next for this candidate.',
+      'Rules: every interview needs the round’s number of interviewers from different teams; interviews should happen before the round’s deadline; spread load toward people furthest from their goal; release extra holds early; chase people who haven’t replied; keep the candidate informed.',
+      'Reply with only JSON: {"read": "one or two plain sentences on the situation", "options": [ ... 1 to 3 options, best first ... ]}.',
+      'Each option: {"label": "button text, verb first, max 6 words", "why": "one sentence", "action": {...}} where action is one of:',
+      '{"type":"ask_people","date":"YYYY-MM-DD","time":"HH:MM","room":"<room>","personIds":["<id>",...]}  (new hold requests; only ids from People in this round)',
+      '{"type":"book_pair"}  (only when the pair is complete)',
+      '{"type":"release","inviteIds":["<id>"]}  (free extra holds)',
+      '{"type":"chase","inviteIds":["<id>"]}  (remind people who haven’t replied)',
+      '{"type":"cancel_requests","inviteIds":["<id>"],"reason":"..."}  (withdraw pending requests, e.g. to move the slot)',
+      '{"type":"email_candidate","subject":"...","body":"..."}  (a short, warm email from Natalie, in English)',
+      '{"type":"record_step"}  (Natalie records the next step herself, e.g. a result or a call)',
+      'Use ids exactly as given. Do not invent people, dates or rooms.',
+      '',
+      ctx.text,
+    ].join('\n');
+  }
+  async function askAdvice(c) {
+    const a = (advice[c.id] = { busy: true, open: true, error: '', read: '', options: [] });
+    rerender();
+    try {
+      const ctx = adviceContext(c);
+      const res = await sample.json(advicePrompt(ctx), { modelTier: 'default' });
+      a.read = String((res && res.read) || '').slice(0, 400);
+      a.options = ((res && res.options) || []).map((o) => checkAdvice(o, ctx)).filter(Boolean).slice(0, 3);
+      if (!a.options.length) a.error = 'Claude didn’t come back with an option the app can do. Open the candidate to decide.';
+    } catch (e) {
+      a.error = e && e.code === 'rate_limited' ? 'Claude is busy. Try again in a minute.' : e && e.code === 'not_granted' ? 'Claude isn’t allowed on this page.' : 'Claude couldn’t give advice this time. Try again.';
+    } finally {
+      a.busy = false;
+      rerender();
+    }
+  }
+  // Keep only options the app can carry out with real ids, dates and rooms.
+  function checkAdvice(o, ctx) {
+    if (!o || !o.action || !o.label) return null;
+    const act = o.action;
+    const ids = new Set(ctx.list.map((i) => i.id));
+    const okIds = (xs) => Array.isArray(xs) && xs.length && xs.every((x) => ids.has(x));
+    const base = { label: String(o.label).slice(0, 60), why: String(o.why || '').slice(0, 300), type: act.type };
+    switch (act.type) {
+      case 'ask_people': {
+        const memberIds = new Set(ctx.members.map((p) => p.id));
+        const ps = (act.personIds || []).filter((x) => memberIds.has(x));
+        if (ctx.s.done[ctx.bookedKey] || !ps.length || !/^\d{4}-\d{2}-\d{2}$/.test(act.date || '') || act.date < TODAY) return null;
+        const room = roomNames(ctx.camp).includes(act.room) ? act.room : roomNames(ctx.camp)[0];
+        return { ...base, date: act.date, time: M.normTime(act.time) || '10:00', room, personIds: [...new Set(ps)] };
+      }
+      case 'book_pair':
+        return ctx.state.complete && !ctx.s.done[ctx.bookedKey] ? base : null;
+      case 'release':
+      case 'chase':
+      case 'cancel_requests':
+        return okIds(act.inviteIds) ? { ...base, inviteIds: act.inviteIds, reason: String(act.reason || '').slice(0, 200) } : null;
+      case 'email_candidate':
+        return act.body ? { ...base, subject: String(act.subject || 'Your interview at Flux Partners').slice(0, 120), body: String(act.body).slice(0, 2000) } : null;
+      case 'record_step':
+        return base;
+      default:
+        return null;
+    }
+  }
+  function runAdvice(c, o) {
+    const a = advice[c.id];
+    if (a) a.done = o.label;
+    const invs = (ids) => S.state.invites.filter((i) => (ids || []).includes(i.id));
+    switch (o.type) {
+      case 'ask_people':
+        return createRequests(c, roundInvites(c).round, { slotDate: o.date, time: o.time, room: o.room, picked: o.personIds });
+      case 'book_pair': {
+        const r = roundInvites(c);
+        ui.candId = c.id;
+        return prefillBooking(c, r.round === 'deepdive' ? 'deepdive_booked' : 'advisor_booked', r.list, r.state);
+      }
+      case 'release':
+        return (async () => {
+          for (const i of invs(o.inviteIds)) await releaseInvite(i, 'pair_filled');
+        })();
+      case 'chase': {
+        const list = invs(o.inviteIds);
+        const ids = list.map((i) => i.personId);
+        const i0 = list[0];
+        const subject = `Reminder: ${roundWhat(i0.round)} on ${M.formatDay(i0.slotDate)} ${i0.time || ''}`.trim();
+        const body = `Hi,\n\nA quick reminder about the hold for ${M.formatDay(i0.slotDate)}${i0.time ? ` at ${i0.time}` : ''} (${roundWhat(i0.round)} with ${first(c)}). Could you accept or decline the invite today? Then I can complete the pair.\n\nThanks,\nNatalie`;
+        ui.outlookDraft = { candId: c.id, title: `Chase ${ids.map((id) => (personById(id) || {}).name).join(', ')}`, hint: 'A short reminder, ready in Outlook.', subject, body, missing: noEmail(ids), link: M.outlookMailLink({ to: emailsOf(ids), subject, body }) };
+        return rerender();
+      }
+      case 'cancel_requests': {
+        const list = invs(o.inviteIds);
+        const ids = list.map((i) => i.personId);
+        const i0 = list[0];
+        const subject = `Cancelled: ${roundWhat(i0.round)} on ${M.formatDay(i0.slotDate)} ${i0.time || ''}`.trim();
+        const body = `Hi,\n\nPlease ignore my request for ${M.formatDay(i0.slotDate)}${i0.time ? ` at ${i0.time}` : ''}.${o.reason ? ` ${o.reason}` : ''} I've cancelled the hold.\n\nThanks,\nNatalie`;
+        ui.outlookDraft = { candId: c.id, title: 'Cancel the requests', hint: 'Cancel the hold meeting in Outlook (that tells everyone), then send this note if you want to explain.', subject, body, missing: noEmail(ids), link: M.outlookMailLink({ to: emailsOf(ids), subject, body }) };
+        return act(async () => {
+          for (const i of list) await S.update('invites', i.id, { status: 'cancelled', cancelledAt: nowIso(), cancelReason: o.reason || '' });
+        }, `${plural(list.length, 'request')} cancelled`);
+      }
+      case 'email_candidate':
+        ui.outlookDraft = { candId: c.id, title: `Email ${first(c)}`, hint: c.email ? 'Written by Claude. Check it, then press Send in Outlook.' : 'Written by Claude. There’s no email address for the candidate yet, so add it in Outlook.', subject: o.subject, body: o.body, missing: [], link: M.outlookMailLink({ to: c.email ? [c.email] : [], subject: o.subject, body: o.body }) };
+        return rerender();
+      case 'record_step':
+      default:
+        return openCandidate(c.id);
+    }
+  }
+  function advicePanel(c) {
+    const a = advice[c.id];
+    if (!a || !a.open) return null;
+    return h(
+      'div',
+      { class: 'advice', 'aria-live': 'polite' },
+      a.busy
+        ? h('p', { class: 'small muted' }, `Claude is reading ${first(c)}’s record, the requests, the poll and everyone’s load…`)
+        : [
+            a.read ? h('p', { class: 'advice-read' }, a.read) : null,
+            a.error ? h('p', { class: 'err-line' }, a.error) : null,
+            a.options.length
+              ? h(
+                  'div',
+                  { class: 'advice-opts' },
+                  a.options.map((o, k) =>
+                    h(
+                      'div',
+                      { class: `advice-opt${k === 0 ? ' best' : ''}` },
+                      h('div', {}, k === 0 ? h('span', { class: 'kicker' }, 'Claude recommends') : null, h('b', {}, o.label), o.why ? h('p', { class: 'small muted' }, o.why) : null),
+                      h('button', { class: k === 0 ? 'p' : '', disabled: a.done === o.label, onclick: () => runAdvice(c, o) }, a.done === o.label ? 'Done' : 'Do this'),
+                    ),
+                  ),
+                )
+              : null,
+            outlookPanel(c),
+            h('p', { class: 'small faint' }, 'Nothing is sent until you press Send in Outlook. Claude can be wrong; check names and dates.'),
+          ],
+    );
   }
 
   // The one next step, large, at the top of Natalie's home.
@@ -389,8 +576,10 @@
         'div',
         { class: 'row' },
         h('button', { class: 'p', onclick: todoAction(i) }, i.btn),
+        cand && sample ? adviceButton(cand) : null,
         cand && i.btn !== 'Open' ? h('button', { class: 'link', onclick: () => openCandidate(cand.id) }, `Open ${cand.name.split(' ')[0]}`) : null,
       ),
+      cand ? advicePanel(cand) : null,
     );
   }
 
@@ -1396,7 +1585,7 @@
   // Suggested slots for a candidate whose availability is in and who has no requests out yet:
   // the candidate's times (or the days before the deadline), checked against the poll, with the
   // people furthest from their interview goal asked first.
-  function slotSuggestions(c, s, round, roundObj) {
+  function slotPicks(c, s, round, roundObj) {
     const recv = s.done[round === 'deepdive' ? 'avail_received_final' : 'avail_received_r2'];
     if (!recv) return null;
     const camp = S.state.campaigns.find((x) => x.id === c.campaignId) || campaign();
@@ -1440,6 +1629,12 @@
       preferFridays: settings.preferFridays,
       max: 3,
     });
+    return { picks, slots, until, camp };
+  }
+  function slotSuggestions(c, s, round, roundObj) {
+    const sp = slotPicks(c, s, round, roundObj);
+    if (!sp) return null;
+    const { picks, slots, until, camp } = sp;
     return h(
       'div',
       { class: 'suggest' },
@@ -1944,7 +2139,7 @@
         const sent = M.addDays(slot, -4) < hr ? hr : M.addDays(slot, -4);
         const t = times[Math.floor(rnd() * times.length)];
         const room = rooms[Math.floor(rnd() * 2)];
-        const reply = (h) => `${sent}T${String(9 + h).padStart(2, '0')}:${String(Math.floor(rnd() * 50) + 10)}:00.000Z`;
+        const reply = (h) => new Date(Date.parse(`${sent}T08:30:00.000Z`) + (h * 60 + Math.floor(rnd() * 50)) * 60000).toISOString();
         for (const p of [a, b]) invites.push({ round, personId: p.id, slotDate: slot, time: t, room, status: 'accepted', sentAt: `${sent}T08:30:00.000Z`, respondedAt: reply(Math.floor(rnd() * 8)), via: rnd() < 0.7 ? 'outlook' : 'app' });
         for (const p of others(pool, [a, b], 1)) invites.push({ round, personId: p.id, slotDate: slot, time: t, room, status: rnd() < 0.5 ? 'declined' : 'released', sentAt: `${sent}T08:30:00.000Z`, respondedAt: reply(Math.floor(rnd() * 30)), via: 'outlook', declineReason: DECLINES[Math.floor(rnd() * DECLINES.length)], releaseReason: 'Pair complete', releasedAt: `${sent}T15:00:00.000Z` });
         if (!opts || !opts.unbooked) tl.push(ev(`${round}_booked`, sent, null, { slotDate: slot, time: t, room, interviewers: [a.id, b.id] }));
