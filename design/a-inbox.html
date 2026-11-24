@@ -1,0 +1,150 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Direction A: Action inbox</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root { --ui: "Instrument Sans", system-ui, sans-serif; --data: "JetBrains Mono", monospace;
+  --bg: #f6f7fa; --surface: #fff; --s2: #eef1f6; --line: #dde2eb; --fg: #172033; --muted: #5b6579; --faint: #8a93a6;
+  --accent: #2b55c9; --acc-soft: #e3eafb; --av: #2e9a5e; --av-soft: #d6efe0; --no: #c9ced8; --warn: #b26a00; --warn-soft: #fdf0d8; --bad: #c0392b; --bad-soft: #fbe3e0; --good: #1f7a47; --good-soft: #dcf2e4; }
+</style>
+<link rel="stylesheet" href="base.css">
+<style>
+.app { display: grid; grid-template-columns: 208px 1fr; min-height: 620px; flex: 1; }
+.side { background: #172033; color: #c9d1e3; padding: 18px 12px; display: flex; flex-direction: column; gap: 4px; }
+.side .brand { color: #fff; font-weight: 700; font-size: 15px; padding: 0 10px 14px; display: flex; gap: 8px; align-items: center; }
+.side .brand i { width: 18px; height: 18px; border-radius: 4px; background: linear-gradient(180deg, var(--av) 50%, #6f8ff0 50%); }
+.side .camp { margin: 0 4px 14px; background: #222c42; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; }
+.side .camp b { display: block; color: #fff; font-size: 13.5px; }
+.side a { padding: 8px 10px; border-radius: 6px; font-weight: 550; font-size: 13.5px; display: flex; justify-content: space-between; }
+.side a.on { background: #2b3651; color: #fff; }
+.side a span { font-family: var(--data); font-size: 11.5px; color: #8e9ab5; }
+.main { padding: 22px 28px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+h1 { font-size: 21px; margin: 0; }
+.sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+.funnel { display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.funnel div { padding: 10px 14px; border-left: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.funnel div:first-child { border: 0; }
+.funnel b { display: block; font: 600 22px var(--data); color: var(--fg); }
+.funnel em { font-style: normal; color: var(--faint); font-family: var(--data); }
+.cols { display: grid; grid-template-columns: 1fr 330px; gap: 16px; min-height: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.ph { padding: 10px 16px; border-bottom: 1px solid var(--line); font-weight: 650; font-size: 13.5px; display: flex; justify-content: space-between; }
+.ph span { color: var(--faint); font-weight: 500; }
+.act { display: grid; grid-template-columns: 76px 1fr auto; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); align-items: center; }
+.grp { padding: 8px 16px; background: var(--s2); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
+.kind { font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; text-align: center; }
+.k-bad { background: var(--bad-soft); color: var(--bad); } .k-accent { background: var(--acc-soft); color: var(--accent); } .k-warn { background: var(--warn-soft); color: var(--warn); } .k-normal { background: var(--s2); color: var(--muted); }
+.act b { display: block; font-size: 13.5px; } .act p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.btn { border: 1px solid #b9c1d0; background: #fff; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 13px; }
+.btn.p { background: var(--accent); color: #fff; border-color: var(--accent); }
+.hold { padding: 10px 16px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 2px; font-size: 13px; }
+.hold:first-of-type { border: 0; }
+.hold small { color: var(--muted); grid-column: 1; }
+.pill { font-size: 11.5px; font-weight: 650; padding: 1px 8px; border-radius: 99px; align-self: start; }
+.p-good { background: var(--good-soft); color: var(--good); } .p-warn { background: var(--warn-soft); color: var(--warn); } .p-faint { background: var(--s2); color: var(--muted); }
+/* grid */
+table.g { border-collapse: separate; border-spacing: 2px 3px; font-size: 13px; }
+table.g th { font-size: 11px; color: var(--muted); font-weight: 600; text-align: center; }
+table.g th.fri { color: var(--accent); }
+table.g td.n { padding-right: 10px; white-space: nowrap; font-weight: 550; }
+.t { font: 600 10.5px var(--data); background: var(--s2); color: var(--muted); padding: 0 4px; border-radius: 3px; margin-left: 4px; }
+.c { width: 24px; height: 26px; border-radius: 4px; display: grid; grid-template-rows: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); overflow: hidden; position: relative; }
+.c i { background: #fff; } .c.all i, .c.am i:first-child, .c.pm i:last-child { background: var(--av); } .c.am i:last-child, .c.pm i:first-child { background: var(--av-soft); }
+.c.no { background: var(--no); border-color: var(--no); } .c.no i { background: repeating-linear-gradient(135deg, var(--no) 0 3px, #eef0f4 3px 6px); }
+.c.null { background: none; border: 1px dashed #b9c1d0; } .c.null i { background: none; }
+.c .mk { position: absolute; top: -1px; right: -1px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; }
+.c .mk.w { background: var(--warn); }
+td.rm { color: var(--muted); font-size: 12px; padding-left: 10px; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cov td { font: 600 11px var(--data); text-align: center; color: var(--faint); }
+.cov b { display: block; border-radius: 3px; } .cov b.ok { background: var(--good-soft); color: var(--good); }
+.sugg { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.sugg q { color: var(--muted); font-style: italic; border-left: 3px solid var(--line); padding-left: 8px; quotes: none; }
+.rule { border: 1px dashed var(--accent); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.rule.ok { border: 1px solid var(--good); background: var(--good-soft); }
+.chips { display: flex; gap: 4px; flex-wrap: wrap; } .chips span { font: 11px var(--data); border: 1px solid #b9c1d0; border-radius: 4px; padding: 1px 5px; } .chips span.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+/* timeline */
+.tl { display: grid; grid-template-columns: 30px 1fr; gap: 0 12px; position: relative; padding-bottom: 12px; font-size: 13.5px; }
+.tl::before { content: ""; position: absolute; left: 14px; top: 26px; bottom: 0; width: 2px; background: var(--line); }
+.tl:last-child::before { display: none; }
+.dot { width: 30px; height: 24px; border-radius: 12px; background: var(--s2); color: var(--faint); font: 600 11px var(--data); display: grid; place-items: center; }
+.tl.done .dot { background: var(--good-soft); color: var(--good); } .tl.next .dot { background: var(--accent); color: #fff; }
+.tl .h { display: flex; gap: 10px; align-items: baseline; } .tl .h b { font-weight: 600; } .tl.todo b { color: var(--faint); font-weight: 500; }
+.tl small { color: var(--muted); }
+.form { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; margin-top: 6px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 12.5px; color: var(--muted); }
+.form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.inp { border: 1px solid #b9c1d0; border-radius: 6px; padding: 6px 8px; color: var(--fg); font-weight: 400; font-size: 13.5px; background: #fff; }
+.clock { display: flex; gap: 3px; } .clock i { width: 14px; height: 6px; border-radius: 2px; background: var(--s2); } .clock i.f { background: var(--warn); }
+</style></head>
+<body>
+<div class="board-title">Direction A · Action inbox<small>A calm, mail-like tool. The home screen is a to-do list of ready-made actions ranked by deadline, so Natalie works top to bottom. Detail lives one click away. Closest to how she already works in Outlook.</small></div>
+
+<div class="art-label">A1 · Run view</div>
+<div class="art"><div class="app">
+  <nav class="side"><div class="brand"><i></i>Flux interviews</div>
+    <div class="camp">Campaign<b>Trainee hiring</b>8 to 10 hires · since 2 Nov</div>
+    <a class="on">Run view <span>6</span></a><a>Candidates <span>7</span></a><a>Holds <span>4</span></a><a>Availability</a><a>Roster <span>25</span></a><a>Metrics</a></nav>
+  <main class="main">
+    <div><h1>Good morning, Natalie</h1><div class="sub">Monday 23 November · 6 things to do, 1 overdue</div></div>
+    <div class="funnel"><div>Candidates<b>7</b></div><div>Passed HR<b>6</b></div><div>Advisor round<b>4</b></div><div>Deep dive<b>1</b></div><div>Hired<b>1 <em>/ 10</em></b></div></div>
+    <div class="cols">
+      <div class="panel" id="acts"><div class="ph">To do <span>sorted by deadline</span></div></div>
+      <div class="panel"><div class="ph">Holds, next 2 weeks <span>4</span></div>
+        <div class="hold"><b>Fri 27 Nov 10:00 · room 1</b><span class="pill p-good">Pair complete</span><small>Koen B (TM), Max T (PM) · Sanne</small></div>
+        <div class="hold"><b>Fri 27 Nov 14:00 · room 2</b><span class="pill p-warn">1 of 2</span><small>Michael (PM) accepted · Ewout, Nieck pending</small></div>
+        <div class="hold"><b>Thu 3 Dec 13:00 · room 1</b><span class="pill p-faint">Waiting</span><small>3 invited, no replies yet · day 1 of 2</small></div>
+        <div class="hold"><b>Fri 4 Dec 14:00 · room 2</b><span class="pill p-faint">To send</span><small>Proposed: Bastiaan, Max T, Marco</small></div>
+      </div>
+    </div>
+  </main></div></div>
+
+<div class="art-label">A2 · Availability import, remarks reviewed by Claude</div>
+<div class="art"><div class="app">
+  <nav class="side"><div class="brand"><i></i>Flux interviews</div><div class="camp">Campaign<b>Trainee hiring</b>8 to 10 hires · since 2 Nov</div>
+    <a>Run view <span>6</span></a><a>Candidates <span>7</span></a><a>Holds <span>4</span></a><a class="on">Availability</a><a>Roster <span>25</span></a><a>Metrics</a></nav>
+  <main class="main">
+    <div style="display:flex;justify-content:space-between;align-items:end"><div><h1>Poll of 6 Nov · advisors</h1><div class="sub">18 people · 15 answered · 23 Nov to 4 Dec shown · 2 problems, 4 remark suggestions to check</div></div><div style="display:flex;gap:8px"><button class="btn">Team leads</button><button class="btn p">Save snapshot</button></div></div>
+    <div class="cols" style="grid-template-columns: 1fr 340px">
+      <div class="panel" style="padding:12px 14px;overflow:hidden"><table class="g" id="grid"></table></div>
+      <div class="panel"><div class="ph">Remarks <span>Claude read 4</span></div>
+        <div class="sugg"><b>Bastiaan <span class="t">TM</span></b><q>op vrijdag 4-12 alleen van 14-15.30 uur</q>
+          <div class="rule"><span>Fri 4 Dec only <b>14:00 to 15:30</b></span><div class="chips"><span>27 Nov</span><span>3 Dec</span><span class="on">4 Dec</span></div><div style="display:flex;gap:6px"><button class="btn p">Confirm</button><button class="btn">Edit</button><button class="btn">Dismiss</button></div></div></div>
+        <div class="sugg"><b>Pieter <span class="t">TM</span></b><q>Op woensdagen tot uiterlijk 12 uur</q>
+          <div class="rule ok"><span>✓ Wednesdays until <b>12:00</b></span><div class="chips"><span class="on">25 Nov</span><span class="on">2 Dec</span></div></div></div>
+        <div class="sugg"><b>Jesse <span class="t">TM</span></b><q>…beschikbaarheid vanaf 24/11 is daarmee onder voorbehoud… graag einde middag</q>
+          <div class="rule"><span>From 24 Nov: <b>tentative</b>, check first</span></div><div class="rule"><span>Prefers <b>from 15:00</b></span></div></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:18px;font-size:12.5px;color:var(--muted);align-items:center"><span style="display:flex;gap:6px;align-items:center"><span class="c all" style="width:16px;height:18px"><i></i><i></i></span>All day</span><span style="display:flex;gap:6px;align-items:center"><span class="c am" style="width:16px;height:18px"><i></i><i></i></span>Morning</span><span style="display:flex;gap:6px;align-items:center"><span class="c pm" style="width:16px;height:18px"><i></i><i></i></span>Afternoon</span><span style="display:flex;gap:6px;align-items:center"><span class="c no" style="width:16px;height:18px"><i></i><i></i></span>Not available</span><span style="display:flex;gap:6px;align-items:center"><span class="c null" style="width:16px;height:18px"><i></i><i></i></span>No answer</span><span>● narrowed by a remark</span><span style="color:var(--good)">Green count = a different-team pair is possible</span></div>
+  </main></div></div>
+
+<div class="art-label">A3 · Candidate timeline</div>
+<div class="art"><div class="app">
+  <nav class="side"><div class="brand"><i></i>Flux interviews</div><div class="camp">Campaign<b>Trainee hiring</b>8 to 10 hires · since 2 Nov</div>
+    <a>Run view <span>6</span></a><a class="on">Candidates <span>7</span></a><a>Holds <span>4</span></a><a>Availability</a><a>Roster <span>25</span></a><a>Metrics</a></nav>
+  <main class="main" style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-content:start">
+    <div class="panel" id="clist"><div class="ph">Candidates <button class="btn p" style="padding:3px 10px">+ Add</button></div></div>
+    <div class="panel" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;justify-content:space-between"><div><h1>Sanne de Vries</h1><div class="sub">sanne@example.nl · 06 1234 5678 · HR interview Thu 19 Nov</div></div>
+        <div style="text-align:right;font-size:12.5px;color:var(--warn);font-weight:600">Advisor round · day 5 of 7<div class="clock" style="justify-content:end;margin-top:4px"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></div></div></div>
+      <div id="tl"></div>
+    </div>
+  </main></div></div>
+
+<script src="data.js"></script>
+<script>
+const acts = document.getElementById('acts');
+const groups = [['Overdue', [0]], ['Today', [1, 2, 3]], ['This week', [4, 5]]];
+for (const [g, idx] of groups) { acts.insertAdjacentHTML('beforeend', `<div class="grp">${g}</div>`); for (const i of idx) { const a = ACTIONS[i]; acts.insertAdjacentHTML('beforeend', `<div class="act"><span class="kind k-${a.tone}">${a.kind}</span><div><b>${a.who}</b><p>${a.text}</p></div><button class="btn ${a.tone==='accent'?'p':''}">${a.btn}</button></div>`); } }
+const A = AV.advisor; const grid = document.getElementById('grid');
+let h = '<tr><th></th>' + A.days.map(d => `<th class="${d.startsWith('vr')?'fri':''}">${d.split(' ')[0]}<br>${d.split(' ')[1].split('-')[0]}</th>`).join('') + '<th style="text-align:left;padding-left:10px">Remark</th></tr>';
+const marks = { 'Bastiaan': { 9: 'mk' }, 'Pieter': { 2: 'mk', 7: 'mk' }, 'Jesse ': { 1: 'w', 2: 'w', 3: 'w', 4: 'w', 6: 'w', 8: 'w', 9: 'w' } };
+for (const p of A.people.slice(0, 16)) { h += `<tr><td class="n">${p.n}<span class="t">${p.t}</span></td>` + p.c.map((v, i) => { const m = (marks[p.n] || {})[i]; return `<td><div class="c ${v || 'null'}"><i></i><i></i>${m ? `<span class="mk ${m === 'w' ? 'w' : ''}"></span>` : ''}</div></td>`; }).join('') + `<td class="rm">${p.r}</td></tr>`; }
+const cov = A.days.map((d, i) => { const am = A.people.filter(p => p.c[i] === 'all' || p.c[i] === 'am'); const pm = A.people.filter(p => p.c[i] === 'all' || p.c[i] === 'pm'); const t = l => new Set(l.map(p => p.t)).size >= 2; return `<td><b class="${t(am)?'ok':''}">${am.length}</b><b class="${t(pm)?'ok':''}">${pm.length}</b></td>`; });
+h += `<tr class="cov"><td class="n" style="font:500 11.5px var(--ui);color:var(--muted)">Free am / pm</td>${cov.join('')}<td></td></tr>`;
+grid.innerHTML = h;
+const cl = document.getElementById('clist');
+for (const c of CANDS) { const tone = { overdue: 'k-bad', urgent: 'k-warn', today: 'k-accent' }[c.urgency] || 'k-normal'; cl.insertAdjacentHTML('beforeend', `<div class="act" style="grid-template-columns:1fr auto;${c.n==='Sanne de Vries'?'background:var(--acc-soft)':''}"><div><b>${c.n}</b><p>${c.next || 'Hired'}</p></div>${c.day ? `<span class="kind ${tone}" style="padding:2px 6px">day ${c.day}/7</span>` : ''}</div>`); }
+const tl = document.getElementById('tl');
+for (const s of TIMELINE.slice(0, 7)) { tl.insertAdjacentHTML('beforeend', `<div class="tl ${s.s}"><span class="dot">${s.s==='done'?'✓':s.n}</span><div><div class="h"><b>${s.label}</b><small>${s.when}</small></div>${s.s==='next' ? `<div class="form"><label>Interview date<span class="inp">Fri 27 Nov 2026</span></label><label>Time and room<span class="inp">10:00 · Room 1</span></label><label>Note<span class="inp">Invite sent from Outlook</span></label><label>Advisor 1<span class="inp">Koen B · TM · free all day</span></label><label>Advisor 2<span class="inp">Max T · PM · free morning</span></label><label style="justify-content:end;flex-direction:row;gap:8px;align-items:end"><button class="btn">Cancel</button><button class="btn p">Save step</button></label></div>` : s.s==='done' ? `<small>${s.note}</small>` : ''}</div></div>`); }
+tl.insertAdjacentHTML('beforeend', `<div class="tl todo"><span class="dot">…</span><div><small>4 more steps to the final call</small></div></div>`);
+</script>
+</body></html>

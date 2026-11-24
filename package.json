@@ -1,0 +1,10 @@
+{
+  "name": "flux-scheduling-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interview scheduling assistant for Flux Partners, published as a claude.ai artifact page.",
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node --test test/*.test.js"
+  }
+}

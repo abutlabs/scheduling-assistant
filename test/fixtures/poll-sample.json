@@ -1,0 +1,29 @@
+{
+  "fileName": "Beschikbaarheid_traineegesprekken_Voorbeeld_2026-11-06.xlsx",
+  "note": "Synthetic poll in the same layout as the real one (no real names or answers).",
+  "sheets": [
+    {
+      "name": "Beschikbaarheid competentiegesprekken",
+      "rows": [
+        ["Naam", "Team", "ma 30-11", "di 1-12", "wo 2-12", "do 3-12", "vr 4-12", "Opmerking"],
+        ["Voorbeeld (niet wijzigen)", null, "Hele dag", "Ochtend", "Niet", "Middag", "Hele dag", "Woensdagmiddag vaste klantafspraak"],
+        ["Anna", "TM", "Niet", "Ochtend", "Niet", "Middag", "Middag", "op vrijdag 4-12 alleen van 14-15.30 uur"],
+        ["Bram ", "PM", "Hele dag", null, "Niet", "middag", "Hele dag", null],
+        ["Cees", "CP", null, null, null, null, null, null],
+        ["Dirk", "OM", "Niet", "Niet", "Niet", "Niet", "Niet", null],
+        ["Eva B", "TM", "Ochtend", "Misschien", "Hele dag", "Niet", "Ochtend", "Op woensdagen tot uiterlijk 12 uur"],
+        ["Aantal beschikbaar", null, 2, 1, 1, 2, 3, null],
+        ["waarvan hele dag", null, 1, 0, 1, 0, 1, null]
+      ]
+    },
+    {
+      "name": "Beschikbaarheid Deepdive",
+      "rows": [
+        ["Naam", "Team", "ma 30-11", "di 1-12", "wo 2-12", "do 3-12", "vr 4-12", "Opmerking"],
+        ["Voorbeeld (niet wijzigen)", null, "Hele dag", "Ochtend", "Niet", "Middag", "Hele dag", null],
+        ["Frank", "TM", "Niet", "Hele dag", "Niet", "Niet", "Middag", null],
+        ["Gerda", "P&C", "Niet", "Niet", "Middag", "Niet", "Hele dag", null]
+      ]
+    }
+  ]
+}

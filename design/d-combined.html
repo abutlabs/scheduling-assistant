@@ -1,0 +1,139 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Direction D: To-do plus sheet</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap">
+<style>
+:root { --ui: "Inter Tight", system-ui, sans-serif; --data: "Roboto Mono", monospace;
+  --bg: #ffffff; --s1: #f7f8f9; --s2: #eceff2; --line: #e1e4e8; --grid: #d4d8de; --fg: #1b1f24; --muted: #59626e; --faint: #8b939e;
+  --accent: #0b6e99; --acc-soft: #dff0f7; --av: #1e8e4e; --av-soft: #c8ebd5; --am: #c8ebd5; --no: #f1f2f4; --warn: #a65c00; --warn-soft: #fff1d6; --bad: #b42318; --bad-soft: #fde4e1; }
+</style>
+<link rel="stylesheet" href="base.css">
+<style>
+.bar { display: flex; align-items: center; gap: 0; border-bottom: 1px solid var(--line); background: var(--s1); padding: 0 16px; }
+.bar .brand { font-weight: 700; padding: 12px 16px 12px 0; border-right: 1px solid var(--line); margin-right: 8px; }
+.bar a { padding: 12px 12px; font-size: 13.5px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; }
+.bar a.on { color: var(--accent); border-bottom-color: var(--accent); background: var(--bg); }
+.bar .r { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+.tool { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.tool .s { border: 1px solid var(--grid); border-radius: 4px; padding: 4px 10px; } .tool .p { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+.tool .f { color: var(--muted); }
+table.x { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+table.x th, table.x td { border: 1px solid var(--grid); padding: 5px 8px; white-space: nowrap; }
+table.x th { background: var(--s1); font-weight: 600; color: var(--muted); text-align: left; font-size: 11.5px; }
+table.x th.rn, table.x td.rn { width: 28px; text-align: center; color: var(--faint); background: var(--s1); font-family: var(--data); font-size: 11px; }
+.d { font-family: var(--data); font-size: 11.5px; text-align: center; }
+.d.done { background: var(--av-soft); color: #145c33; }
+.d.next { background: var(--warn-soft); color: var(--warn); font-weight: 600; outline: 2px solid var(--warn); outline-offset: -2px; }
+.d.rej { background: var(--bad-soft); color: var(--bad); }
+.d.na { color: #c0c5cc; }
+td.act { font-weight: 600; color: var(--accent); }
+.clk { font-family: var(--data); font-weight: 600; } .clk.bad { color: var(--bad); } .clk.warn { color: var(--warn); }
+.below { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--line); flex: 1; }
+.below > div { padding: 14px 16px; border-right: 1px solid var(--line); font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+.below h3 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); }
+.li { display: flex; gap: 10px; align-items: baseline; } .li b { width: 64px; font-size: 11.5px; } .li.bad b { color: var(--bad); } .li.acc b { color: var(--accent); } .li.warn b { color: var(--warn); }
+/* poll sheet */
+td.v { font-size: 11.5px; text-align: center; min-width: 62px; }
+td.v.all { background: var(--av); color: #fff; font-weight: 600; } td.v.am, td.v.pm { background: var(--av-soft); color: #145c33; } td.v.no { background: var(--no); color: var(--faint); } td.v.null { background: repeating-linear-gradient(135deg, #fff 0 4px, #f3f4f6 4px 8px); }
+td.v.nar { box-shadow: inset 0 0 0 2px var(--accent); position: relative; }
+td.v.ten { box-shadow: inset 0 0 0 2px var(--warn); }
+td.rem { white-space: normal; min-width: 280px; max-width: 360px; color: var(--muted); font-size: 12px; }
+.ai { display: inline-flex; gap: 6px; align-items: center; margin-top: 4px; background: var(--acc-soft); color: var(--accent); border-radius: 4px; padding: 2px 6px; font-weight: 600; font-size: 11.5px; }
+.ai button { border: 0; background: var(--accent); color: #fff; border-radius: 3px; padding: 0 6px; font-size: 11px; } .ai button.l { background: none; color: var(--accent); }
+.ai.ok { background: var(--av-soft); color: #145c33; }
+tr.sum td { background: var(--s1); font-family: var(--data); font-size: 11.5px; text-align: center; font-weight: 600; }
+tr.sum td.ok { color: var(--av); }
+.tabs { display: flex; gap: 0; border-top: 1px solid var(--line); background: var(--s1); padding-left: 44px; font-size: 12.5px; }
+.tabs span { padding: 6px 14px; border-right: 1px solid var(--line); color: var(--muted); } .tabs span.on { background: #fff; color: var(--fg); font-weight: 600; }
+.issues { background: var(--warn-soft); padding: 8px 16px; font-size: 12.5px; display: flex; gap: 16px; flex-wrap: wrap; }
+.issues b { color: var(--warn); }
+/* drawer */
+.drawer { position: absolute; right: 0; top: 0; bottom: 0; width: 430px; background: #fff; border-left: 1px solid var(--grid); box-shadow: -10px 0 30px rgba(0,0,0,.08); padding: 18px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.drawer h2 { margin: 0; font-size: 19px; }
+.drawer .steps { display: flex; flex-direction: column; border: 1px solid var(--grid); border-radius: 6px; }
+.drawer .steps div { display: grid; grid-template-columns: 24px 1fr 76px; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--line); align-items: baseline; }
+.drawer .steps div:first-child { border: 0; }
+.drawer .steps i { font-style: normal; font-family: var(--data); font-size: 11px; color: var(--faint); }
+.drawer .steps span { font-family: var(--data); font-size: 11.5px; color: var(--muted); text-align: right; }
+.drawer .steps .done { color: var(--fg); } .drawer .steps .done i { color: var(--av); }
+.drawer .steps .next { background: var(--warn-soft); font-weight: 600; }
+.drawer .steps .todo { color: var(--faint); }
+.fld { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .fld label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; font-weight: 600; color: var(--muted); } .fld .i { border: 1px solid var(--grid); border-radius: 4px; padding: 5px 8px; font-size: 13px; color: var(--fg); font-weight: 400; }
+
+.top2 { display: grid; grid-template-columns: 1fr 340px; gap: 14px; padding: 14px 16px; background: var(--s1); border-bottom: 1px solid var(--line); }
+.tpanel { background: #fff; border: 1px solid var(--grid); border-radius: 6px; overflow: hidden; }
+.ph { padding: 8px 14px; border-bottom: 1px solid var(--line); font-weight: 650; font-size: 13.5px; display: flex; justify-content: space-between; } .ph span { color: var(--faint); font-weight: 500; }
+.grp { padding: 5px 14px; background: var(--s2); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
+.act { display: grid; grid-template-columns: 70px 1fr auto; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--line); align-items: center; font-size: 13px; }
+.act b { display: block; } .act p { margin: 1px 0 0; color: var(--muted); }
+.kind { font-size: 11px; font-weight: 700; padding: 3px 0; border-radius: 4px; text-align: center; }
+.k-bad { background: var(--bad-soft); color: var(--bad); } .k-accent { background: var(--acc-soft); color: var(--accent); } .k-warn { background: var(--warn-soft); color: var(--warn); } .k-normal { background: var(--s2); color: var(--muted); }
+.btn { border: 1px solid var(--grid); background: #fff; border-radius: 4px; padding: 5px 10px; font-weight: 600; font-size: 12.5px; } .btn.p { background: var(--accent); color: #fff; border-color: var(--accent); }
+.hold { padding: 8px 14px; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 2px; font-size: 12.5px; } .hold small { color: var(--muted); }
+.pill { font-size: 11px; font-weight: 650; padding: 1px 8px; border-radius: 99px; align-self: start; }
+.p-good { background: var(--av-soft); color: #145c33; } .p-warn { background: var(--warn-soft); color: var(--warn); } .p-faint { background: var(--s2); color: var(--muted); }
+</style></head>
+<body>
+<div class="board-title">Combined · To-do on top of the sheet<small>A's suggested actions, grouped into overdue, today and this week, sit above C's step matrix. Clicking an action or a cell opens the same side drawer. The poll import keeps C's sheet look, and its fix list uses the same to-do style.</small></div>
+
+<div class="art-label">1 · Run view: to-do list, then the step matrix</div>
+<div class="art">
+  <div class="bar"><span class="brand">Flux interviews</span><a class="on">Run view</a><a>Holds</a><a>Availability</a><a>Roster</a><a>Metrics</a><span class="r">Trainee hiring · 1 of 10 hired · Mon 23 Nov</span></div>
+  <div class="top2">
+    <div class="tpanel" id="acts"><div class="ph">To do <span>6 · sorted by deadline</span></div></div>
+    <div class="tpanel"><div class="ph">Holds, next 2 weeks <span>4</span></div>
+      <div class="hold"><b>Fri 27 Nov 10:00 · room 1</b><span class="pill p-good">Pair complete</span><small>Koen B (TM), Max T (PM) · Sanne</small></div>
+      <div class="hold"><b>Fri 27 Nov 14:00 · room 2</b><span class="pill p-warn">1 of 2</span><small>Michael (PM) accepted · Ewout, Nieck pending</small></div>
+      <div class="hold"><b>Thu 3 Dec 13:00 · room 1</b><span class="pill p-faint">Waiting</span><small>3 invited, no replies yet · day 1 of 2</small></div>
+      <div class="hold"><b>Fri 4 Dec 14:00 · room 2</b><span class="pill p-faint">To send</span><small>Proposed: Bastiaan, Max T, Marco</small></div>
+    </div>
+  </div>
+  <div class="tool"><b style="margin-right:6px">Candidates</b><span class="s p">+ Candidate</span><span class="s">Open (6)</span><span class="s">Closed (3)</span><span class="f">Orange cell = next step. Clock = days since availability was asked (target 7).</span></div>
+  <div style="overflow:hidden"><table class="x" id="mx"></table></div>
+</div>
+
+<div class="art-label">2 · Poll import, shown like the sheet</div>
+<div class="art">
+  <div class="bar"><span class="brand">Flux interviews</span><a>Run view</a><a>Holds</a><a class="on">Availability</a><a>Roster</a><a>Metrics</a><span class="r">Trainee hiring · 1 of 10 hired · Mon 23 Nov</span></div>
+  <div class="tool"><span class="s">Beschikbaarheid_traineegesprekken_Flux_2026-11-06.xlsx</span><span class="f">Poll date 6 Nov · 23 Nov to 4 Dec shown</span><span style="margin-left:auto" class="s">Discard</span><span class="s p">Save snapshot</span></div>
+  <div class="issues"><b>2 to fix:</b><span>"Koen B" isn't on the advisor roster; closest is Koen (team lead, PM) <u>match</u> <u>add as new</u></span><span>"Joost" is CP on the sheet, OM on the roster <u>update roster</u></span><b style="color:var(--muted)">FYI:</b><span>Ole left everything blank · Ties answered Niet everywhere · "middag" read as Middag</span></div>
+  <div style="overflow:hidden"><table class="x" id="poll"></table></div>
+  <div class="tabs"><span class="on">Beschikbaarheid competentiegesprekken</span><span>Beschikbaarheid Deepdive</span></div>
+</div>
+
+<div class="art-label">3 · Candidate detail as a side drawer</div>
+<div class="art" style="min-height:700px">
+  <div class="bar"><span class="brand">Flux interviews</span><a class="on">Run view</a><a>Holds</a><a>Availability</a><a>Roster</a><a>Metrics</a><span class="r">Trainee hiring · 1 of 10 hired · Mon 23 Nov</span></div>
+  <div class="tool"><span class="s p">+ Candidate</span><span class="s">Open (6)</span><span class="s">Closed (3)</span></div>
+  <div style="overflow:hidden;opacity:.45"><table class="x" id="mx2"></table></div>
+  <div class="drawer">
+    <div style="display:flex;justify-content:space-between"><div><h2>Sanne de Vries</h2><div style="color:var(--muted)">sanne@example.nl · 06 1234 5678</div></div><span class="clk warn">day 5/7</span></div>
+    <div class="steps" id="dsteps"></div>
+    <b>Record step 4 · Advisor interview booked</b>
+    <div class="fld"><label>Date<span class="i">27-11-2026</span></label><label>Time · room<span class="i">10:00 · Room 1</span></label><label>Advisor 1<span class="i">Koen B (TM)</span></label><label>Advisor 2<span class="i">Max T (PM)</span></label><label style="grid-column:1/-1">Note<span class="i">Invite sent from Outlook</span></label></div>
+    <div style="display:flex;gap:8px;justify-content:end"><span class="s" style="border:1px solid var(--grid);border-radius:4px;padding:5px 12px">Cancel</span><span style="background:var(--accent);color:#fff;border-radius:4px;padding:5px 12px;font-weight:600">Save</span></div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const stepCols = ['HR', 'Avail. asked', 'Avail. in', 'Advisor booked', 'Advisor done', 'Result call', 'Avail. in', 'Deep dive booked', 'Deep dive done', 'Final call', 'Closed'];
+const dates = { 'Sanne de Vries': ['19-11', '20-11', '23-11'], 'Daan Bakker': ['18-11', '20-11'], 'Lotte Visser': ['10-11', '11-11', '12-11', '13-11', '18-11 ✓', '19-11'], 'Ruben Smit': ['16-11', '17-11', '18-11', '20-11'], 'Emma Jansen': [], 'Thijs Mulder': ['17-11'], 'Fleur de Boer': ['2-11', '3-11', '4-11', '5-11', '9-11 ✓', '9-11', '10-11', '11-11', '16-11 ✓', '16-11', 'hired'] };
+function matrix(el) {
+  let h = '<tr><th class="rn"></th><th>Candidate</th>' + stepCols.map((c, i) => `<th>${i + 1}. ${c}</th>`).join('') + '<th>Clock</th></tr>';
+  CANDS.forEach((c, r) => { const ds = dates[c.n] || []; h += `<tr><td class="rn">${r + 2}</td><td><b>${c.n}</b></td>` + stepCols.map((_, i) => i < ds.length ? `<td class="d done">${ds[i]}</td>` : i === ds.length && c.next ? `<td class="d next">to do</td>` : `<td class="d na">·</td>`).join('') + `<td class="clk ${c.day >= 6 ? 'bad' : c.day >= 5 ? 'warn' : ''}">${c.day ? c.day + '/7' : ''}</td></tr>`; });
+  h += `<tr><td class="rn">9</td><td><b>Bram Kok</b></td><td class="d rej">16-11 ✗</td><td class="d done">17-11 call</td>${'<td class="d na">·</td>'.repeat(8)}<td class="d rej">rejected</td><td></td><td></td></tr>`;
+  el.innerHTML = h;
+}
+matrix(document.getElementById('mx')); matrix(document.getElementById('mx2'));
+const acts = document.getElementById('acts');
+for (const [g, idx] of [['Overdue', [0]], ['Today', [1, 2, 3]], ['This week', [4, 5]]]) { acts.insertAdjacentHTML('beforeend', `<div class="grp">${g}</div>`); for (const i of idx) { const a = ACTIONS[i]; acts.insertAdjacentHTML('beforeend', `<div class="act"><span class="kind k-${a.tone}">${a.kind}</span><div><b>${a.who}</b><p>${a.text}</p></div><button class="btn ${a.tone==='accent'?'p':''}">${a.btn}</button></div>`); } }
+const A = AV.advisor; const nl = { all: 'Hele dag', am: 'Ochtend', pm: 'Middag', no: 'Niet' };
+const nar = { 'Bastiaan': [9], 'Pieter': [2, 7], 'Jesse ': [1, 2, 3, 4, 5, 6, 7, 8, 9] };
+const ai = { 'Bastiaan': '<span class="ai">Claude: Fri 4 Dec only 14:00 to 15:30 <button>Confirm</button><button class="l">Edit</button></span>', 'Pieter': '<span class="ai ok">✓ Wednesdays until 12:00</span>', 'Jesse ': '<span class="ai">Claude: from 24 Nov tentative; prefers from 15:00 <button>Confirm</button><button class="l">Edit</button></span>', 'Marnix': '<span class="ai">Claude: note only, Wednesdays in an emergency <button>Confirm</button><button class="l">Edit</button></span>' };
+let h = '<tr><th class="rn"></th><th>Naam</th><th>Team</th>' + A.days.map(d => `<th style="text-align:center">${d}</th>`).join('') + '<th>Opmerking</th></tr>';
+A.people.slice(0, 11).forEach((p, r) => { h += `<tr><td class="rn">${r + 3}</td><td><b>${p.n}</b></td><td>${p.t}</td>` + p.c.map((v, i) => `<td class="v ${v || 'null'} ${(nar[p.n] || []).includes(i) ? (p.n === 'Jesse ' ? 'ten' : 'nar') : ''}">${v ? nl[v] : ''}</td>`).join('') + `<td class="rem">${p.r}${ai[p.n] ? '<br>' + ai[p.n] : ''}</td></tr>`; });
+h += '<tr class="sum"><td class="rn"></td><td style="text-align:left">Free (pair?)</td><td></td>' + A.days.map((d, i) => { const l = A.people.filter(p => p.c[i] && p.c[i] !== 'no'); const ok = new Set(l.map(p => p.t)).size >= 2; return `<td class="${ok ? 'ok' : ''}">${l.length}${ok ? ' ✓' : ''}</td>`; }).join('') + '<td></td></tr>';
+document.getElementById('poll').innerHTML = h;
+document.getElementById('dsteps').innerHTML = TIMELINE.map(s => `<div class="${s.s}"><i>${s.s === 'done' ? '✓' : s.n}</i>${s.label}<span>${s.when}</span></div>`).join('');
+</script>
+</body></html>
