@@ -980,25 +980,20 @@
   }
 
   /**
-   * Personal hiring goals. Each hire is credited to everyone who interviewed
-   * that candidate in a round, so a round needs targetHires x interviewers
-   * credits. Those are split evenly over the round's members (remainder to
-   * the first by name, and at least 1 each), so the goals add up to at least
-   * the campaign target. Someone in two rounds gets both shares.
-   * Returns { [personId]: { goal, hires, byRound: { advisor: { goal, hires } } } }.
+   * Personal interview goals. The campaign expects `targetInterviews`
+   * interviews per round, and each needs `interviewers` people, so a round
+   * needs targetInterviews x interviewers seats. Those are split evenly over
+   * the round's members (remainder to the first by name, at least 1 each), so
+   * if everyone meets their goal the campaign gets its interviews. Someone in
+   * two rounds gets both shares. `done` counts interviews held up to today,
+   * `planned` the ones booked or accepted after today.
+   * Returns { [personId]: { goal, done, planned, byRound: { advisor: { goal, done, planned } } } }.
    */
-  function hiringGoals({ camp, cands, invites, people }) {
-    const target = Number(camp && camp.targetHires) || 0;
+  function interviewGoals({ camp, cands, invites, people, today }) {
+    today = today || todayIso();
+    const target = Number(camp && camp.targetInterviews) || 0;
     const out = {};
-    const hired = new Set(
-      cands
-        .filter((c) => {
-          const d = latestByStep(c.timeline || []);
-          return (d.closed && d.closed.outcome === 'hired') || (d.deepdive_done && d.deepdive_done.outcome === 'hire');
-        })
-        .map((c) => c.id),
-    );
-    const ivs = interviewsOf(cands, invites).filter((r) => r.booked || r.slotDate);
+    const ivs = interviewsOf(cands, invites);
     for (const round of (camp && camp.rounds) || []) {
       if (round.role === 'hr') continue;
       const members = roundMembers(camp, round.key, people).sort((a, b) => a.name.localeCompare(b.name));
@@ -1008,11 +1003,14 @@
       const rem = need % members.length;
       members.forEach((p, i) => {
         const goal = target ? Math.max(1, base + (i < rem ? 1 : 0)) : 0;
-        const hires = new Set(ivs.filter((r) => r.personId === p.id && r.round === round.key && hired.has(r.candidateId)).map((r) => r.candidateId)).size;
-        const x = (out[p.id] = out[p.id] || { goal: 0, hires: 0, byRound: {} });
+        const mine = ivs.filter((r) => r.personId === p.id && r.round === round.key);
+        const done = mine.filter((r) => r.slotDate <= today).length;
+        const planned = mine.length - done;
+        const x = (out[p.id] = out[p.id] || { goal: 0, done: 0, planned: 0, byRound: {} });
         x.goal += goal;
-        x.hires += hires;
-        x.byRound[round.key] = { goal, hires };
+        x.done += done;
+        x.planned += planned;
+        x.byRound[round.key] = { goal, done, planned };
       });
     }
     return out;
@@ -1083,7 +1081,7 @@
     POINTS,
     interviewsOf,
     scoreboard,
-    hiringGoals,
+    interviewGoals,
     pipelineCounts,
   };
 

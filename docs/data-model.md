@@ -113,12 +113,14 @@ leads arrive via `replies/{userId}.reports` (newest 3 kept) and are copied here
 by Natalie's page.
 
 
-## Hiring goals
+## Interview goals
 
-Each advisor and team lead gets a share of the campaign's target hires
-(`M.hiringGoals`). A round needs `targetHires × interviewers` credits; they are
-split evenly over that round's members (the remainder goes to the first by name,
-with at least 1 each), so the goals add up to at least the target. A hire
-(deep dive verdict "hire" or closed as hired) counts for everyone who
-interviewed that candidate. Each person's `goal` and `hires` travel in their
-`inbox` scores; Natalie sees everyone's in the scoreboard.
+The campaign's hiring goal (`targetHires`) is shared: everyone sees "3 of 10
+hired" as our goal. Each advisor and team lead also gets a personal goal of
+interviews to take part in (`M.interviewGoals`). Per round the campaign needs
+`targetInterviews × interviewers` seats; they are split evenly over that round's
+members (the remainder goes to the first by name, with at least 1 each), so if
+everyone meets theirs the campaign gets its interviews. `done` counts interviews
+held up to today and `planned` the ones after. Each person's `goal`, `goalDone`
+and `goalPlanned` travel in their `inbox` scores; Natalie sees everyone's in the
+scoreboard.
