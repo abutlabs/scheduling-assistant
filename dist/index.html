@@ -1,48 +1,71 @@
 <title>Flux Interviews</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;600&display=swap">
 <style>
-/* Layout: a spreadsheet-familiar working tool. Tab bar on top; Run view is a
-   to-do list over a step matrix; candidate detail is a right-hand drawer;
-   the poll import looks like the xlsx it came from. */
+/* Flux Interviews · calm design (from Claude Design, design-handoff/from-design/).
+   Warm paper background, white surfaces, one blue for "do this", orange-red
+   only for Report. Inter Tight at light weights for big headings, Roboto Mono
+   only for dates and counts. Every screen leads with one large next step;
+   everything else sits in quiet rows or folds into a disclosure.
+   The working tools (poll import, step matrix, roster) keep their sheet look. */
 :root {
-  --bg: #ffffff;
-  --s1: #f7f8f9;
-  --s2: #eceff2;
-  --line: #e1e4e8;
-  --grid: #d4d8de;
-  --fg: #1b1f24;
-  --muted: #59626e;
-  --faint: #8b939e;
-  --accent: #0b6e99;
-  --accent-soft: #dff0f7;
-  --accent-fg: #ffffff;
-  --avail: #1e8e4e;
-  --avail-fg: #ffffff;
-  --avail-soft: #c8ebd5;
-  --avail-soft-fg: #145c33;
-  --no: #f1f2f4;
-  --warn: #a65c00;
-  --warn-soft: #fff1d6;
-  --bad: #b42318;
-  --bad-soft: #fde4e1;
-  --shadow: rgba(15, 23, 42, 0.12);
+  --bg: #f7f6f3; --surface: #ffffff; --sunk: #efeee9; --line: #e6e4de;
+  --fg: #1c1f23; --muted: #5d6269; --faint: #8c9096;
+  --accent: #0b6e99; --accent-soft: #e2eef3; --on-accent: #ffffff;
+  --report: #e4572e; --report-hover: #cc4824; --on-report: #ffffff;
+  --warn: #a65c00; --warn-soft: #f7ead6;
+  --ok: #1e7a46; --ok-soft: #dcede2;
+  --bad: #b42318; --bad-soft: #fbe4e1;
+  --scrim: rgba(28, 31, 35, .32);
+  --shadow-card: 0 1px 2px rgba(28, 31, 35, .04), 0 8px 32px rgba(28, 31, 35, .06);
+  --shadow-pop: 0 24px 80px rgba(0, 0, 0, .18);
+  /* Sheet colours (poll, step matrix, roster) and older names, mapped onto the calm palette. */
+  --s1: #f2f1ed; --s2: #e9e7e1; --grid: #dcd9d2;
+  --accent-fg: var(--on-accent);
+  --avail: #1e8e4e; --avail-fg: #ffffff; --avail-soft: #c8ebd5; --avail-soft-fg: #145c33;
+  --no: #efeee9;
+  --shadow: rgba(28, 31, 35, 0.12);
+
   --font-ui: "Inter Tight", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-data: "Roboto Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --t-display: 300 60px/1.05 var(--font-ui);
+  --t-title: 300 44px/1.08 var(--font-ui);
+  --t-next: 400 32px/1.2 var(--font-ui);
+  --t-section: 400 28px/1.2 var(--font-ui);
+  --t-lead: 400 18px/1.65 var(--font-ui);
+  --t-body: 400 16px/1.6 var(--font-ui);
+  --t-small: 400 14px/1.5 var(--font-ui);
+  --t-data: 400 13px/1.4 var(--font-data);
+  --track-tight: -0.03em;
+  --gutter: 48px; --gutter-phone: 16px; --measure: 1100px;
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px; --r-dialog: 28px; --r-pill: 999px;
+  --radius: var(--r-lg);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #14171c; --s1: #1a1e25; --s2: #232832; --line: #2b313c; --grid: #363d4a; --fg: #e6e9ee; --muted: #a1a9b5; --faint: #6f7886;
-    --accent: #5fb4dc; --accent-soft: #15303d; --accent-fg: #0b1418; --avail: #2fa564; --avail-fg: #06140c; --avail-soft: #18392a; --avail-soft-fg: #8fdcae;
-    --no: #1d2129; --warn: #f0a94a; --warn-soft: #3a2a12; --bad: #f2877b; --bad-soft: #3d1d1a; --shadow: rgba(0, 0, 0, 0.45);
+    --bg: #121416; --surface: #191c1f; --sunk: #202428; --line: #2a2e33;
+    --fg: #e9e7e2; --muted: #a4a8ae; --faint: #71767d;
+    --accent: #5fb4dc; --accent-soft: #16303b; --on-accent: #0b1418;
+    --report: #f0714a; --report-hover: #f4876a; --on-report: #1a0d08;
+    --warn: #f0a94a; --warn-soft: #3a2a12; --ok: #6fcf97; --ok-soft: #183626;
+    --bad: #f2877b; --bad-soft: #3d1d1a; --scrim: rgba(0, 0, 0, .55);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 40px rgba(0, 0, 0, .35);
+    --s1: #1a1d20; --s2: #24282d; --grid: #33383e;
+    --avail: #2fa564; --avail-fg: #06140c; --avail-soft: #18392a; --avail-soft-fg: #8fdcae; --no: #1d2024; --shadow: rgba(0, 0, 0, 0.45);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #14171c; --s1: #1a1e25; --s2: #232832; --line: #2b313c; --grid: #363d4a; --fg: #e6e9ee; --muted: #a1a9b5; --faint: #6f7886;
-  --accent: #5fb4dc; --accent-soft: #15303d; --accent-fg: #0b1418; --avail: #2fa564; --avail-fg: #06140c; --avail-soft: #18392a; --avail-soft-fg: #8fdcae;
-  --no: #1d2129; --warn: #f0a94a; --warn-soft: #3a2a12; --bad: #f2877b; --bad-soft: #3d1d1a; --shadow: rgba(0, 0, 0, 0.45);
+  --bg: #121416; --surface: #191c1f; --sunk: #202428; --line: #2a2e33;
+  --fg: #e9e7e2; --muted: #a4a8ae; --faint: #71767d;
+  --accent: #5fb4dc; --accent-soft: #16303b; --on-accent: #0b1418;
+  --report: #f0714a; --report-hover: #f4876a; --on-report: #1a0d08;
+  --warn: #f0a94a; --warn-soft: #3a2a12; --ok: #6fcf97; --ok-soft: #183626;
+  --bad: #f2877b; --bad-soft: #3d1d1a; --scrim: rgba(0, 0, 0, .55);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 40px rgba(0, 0, 0, .35);
+  --s1: #1a1d20; --s2: #24282d; --grid: #33383e;
+  --avail: #2fa564; --avail-fg: #06140c; --avail-soft: #18392a; --avail-soft-fg: #8fdcae; --no: #1d2024; --shadow: rgba(0, 0, 0, 0.45);
   color-scheme: dark;
 }
 
@@ -239,11 +262,6 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
 .mock-sec { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--grid); }
 .mock-card { background: var(--bg); border: 1px solid var(--grid); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 
-/* Welcome card */
-.welcome-wrap { position: fixed; inset: 0; z-index: 20; background: var(--shadow); display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
-.welcome { background: var(--bg); border: 1px solid var(--grid); border-radius: 10px; box-shadow: 0 16px 40px var(--shadow); max-width: 520px; width: 100%; padding: 22px 22px 18px; display: flex; flex-direction: column; gap: 10px; }
-.welcome h2 { margin: 0; font-size: 20px; }
-.welcome p { margin: 0; line-height: 1.5; }
 
 /* View switch and interviewer page */
 .viewas { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
@@ -284,69 +302,6 @@ details > summary { cursor: pointer; color: var(--muted); font-weight: 600; font
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg, #fff); }
 .sim-log { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; max-height: 260px; overflow-y: auto; }
 
-/* ------------------------------------------------------------------
-   Calm layer: more space, larger type, softer edges, fewer lines.
-   ------------------------------------------------------------------ */
-:root { --grid: #dfe3e8; --line: #eceef1; --radius: 12px; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --grid: #2f3540; --line: #232831; } }
-:root[data-theme="dark"] { --grid: #2f3540; --line: #232831; }
-body { font-size: 15px; line-height: 1.55; margin: 0; }
-h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
-h2 { font-size: 19px; font-weight: 600; }
-h3 { font-size: 15px; font-weight: 600; }
-.small { font-size: 13px; }
-main { max-width: 1240px; margin: 0 auto; width: 100%; }
-.gutter { padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); }
-@media (max-width: 600px) { .gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); } }
-.section { padding-block: 22px; gap: 16px; }
-.section + .section { border-top: 0; }
-.band { background: transparent; border-bottom: 0; }
-.bar { background: var(--bg); border-bottom: 1px solid var(--line); }
-.bar .brand { border-right: 0; }
-.bar nav a { font-size: 14px; padding: 14px 12px 12px; }
-.bar nav a[aria-current="page"] { background: transparent; }
-.banner { font-size: 13px; }
-button { font-size: 13.5px; padding: 7px 14px; border-radius: 8px; }
-button.link { padding: 0; }
-input, select, textarea { font-size: 14.5px; padding: 7px 10px; border-radius: 8px; }
-label.f { font-size: 12.5px; gap: 5px; }
-.tpanel { border-radius: var(--radius); border-color: var(--line); }
-.chip { font-size: 12px; padding: 1px 9px; }
-table.x th, table.x td { padding-block: 7px; }
-
-.calm-head { padding-bottom: 0; gap: 4px; }
-.calm-head h1 { font-size: 30px; }
-.calm-card { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 4px; display: flex; flex-direction: column; min-width: 0; box-shadow: 0 1px 2px var(--shadow); }
-.calm-card.progress { padding: 20px 22px; gap: 8px; }
-.big-num { font-size: 40px; font-weight: 600; line-height: 1.1; font-family: var(--font-data); }
-.big-num span { font-size: 16px; font-family: var(--font-ui); font-weight: 500; color: var(--muted); }
-.calm-empty { padding: 36px 20px; text-align: center; color: var(--muted); display: flex; flex-direction: column; gap: 12px; align-items: center; }
-.act { grid-template-columns: 12px minmax(0, 1fr) auto; gap: 14px; padding: 14px 18px; border-top: 1px solid var(--line); font-size: 14.5px; }
-.calm-card > .act:first-child { border-top: 0; }
-.act p { font-size: 14px; }
-.act .dot { width: 8px; height: 8px; border-radius: 99px; background: var(--grid); align-self: start; margin-top: 8px; }
-.act.tone-accent .dot { background: var(--accent); }
-.act.tone-warn .dot { background: var(--warn); }
-.act.tone-bad .dot { background: var(--bad); }
-@media (max-width: 520px) { .act { grid-template-columns: 10px minmax(0, 1fr); } .act > button { grid-column: 2; justify-self: start; } }
-.more { padding: 12px 18px !important; align-self: flex-start; }
-details.later { border-top: 1px solid var(--line); }
-details.later summary { padding: 14px 18px; cursor: pointer; color: var(--muted); font-weight: 600; font-size: 14px; }
-.cols { grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
-.cand-list { display: flex; flex-direction: column; }
-.cand-row { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: minmax(140px, 220px) auto minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 14px 4px; border-top: 1px solid var(--line); font-size: 14.5px; }
-.cand-row:first-child { border-top: 0; }
-.cand-row:hover b { color: var(--accent); }
-.cand-row .next { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 700px) { .cand-row { grid-template-columns: minmax(0, 1fr) auto; } .cand-row .next { grid-column: 1 / -1; white-space: normal; } }
-.bad-t { color: var(--bad); }
-
-/* Interviewer page: calmer cards */
-.iv-card { padding: 20px 22px; gap: 14px; border-color: var(--line); border-radius: var(--radius); }
-.iv-card h2 { font-size: 17px; }
-.iv-grid { gap: 24px; }
-.iv-col { gap: 24px; }
-.kpi { padding: 12px 14px; border-radius: 10px; }
 
 /* Wizard */
 .wizard { display: flex; flex-direction: column; gap: 28px; max-width: 900px; }
@@ -370,9 +325,6 @@ details.later summary { padding: 14px 18px; cursor: pointer; color: var(--muted)
 .person-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); }
 
 /* Report button and dialog */
-.report-fab { position: fixed; right: max(18px, env(safe-area-inset-right, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 15; border-radius: 99px; padding: 9px 16px; box-shadow: 0 4px 16px var(--shadow); background: var(--bg); }
-.report { max-width: 620px; gap: 14px; }
-.report .x { border: 0; font-size: 20px; padding: 0 6px; }
 .shot { display: flex; flex-direction: column; gap: 8px; }
 .shot img { width: 100%; max-height: 260px; object-fit: contain; object-position: top left; border: 1px solid var(--line); border-radius: 8px; background: var(--s1); }
 .shot img.big { max-height: none; }
@@ -386,10 +338,356 @@ details.later summary { padding: 14px 18px; cursor: pointer; color: var(--muted)
 details.round-sum { border-top: 1px solid var(--line); }
 details.round-sum > summary { padding: 12px 0; cursor: pointer; }
 details.round-sum[open] > summary { padding-bottom: 8px; }
-.report-btn { background: #e4572e; border-color: #e4572e; color: #fff; }
-.report-btn:hover { background: #cc4824; border-color: #cc4824; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .report-btn { background: #f0714a; border-color: #f0714a; color: #1a0d08; } }
-:root[data-theme="dark"] .report-btn { background: #f0714a; border-color: #f0714a; color: #1a0d08; }
+
+/* ------------------------------------------------------------------
+   Calm redesign (Claude Design, design-handoff/from-design/calm.css),
+   adapted to the app's markup. Loaded last, so it wins over the sheet
+   styles above where both apply.
+   ------------------------------------------------------------------ */
+body { background: var(--bg); color: var(--fg); font: var(--t-body); margin: 0; -webkit-font-smoothing: antialiased; }
+body::before { background: var(--bg); }
+h1 { font: var(--t-section); letter-spacing: -0.015em; }
+h2 { font-size: 20px; font-weight: 500; letter-spacing: -0.005em; }
+h3 { font-size: 16px; font-weight: 600; }
+.small { font-size: 14px; }
+.mono { font-size: 13px; }
+a { color: var(--accent); }
+a:hover { color: var(--fg); }
+main { max-width: 1280px; margin: 0 auto; width: 100%; }
+.gutter { padding-left: max(40px, env(safe-area-inset-left, 0px)); padding-right: max(40px, env(safe-area-inset-right, 0px)); }
+@media (max-width: 900px) { .gutter { padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); } }
+@media (max-width: 600px) { .gutter { padding-left: max(var(--gutter-phone), env(safe-area-inset-left, 0px)); padding-right: max(var(--gutter-phone), env(safe-area-inset-right, 0px)); } }
+.section { padding-block: 32px; gap: 20px; }
+.section + .section { border-top: 0; }
+.band { background: transparent; border-bottom: 0; }
+.head p { color: var(--muted); margin-top: 6px; font-size: 16px; }
+summary { list-style: none; cursor: pointer; color: var(--muted); }
+summary::-webkit-details-marker { display: none; }
+details > summary { font-weight: 400; font-size: 15px; }
+details > summary::after { content: " ▸"; }
+details[open] > summary::after { content: " ▾"; }
+details.plus > summary::after { content: none; }
+
+/* Top bar: brand · nav · (test pill, campaign, name menu) · Report */
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 12; min-height: 68px; display: flex; flex-wrap: nowrap; align-items: center; gap: 44px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.bar .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; padding: 0; margin: 0; border: 0; white-space: nowrap; }
+.bar .brand::before { content: ""; width: 14px; height: 14px; border-radius: 4px; background: var(--accent); flex: none; }
+.bar nav { display: flex; gap: 28px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.bar nav a { font-size: 15px; font-weight: 400; color: var(--muted); text-decoration: none; padding: 6px 0; border: 0; background: none; }
+.bar nav a:hover { color: var(--fg); }
+.bar nav a[aria-current="page"] { color: var(--fg); font-weight: 500; background: none; }
+.bar .end { margin-left: auto; display: flex; align-items: center; gap: 22px; font-size: 14px; color: var(--muted); white-space: nowrap; }
+.bar .camp-pick { border: 0; background: transparent; color: var(--muted); font-size: 14px; padding: 4px 2px; border-radius: var(--r-sm); cursor: pointer; max-width: 200px; }
+.bar .camp-pick:hover { color: var(--fg); }
+.test-pill { padding: 4px 10px; border-radius: var(--r-pill); background: var(--warn-soft); color: var(--warn); font-size: 12.5px; font-weight: 500; border: 0; }
+button.test-pill:hover { background: var(--warn-soft); filter: brightness(0.97); }
+.view-pill { padding: 5px 12px; border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 500; border: 0; }
+button.view-pill:hover { background: var(--accent-soft); text-decoration: underline; }
+.menu { position: relative; }
+.menu > summary { font-size: 14px; color: var(--muted); padding: 6px 0; }
+.menu > summary:hover { color: var(--fg); }
+.menu > summary::after { content: " ▾"; }
+.menu[open] > summary::after { content: " ▴"; }
+.menu-panel { position: absolute; right: 0; top: calc(100% + 10px); z-index: 30; width: 320px; max-width: calc(100vw - 32px); background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); padding: 18px; display: flex; flex-direction: column; gap: 14px; color: var(--fg); white-space: normal; }
+.menu-panel .label { font-size: 13px; color: var(--muted); }
+.menu-panel .seg { flex-wrap: wrap; }
+.menu-panel select { width: 100%; }
+.menu-panel hr { border: 0; border-top: 1px solid var(--line); margin: 2px 0; width: 100%; }
+@media (max-width: 760px) {
+  .bar { min-height: 60px; gap: 16px; }
+  .bar .brand span, .test-pill, .bar .camp-pick { display: none; }
+  .bar nav { gap: 18px; }
+  .bar .end { gap: 12px; }
+}
+
+/* Buttons */
+button { font: 500 15px/1.2 var(--font-ui); padding: 9px 18px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; white-space: nowrap; }
+button:hover { background: var(--sunk); }
+button.p { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+button.p:hover { background: var(--accent); filter: brightness(1.08); }
+button.big, .act-hero button.p, .iv-request button.p, .dialog .foot button.p, .drawer .next button.p { font-size: 16px; padding: 14px 28px; }
+.iv-request button:not(.p):not(.link), .act-hero button:not(.p):not(.link) { font-size: 16px; padding: 13px 24px; }
+button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: none; font-weight: 500; }
+button.link:hover { background: none; text-decoration: underline; }
+button.quiet { border: 0; background: none; padding: 0; color: var(--muted); font-weight: 400; }
+button.quiet:hover { background: none; color: var(--fg); }
+button.danger { color: var(--bad); }
+.report-btn { background: var(--report); border-color: var(--report); color: var(--on-report); font-weight: 600; font-size: 14px; padding: 9px 18px; }
+.report-btn:hover { background: var(--report-hover); border-color: var(--report-hover); }
+table.x button, .ai button, .toggles button, .fix button, .mock-card button { font-size: 13px; padding: 4px 10px; }
+.seg { border-color: var(--line); border-radius: var(--r-pill); background: var(--surface); }
+.seg button { border-radius: 0; padding: 7px 14px; font-size: 14px; font-weight: 500; border: 0; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+@media (max-width: 600px) { button { min-height: 44px; } table.x button, .seg button, .toggles button, .ai button { min-height: 0; } .act-hero button.p, .iv-request button.p { width: 100%; } }
+
+/* Fields */
+input, select, textarea { font: var(--t-body); font-size: 16px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 14px; }
+textarea { border-radius: var(--r-lg); padding: 14px 16px; min-height: 84px; }
+input[type="checkbox"], input[type="radio"] { padding: 0; accent-color: var(--accent); width: 18px; height: 18px; }
+textarea:focus, input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.drawer input, .drawer select, .drawer textarea, .dialog input, .dialog textarea, .dialog select, .iv-request input, .act-hero input { background: var(--bg); }
+table.x input, table.x select, .ai input, .rule-edit input, .rule-edit select { font-size: 13.5px; padding: 5px 8px; border-radius: var(--r-sm); }
+label.f { font-size: 14px; font-weight: 400; gap: 6px; color: var(--muted); }
+.check { font-size: 15px; gap: 10px; }
+.chip { font-size: 13px; font-weight: 500; padding: 2px 10px; background: var(--sunk); }
+.chip.good, .pill-ok { background: var(--ok-soft); color: var(--ok); }
+.pill-ok { padding: 5px 12px; border-radius: var(--r-pill); font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+.warn-line, .err-line { font-size: 14px; }
+.toast { border-radius: var(--r-pill); padding: 12px 22px; font-size: 15px; font-weight: 500; box-shadow: var(--shadow-pop); }
+
+/* Panels and sheets */
+.tpanel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.ph { padding: 14px 18px; font-weight: 500; font-size: 15px; }
+.sheet-wrap { border-color: var(--line); }
+table.x { font-size: 13.5px; }
+table.x th, table.x td { padding-block: 8px; }
+table.x th { background: var(--s1); }
+.calm-empty { padding: 40px 0; color: var(--muted); display: flex; flex-direction: column; gap: 16px; align-items: flex-start; font-size: 17px; }
+
+/* ---- Natalie's home: Today ---- */
+.home { max-width: calc(var(--measure) + 2 * var(--gutter)); margin: 0 auto; width: 100%; padding-inline: var(--gutter); }
+@media (max-width: 900px) { .home { padding-inline: 24px; } }
+@media (max-width: 600px) { .home { padding-inline: var(--gutter-phone); } }
+.calm-head { padding-top: 72px; display: flex; flex-direction: column; }
+.calm-head .date { font-size: 16px; color: var(--muted); }
+.calm-head h1 { font: var(--t-display); letter-spacing: var(--track-tight); margin: 10px 0 0; text-wrap: balance; }
+.calm-head .lead { font: var(--t-lead); color: var(--muted); margin-top: 14px; }
+@media (max-width: 600px) { .calm-head { padding-top: 36px; } .calm-head h1 { font-size: 38px; line-height: 1.08; } }
+
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 96px; padding-block: 56px 80px; align-items: start; }
+.cols.iv-cols { grid-template-columns: minmax(0, 1fr) 300px; }
+@media (max-width: 900px) { .cols, .cols.iv-cols { grid-template-columns: minmax(0, 1fr); gap: 48px; padding-block: 32px 48px; } }
+.home .cols:first-of-type { padding-top: 0; }
+
+.act-hero { background: var(--surface); border-radius: var(--r-xl); padding: 40px 44px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 14px; }
+.act-hero .kicker { font-size: 14px; font-weight: 500; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+.act-hero .kicker::before { content: ""; width: 7px; height: 7px; border-radius: 99px; background: currentColor; }
+.act-hero.tone-warn .kicker, .act-hero.tone-bad .kicker { color: var(--warn); }
+.act-hero.tone-bad .kicker { color: var(--bad); }
+.act-hero h2 { font: var(--t-next); letter-spacing: -0.015em; margin: 0; }
+.act-hero p { font-size: 17px; color: var(--muted); margin: 0; }
+.act-hero .row { margin-top: 14px; gap: 18px; }
+.act-hero .row button.link { color: var(--muted); font-weight: 400; font-size: 16px; }
+@media (max-width: 600px) { .act-hero { padding: 26px 22px; } .act-hero h2 { font-size: 24px; } .act-hero .row { flex-direction: column; align-items: stretch; } }
+.then { font-size: 14px; color: var(--muted); margin: 44px 0 10px; }
+
+.act { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 20px; padding: 22px 0; border-top: 1px solid var(--line); align-items: start; font-size: 16px; }
+.act:last-child { border-bottom: 1px solid var(--line); }
+.act b { display: block; font-size: 17px; font-weight: 500; }
+.act p { font-size: 15px; color: var(--muted); margin: 4px 0 0; }
+.act .dot { width: 8px; height: 8px; border-radius: 99px; margin-top: 9px; background: var(--line); }
+.act.tone-accent .dot { background: var(--accent); }
+.act.tone-warn .dot { background: var(--warn); }
+.act.tone-bad .dot { background: var(--bad); }
+.act > button { font-size: 14px; padding: 8px 16px; }
+@media (max-width: 600px) { .act { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; } .act .dot { display: none; } }
+.more { margin-top: 18px; }
+details.later { border: 0; margin-top: 20px; }
+details.later > summary { padding: 4px 0; font-size: 15px; font-weight: 400; color: var(--muted); }
+details.later[open] > summary { margin-bottom: 8px; }
+
+.progress { display: flex; flex-direction: column; }
+.progress .label { font-size: 14px; color: var(--muted); }
+.progress .big-num { font: 300 64px/1 var(--font-ui); letter-spacing: var(--track-tight); margin-top: 14px; }
+.progress .big-num span { font-size: 17px; color: var(--muted); font-family: var(--font-ui); font-weight: 400; letter-spacing: 0; }
+.track { height: 4px; border-radius: 99px; background: var(--sunk); margin: 18px 0 22px; overflow: hidden; }
+.track > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); min-width: 6px; }
+.stat-list { display: flex; flex-direction: column; gap: 8px; font-size: 15px; color: var(--muted); }
+.stat-list div { display: flex; justify-content: space-between; gap: 12px; }
+.stat-list b { font-weight: 400; color: var(--fg); font-family: var(--font-data); font-size: 14px; }
+@media (max-width: 900px) { .progress { background: var(--sunk); border-radius: var(--r-xl); padding: 24px; } .progress .big-num { font-size: 48px; } }
+
+/* Candidates */
+.cand-sec { padding-bottom: 96px; }
+.cand-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 22px; margin-bottom: 14px; }
+.cand-head h2 { font: var(--t-section); letter-spacing: -0.015em; }
+.cand-head .filters { display: flex; gap: 16px; }
+.cand-head .filters button { border: 0; background: none; padding: 0; font-size: 14px; color: var(--muted); font-weight: 400; min-height: 0; }
+.cand-head .filters button[aria-pressed="true"] { color: var(--fg); font-weight: 500; }
+.cand-head .add { margin-left: auto; }
+.cand-list { display: flex; flex-direction: column; }
+.cand-row { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: minmax(140px, 220px) 140px minmax(0, 1fr) auto; gap: 20px; align-items: baseline; padding: 18px 0; border-top: 1px solid var(--line); font-size: 16px; }
+.cand-row:last-child { border-bottom: 1px solid var(--line); }
+.cand-row b { font-weight: 500; }
+.cand-row .round { font-size: 14px; color: var(--muted); }
+.cand-row .round.closed { color: var(--faint); }
+.cand-row .next { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cand-row .day { font: var(--t-data); color: var(--muted); white-space: nowrap; }
+.cand-row .day.late { color: var(--warn); }
+.cand-row .day.bad { color: var(--bad); }
+.cand-row:hover b, .cand-row:focus-visible b { color: var(--accent); }
+@media (max-width: 700px) { .cand-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; } .cand-row .round { order: 3; } .cand-row .next { grid-column: 1 / -1; order: 4; white-space: normal; } }
+.cand-foot { margin-top: 18px; }
+.cand-sec .sheet-wrap { margin-top: 8px; border-radius: var(--r-md); border: 1px solid var(--line); }
+
+/* ---- Candidate drawer ---- */
+.scrim { background: var(--scrim); z-index: 14; }
+.drawer { z-index: 15; width: min(600px, 100%); background: var(--surface); border-left: 0; box-shadow: -12px 0 40px rgba(0, 0, 0, .08); gap: 0;
+  padding: calc(32px + env(safe-area-inset-top, 0px)) max(48px, env(safe-area-inset-right, 0px)) calc(64px + env(safe-area-inset-bottom, 0px)) 48px; }
+.drawer .x { top: calc(24px + env(safe-area-inset-top, 0px)); right: max(28px, env(safe-area-inset-right, 0px)); font-size: 24px; line-height: 1; padding: 6px 10px; background: none; border: 0; color: var(--muted); }
+.drawer .x:hover { color: var(--fg); background: none; }
+.drawer .eyebrow { font-size: 14px; color: var(--muted); padding-right: 40px; }
+.drawer h1 { font: var(--t-title); letter-spacing: -0.025em; margin: 24px 0 0; overflow-wrap: anywhere; }
+.drawer .sub { font-size: 16px; color: var(--muted); margin-top: 6px; }
+.drawer .sub .late { color: var(--warn); }
+.drawer .sub .bad { color: var(--bad); }
+.drawer .contact { margin-top: 10px; font-size: 14px; gap: 4px 16px; }
+.drawer .cnotes { margin-top: 10px; font-size: 15px; color: var(--muted); white-space: pre-wrap; }
+.drawer .next { padding: 28px; border-radius: 18px; background: var(--sunk); margin-top: 36px; display: flex; flex-direction: column; gap: 10px; }
+.drawer .next .kicker { font-size: 14px; font-weight: 500; color: var(--accent); }
+.drawer .next h2 { font: 400 26px/1.2 var(--font-ui); letter-spacing: -0.01em; margin: 0; }
+.drawer .next > p { font-size: 16px; color: var(--muted); }
+.drawer .next .step-form { margin: 8px 0 0; padding: 0; border: 0; background: transparent; }
+.drawer .next .row.go { margin-top: 8px; gap: 12px; }
+.drawer .dsec { margin-top: 40px; display: flex; flex-direction: column; gap: 4px; }
+.drawer .dsec > .label, .drawer .label { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+.drawer .dsec > h2 { font-size: 22px; font-weight: 400; margin-bottom: 10px; }
+.step-list { display: flex; flex-direction: column; }
+.step { display: flex; flex-direction: column; }
+.step > .st { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 0; font-size: 16px; }
+.step > .st:hover .lbl { color: var(--accent); }
+.step .mark { width: 22px; height: 22px; border-radius: 99px; display: grid; place-items: center; font-size: 12px; }
+.step .when { font: var(--t-data); color: var(--muted); }
+.step.done .mark { background: var(--ok-soft); color: var(--ok); }
+.step.done.rej .mark { background: var(--bad-soft); color: var(--bad); }
+.step.now .mark { border: 2px solid var(--accent); box-sizing: border-box; }
+.step.now .mark::after { content: ""; width: 8px; height: 8px; border-radius: 99px; background: var(--accent); }
+.step.now .lbl { font-weight: 500; }
+.step.later { color: var(--faint); }
+.step.later .mark::after, .step.na .mark::after { content: ""; width: 5px; height: 5px; border-radius: 99px; background: var(--line); }
+.step.na { color: var(--faint); }
+.step.skip { color: var(--warn); }
+.step.skip .mark { background: var(--warn-soft); color: var(--warn); }
+.step .detail { padding: 0 0 10px 36px; font-size: 14px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.step > .step-form { margin: 4px 0 12px 36px; }
+details.fold-steps > summary { padding: 10px 0; display: flex; align-items: center; gap: 14px; font-size: 15px; }
+details.fold-steps.done-sum > summary::before { content: "✓"; width: 22px; height: 22px; border-radius: 99px; display: grid; place-items: center; background: var(--ok-soft); color: var(--ok); font-size: 12px; flex: none; }
+details.fold-steps.more-sum > summary { padding-left: 36px; }
+.step-form { padding: 18px; margin: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg); gap: 14px; }
+.radios button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.drawer .tpanel { background: var(--surface); }
+.from-iv { display: flex; flex-direction: column; }
+.from-iv .fb { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
+.from-iv .fb .lean { color: var(--ok); }
+.from-iv .fb .lean.no { color: var(--bad); }
+.from-iv .fb .lean.unsure { color: var(--warn); }
+.from-iv .fb p { grid-column: 1 / -1; font-size: 15px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.brief { border: 1px solid var(--line); border-radius: 18px; padding: 24px 26px; display: flex; flex-direction: column; gap: 14px; background: var(--surface); }
+.brief .bh { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 14px; }
+.brief .bh h3 { font-size: 20px; font-weight: 500; }
+.brief .bh span { font-size: 13px; color: var(--muted); }
+.brief-out { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; font-size: 15.5px; }
+.note-list { display: flex; flex-direction: column; }
+.note-item { padding: 16px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.note-item .meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.note-item p { font-size: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-form { display: flex; flex-direction: column; gap: 10px; }
+.note-form textarea { min-height: 76px; }
+@media (max-width: 600px) { .drawer { padding: calc(28px + env(safe-area-inset-top, 0px)) 16px 56px; } .drawer h1 { font-size: 36px; } .drawer .x { right: 10px; top: 16px; } .drawer .next { padding: 22px 18px; } }
+
+/* ---- Advisor / team lead home ---- */
+.iv-home .kicker { font-size: 16px; color: var(--muted); }
+.iv-request { background: var(--surface); border-radius: var(--r-xl); padding: 40px 44px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; }
+.iv-request + .iv-request { margin-top: 24px; }
+.iv-request .kick { font-size: 14px; font-weight: 500; color: var(--accent); }
+.iv-request .when { font: 400 34px/1.15 var(--font-ui); letter-spacing: -0.015em; }
+.iv-request p { font-size: 17px; color: var(--muted); max-width: 52ch; }
+.iv-request .row { margin-top: 14px; gap: 14px; }
+.iv-request details > summary { font-size: 14px; }
+.iv-request details input { width: 100%; margin-top: 8px; }
+@media (max-width: 600px) { .iv-request { padding: 26px 22px; } .iv-request .when { font-size: 28px; } .iv-request .row { flex-direction: column; align-items: stretch; } }
+.answered { display: flex; flex-direction: column; margin-top: 24px; }
+.answered .a { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.iv-sec { margin-top: 72px; }
+.iv-sec > h2 { font: var(--t-section); letter-spacing: -0.015em; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+@media (max-width: 600px) { .iv-sec { margin-top: 48px; } .iv-sec > h2 { font-size: 24px; } }
+.iv-row { padding: 20px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.iv-row .top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.iv-row .top b { font-size: 18px; font-weight: 500; }
+.iv-row .meta { font-size: 15px; color: var(--muted); }
+.iv-row .step-form { margin-top: 8px; }
+.iv-row .earlier { font-size: 14px; color: var(--muted); }
+details.fold { border-bottom: 1px solid var(--line); }
+details.fold > summary { padding: 20px 0; font-size: 15px; }
+details.fold[open] > summary { padding-bottom: 12px; }
+details.fold > .fold-body { padding-bottom: 24px; display: flex; flex-direction: column; gap: 12px; }
+details.fold .tpanel { border: 0; background: transparent; }
+.iv-aside { display: flex; flex-direction: column; gap: 48px; padding-top: 28px; }
+.iv-aside .blk { display: flex; flex-direction: column; gap: 10px; }
+.iv-aside .label { font-size: 14px; color: var(--muted); }
+.iv-aside p { font-size: 15px; color: var(--muted); }
+.iv-aside details > summary { font-size: 15px; padding: 4px 0; }
+.iv-aside details[open] > summary { margin-bottom: 10px; }
+.rank { font: 300 30px/1.2 var(--font-ui); letter-spacing: -0.01em; }
+.iv-aside .big-num { font: 300 56px/1 var(--font-ui); letter-spacing: var(--track-tight); }
+.iv-aside .big-num span { font-size: 16px; color: var(--muted); letter-spacing: 0; }
+.iv-aside .track { margin: 8px 0 6px; }
+.iv-aside .kpis { grid-template-columns: 1fr 1fr; }
+.kpi { background: var(--sunk); border-radius: var(--r-md); padding: 12px 14px; }
+.kpi b { font: 300 26px/1.1 var(--font-ui); }
+@media (max-width: 900px) { .iv-aside { padding-top: 0; gap: 16px; } .iv-aside .blk { background: var(--sunk); border-radius: var(--r-xl); padding: 22px; } .iv-aside .kpi { background: var(--surface); } }
+.brief-box { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px 18px; gap: 10px; }
+
+/* ---- Dialogs: welcome + report ---- */
+.dialog-wrap { position: fixed; inset: 0; z-index: 40; background: var(--scrim); display: grid; place-items: center; padding: 16px; overflow-y: auto; }
+.dialog { width: min(640px, 100%); background: var(--surface); border-radius: var(--r-dialog); padding: 56px 60px 48px; box-shadow: var(--shadow-pop); display: flex; flex-direction: column; gap: 18px; }
+.dialog .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; color: var(--muted); }
+.dialog h1 { font: var(--t-title); letter-spacing: -0.025em; margin: 0; }
+.dialog .lead { font: var(--t-lead); color: var(--fg); }
+.dialog .lead.soft { color: var(--muted); }
+.dialog .sub { font-size: 16px; color: var(--muted); margin-top: -10px; }
+.dialog details > summary { color: var(--accent); font-size: 16px; }
+.dialog details[open] > summary { margin-bottom: 10px; }
+.dialog .foot { display: flex; align-items: center; gap: 20px; border-top: 1px solid var(--line); padding-top: 24px; margin-top: 10px; }
+.dialog .foot .note { flex: 1; font-size: 13.5px; color: var(--muted); }
+.dialog .foot.plain { border-top: 0; padding-top: 0; justify-content: flex-end; }
+.dialog .x { border: 0; background: none; font-size: 24px; line-height: 1; padding: 4px 8px; color: var(--muted); }
+.dialog .x:hover { background: none; color: var(--fg); }
+.dialog.report { width: min(600px, 100%); padding: 44px 48px 40px; }
+.dialog.report h1 { font-size: 32px; line-height: 1.15; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice { padding: 9px 16px; border-radius: var(--r-pill); border: 1px solid var(--line); font-size: 15px; font-weight: 400; background: var(--surface); }
+.choice[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.dialog label.f textarea { width: 100%; }
+.shot img { border-radius: var(--r-lg); border-color: var(--line); background: var(--sunk); max-height: 180px; }
+@media (max-width: 600px) {
+  .dialog-wrap { place-items: end stretch; padding: 0; }
+  .dialog, .dialog.report { width: 100%; border-radius: 28px 28px 0 0; padding: 28px 20px calc(28px + env(safe-area-inset-bottom, 0px)); }
+  .dialog.welcome { border-radius: 0; min-height: 100%; padding: 36px 20px; }
+  .dialog h1 { font-size: 36px; }
+  .dialog.report h1 { font-size: 28px; }
+  .dialog .foot { flex-wrap: wrap; }
+  .dialog .foot .note { flex-basis: 100%; }
+  .dialog .foot button.p { flex: 1; }
+}
+
+/* Mock sidecar sits under the taller bar. */
+.sidecar { top: calc(env(safe-area-inset-top, 0px) + 68px); z-index: 11; background: var(--bg); }
+.mock-card { background: var(--surface); border-color: var(--line); border-radius: var(--r-md); }
+.menu-panel .viewas { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
+.menu-panel .viewas > span { display: block; }
+.menu-panel .viewas select { max-width: none; }
+.iv-aside details .iv-card { border: 0; background: transparent; padding: 0; }
+.iv-aside details .iv-card > h2, .iv-aside details .iv-card > .row.small.muted { display: none; }
+.iv-aside .iv-card .kpis { grid-template-columns: 1fr 1fr; }
+.iv-cols { padding-top: 0; }
+@media (min-width: 901px) { .iv-aside { padding-top: 100px; } }
+.iv-home .calm-head .kicker + h1 { margin-top: 10px; }
+.dialog .top h1 { color: var(--fg); }
+.menu-panel nav.phone-only { display: none; }
+@media (max-width: 600px) {
+  .bar > nav a:not([aria-current="page"]) { display: none; }
+  .bar > nav a[aria-current="page"] { font-weight: 600; font-size: 16px; }
+  .menu-panel nav.phone-only { display: flex; flex-direction: column; gap: 2px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .menu-panel nav.phone-only a { padding: 10px 0; font-size: 17px; color: var(--fg); text-decoration: none; }
+  .menu-panel nav.phone-only a[aria-current="page"] { color: var(--accent); }
+  .menu-panel { position: fixed; top: 64px; right: 12px; }
+}
+.menu-panel .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; border: 0; background: none; overflow: visible; border-radius: 0; }
+.menu-panel .seg button, .menu-panel .seg button + button { border: 1px solid var(--line); border-radius: var(--r-pill); }
+.menu-panel .seg button[aria-pressed="true"] { border-color: var(--accent); }
+table.x td { background: var(--surface); }
 
 </style>
 <div id="app"></div>
@@ -1819,7 +2117,7 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     const scroll = { x: window.scrollX, y: window.scrollY };
     const drawerScroll = document.querySelector('.drawer') ? document.querySelector('.drawer').scrollTop : 0;
     const iv = ivContext();
-    root.replaceChildren(...[iv ? ivTopBar(iv) : topBar(), iv ? ivBanner(iv) : null, banner(), h('main', {}, iv ? interviewerView(iv) : ui.dev ? devView() : view()), iv || ui.dev ? null : drawer(), sidecar(), welcomeCard(), reportDialog(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
+    root.replaceChildren(...[iv ? ivTopBar(iv) : topBar(), h('main', {}, iv ? interviewerView(iv) : ui.dev ? devView() : view()), iv || ui.dev ? null : drawer(), sidecar(), welcomeCard(), reportDialog(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
     window.scrollTo(scroll.x, scroll.y);
     const d = document.querySelector('.drawer');
     if (d) d.scrollTop = drawerScroll;
@@ -1832,26 +2130,26 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
 
   function topBar() {
     const c = campaign();
-    const cands = candidates();
     const nav = [
-      ['run', 'Run view', cands.filter((x) => cstate(x).status === 'open').length],
-      ['availability', 'Availability', null],
-      ['roster', 'Roster', S.state.people.filter((p) => p.active !== false).length],
-      ['campaign', 'Campaign', null],
+      ['run', 'Today'],
+      ['availability', 'Availability'],
+      ['roster', 'Roster'],
+      ['campaign', 'Campaign'],
     ];
-    const f = M.funnel(cands);
     return h(
       'header',
       { class: 'bar gutter' },
-      h('div', { class: 'brand' }, h('i'), 'Flux interviews'),
-      h('nav', {}, nav.map(([k, label, n]) => h('a', { href: `#${k}`, onclick: () => ui.dev && setViewAs(null), 'aria-current': ui.view === k && !ui.dev ? 'page' : null }, label, n ? h('span', { class: 'n' }, n) : null))),
-      c
-        ? h(
-            'div',
-            { class: 'camp' },
-            h(
+      h('div', { class: 'brand' }, h('span', {}, 'Flux interviews')),
+      h('nav', {}, nav.map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ui.dev && setViewAs(null), 'aria-current': ui.view === k && !ui.dev ? 'page' : null }, label))),
+      h(
+        'div',
+        { class: 'end' },
+        testPill(),
+        c
+          ? h(
               'select',
               {
+                class: 'camp-pick',
                 'aria-label': 'Campaign',
                 id: 'campaign-pick',
                 onchange: (e) => {
@@ -1861,19 +2159,45 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
                 },
               },
               campaigns().map((x) => h('option', { value: x.id, selected: x.id === c.id }, x.name)),
-            ),
-            h('span', {}, `${f.hired} of ${c.targetHires || '?'} hired`),
-            viewSwitch(),
-            reportFab(),
-            h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, title: 'Test tool: act as colleagues, fake replies, change the date', onclick: () => ((ui.mockOpen = !ui.mockOpen), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock'),
-          )
-        : null,
+            )
+          : null,
+        nameMenu(),
+        reportFab(),
+      ),
     );
   }
 
-  function banner() {
-    if (S.mode === 'db') return null;
-    return h('div', { class: 'banner gutter' }, 'Test mode: data is kept in this browser only. Open the published page on claude.ai, signed in, to share it with the team.');
+  // Test mode and the mock date show as a small pill in the bar instead of a banner.
+  function testPill() {
+    const bits = [];
+    if (S.mode !== 'db') bits.push(h('span', { class: 'test-pill', title: 'Data is kept in this browser only. Open the published page on claude.ai, signed in, to share it with the team.' }, 'Test mode'));
+    if (S.admin && TODAY !== REAL_TODAY) bits.push(h('button', { class: 'test-pill', title: 'Open the mock tool', onclick: () => ((ui.mockOpen = true), rerender()) }, `Mock date · ${M.formatDay(TODAY)}`));
+    return bits;
+  }
+
+  // The name menu at top right holds the view switch and the Mock tool, so the bar stays quiet.
+  function nameMenu() {
+    if (!S.admin || !campaign()) return null;
+    const cur = ui.viewAs && personById(ui.viewAs);
+    const label = ui.dev ? 'Developer' : cur ? cur.name.split(' ')[0] : 'Admin';
+    return h(
+      'details',
+      { class: 'menu', open: !!ui.menuOpen, ontoggle: (e) => (ui.menuOpen = e.target.open) },
+      h('summary', { 'aria-label': 'View and test tools' }, label),
+      h(
+        'div',
+        { class: 'menu-panel' },
+        h(
+          'nav',
+          { class: 'phone-only', 'aria-label': 'Pages' },
+          [['run', 'Today'], ['availability', 'Availability'], ['roster', 'Roster'], ['campaign', 'Campaign']].map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
+        ),
+        viewSwitch(),
+        h('hr'),
+        h('span', { class: 'label' }, 'Test tool: fast-forward replies, feedback and the date.'),
+        h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, title: 'Test tool: fast-forward colleagues’ replies, change the date', onclick: () => ((ui.mockOpen = !ui.mockOpen), (ui.menuOpen = false), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock'),
+      ),
+    );
   }
 
   function view() {
@@ -1959,7 +2283,8 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
         reason = `${inv.state.accepted.length} of 2 accepted, ${inv.state.pending.length} waiting. ${reason}`;
       }
       if (s.skipped.length) reason += ` ${plural(s.skipped.length, 'earlier step')} not recorded.`;
-      items.push({ group, kind: k, tone: t, who: c.name, text: `${s.prompt}. ${reason}`.trim(), btn: k === 'Overdue' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
+      const due = s.clock && s.clock.deadline && s.clock.state !== 'booked' ? (s.clock.state === 'overdue' ? 'past the deadline' : `due ${longDay(s.clock.deadline).split(' ')[0]}`) : '';
+      items.push({ group, kind: k, tone: t, who: c.name, text: `${s.prompt}. ${reason}`.trim(), title: `${s.prompt}.`, sub: `${c.name} · ${reason}`.trim(), due, btn: k === 'Overdue' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
     }
     items.push(...inviteTodoItems());
     // Availability housekeeping
@@ -1985,28 +2310,37 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const longDay = (iso) => `${DAYNAME[M.weekdayOf(iso)]} ${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
 
+  function todoAction(i) {
+    return () => {
+      if (i.go) location.hash = i.go;
+      else if (i.invite) releaseInvite(i.invite, i.why);
+      else if (i.prefill) {
+        const c = S.state.candidates.find((x) => x.id === i.cand);
+        const r = roundInvites(c);
+        ui.candId = c.id;
+        prefillBooking(c, i.step, r.list, r.state);
+      } else openCandidate(i.cand, i.step);
+    };
+  }
+
   function todoRow(i) {
+    return h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.who), h('p', {}, i.text)), h('button', { onclick: todoAction(i) }, i.btn));
+  }
+
+  // The one next step, large, at the top of Natalie's home.
+  function todoHero(i) {
+    const cand = i.cand && S.state.candidates.find((x) => x.id === i.cand);
     return h(
-      'div',
-      { class: `act tone-${i.tone || 'plain'}` },
-      h('i', { class: 'dot', title: i.kind }),
-      h('div', {}, h('b', {}, i.who), h('p', {}, i.text)),
+      'section',
+      { class: `act-hero tone-${i.tone || 'plain'}`, 'aria-label': 'Start here' },
+      h('span', { class: 'kicker' }, ['Start here', i.due].filter(Boolean).join(' · ')),
+      h('h2', {}, i.title || i.who),
+      h('p', {}, i.title ? i.sub : i.text),
       h(
-        'button',
-        {
-          class: i.tone === 'accent' || i.tone === 'bad' ? 'p' : '',
-          onclick: () => {
-            if (i.go) location.hash = i.go;
-            else if (i.invite) releaseInvite(i.invite, i.why);
-            else if (i.prefill) {
-              const c = S.state.candidates.find((x) => x.id === i.cand);
-              const r = roundInvites(c);
-              ui.candId = c.id;
-              prefillBooking(c, i.step, r.list, r.state);
-            } else openCandidate(i.cand, i.step);
-          },
-        },
-        i.btn,
+        'div',
+        { class: 'row' },
+        h('button', { class: 'p', onclick: todoAction(i) }, i.btn),
+        cand && i.btn !== 'Open' ? h('button', { class: 'link', onclick: () => openCandidate(cand.id) }, `Open ${cand.name.split(' ')[0]}`) : null,
       ),
     );
   }
@@ -2020,49 +2354,45 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     const f = M.funnel(candidates());
     const target = c.targetHires || 0;
     const pct = target ? Math.min(100, Math.round((f.hired / target) * 100)) : 0;
-    const summary = now.length ? `${plural(now.length, 'thing needs', 'things need')} you today.` : 'Nothing needs you right now.';
+    const summary = now.length ? `${now.length === 1 ? 'One thing needs' : `${now.length} things need`} you today.` : 'Nothing needs you right now.';
+    const [hero, ...rest] = now;
 
     const todo = h(
-      'section',
-      { class: 'calm-card', 'aria-label': 'To do' },
-      now.length
-        ? [now.slice(0, showN).map(todoRow), now.length > showN ? h('button', { class: 'link more', onclick: () => ((ui.showAllTodo = true), rerender()) }, `Show ${now.length - showN} more`) : null]
-        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : 'Add a candidate after their HR interview and the next steps appear here.'), candidates().length ? null : h('button', { class: 'p', onclick: () => openCandidate('new') }, '+ Candidate')),
-      later.length
-        ? h(
-            'details',
-            { class: 'later', open: !!ui.laterOpen, ontoggle: (e) => (ui.laterOpen = e.target.open) },
-            h('summary', {}, `Coming up (${later.length})`),
-            later.map(todoRow),
-          )
-        : null,
+      'div',
+      { 'aria-label': 'To do' },
+      hero
+        ? [
+            todoHero(hero),
+            rest.length ? [h('p', { class: 'then' }, 'Then'), h('div', {}, rest.slice(0, showN - 1).map(todoRow))] : null,
+            rest.length > showN - 1 ? h('button', { class: 'link more', onclick: () => ((ui.showAllTodo = true), rerender()) }, `Show ${rest.length - (showN - 1)} more`) : null,
+          ]
+        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : 'Add a candidate after their HR interview and the next steps appear here.'), candidates().length ? null : h('button', { class: 'p big', onclick: () => openCandidate('new') }, '+ Candidate')),
+      later.length ? h('details', { class: 'later', open: !!ui.laterOpen, ontoggle: (e) => (ui.laterOpen = e.target.open) }, h('summary', {}, `Coming up · ${later.length}`), h('div', {}, later.map(todoRow))) : null,
     );
 
     const side = h(
-      'section',
-      { class: 'calm-card progress', 'aria-label': 'Campaign progress' },
-      h('span', { class: 'muted' }, c.name),
+      'aside',
+      { class: 'progress', 'aria-label': 'Campaign progress' },
+      h('span', { class: 'label' }, c.name),
       h('div', { class: 'big-num' }, `${f.hired}`, h('span', {}, ` of ${target || '?'} hired`)),
-      h('div', { class: 'meter' }, h('i', { style: `width:${pct}%` })),
-      h('p', { class: 'muted' }, `${plural(f.total, 'candidate')} · ${f.passedHr} passed HR · ${f.passedAdvisor} through the advisor round`),
+      h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
+      h('div', { class: 'stat-list' }, h('div', {}, 'Candidates', h('b', {}, f.total)), h('div', {}, 'Passed HR', h('b', {}, f.passedHr)), h('div', {}, 'Through advisor round', h('b', {}, f.passedAdvisor))),
     );
 
     const showTable = store('flux.stepTable') === '1';
-    return [
-      h('div', { class: 'section gutter calm-head' }, h('p', { class: 'muted' }, longDay(TODAY)), h('h1', {}, summary)),
-      h('div', { class: 'section gutter' }, h('div', { class: 'cols' }, todo, side)),
+    return h(
+      'div',
+      { class: 'home' },
+      h('div', { class: 'calm-head' }, h('p', { class: 'date' }, longDay(TODAY)), h('h1', {}, summary)),
+      h('div', { class: 'cols' }, todo, side),
       h(
-        'div',
-        { class: 'section' },
-        h(
-          'div',
-          { class: 'head gutter' },
-          h('div', { class: 'row' }, h('h2', {}, 'Candidates'), h('button', { class: 'p', onclick: () => openCandidate('new') }, '+ Candidate'), filterButtons()),
-          h('button', { class: 'link', onclick: () => (store('flux.stepTable', showTable ? '0' : '1'), rerender()) }, showTable ? 'Simple list' : 'Show every step'),
-        ),
+        'section',
+        { class: 'cand-sec', 'aria-label': 'Candidates' },
+        h('div', { class: 'cand-head' }, h('h2', {}, 'Candidates'), h('div', { class: 'filters' }, filterButtons()), h('button', { class: 'link add', onclick: () => openCandidate('new') }, '+ Candidate')),
         showTable ? matrix() : candidateList(),
+        h('div', { class: 'cand-foot' }, h('button', { class: 'quiet', onclick: () => (store('flux.stepTable', showTable ? '0' : '1'), rerender()) }, showTable ? 'Simple list' : 'Show every step ▸')),
       ),
-    ];
+    );
   }
 
   // The calm default: one line per candidate with where they are and what's next.
@@ -2071,38 +2401,45 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
       const st = cstate(c).status;
       return ui.candFilter === 'all' ? true : ui.candFilter === 'closed' ? st !== 'open' : st === 'open';
     });
-    if (!list.length) return h('div', { class: 'gutter' }, h('p', { class: 'muted' }, 'No candidates here.'));
+    if (!list.length) return h('p', { class: 'muted', style: 'padding:18px 0' }, 'No candidates here.');
     const stageName = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Hired' };
     return h(
       'div',
-      { class: 'gutter cand-list' },
+      { class: 'cand-list' },
       list.map((c) => {
         const s = cstate(c);
         return h(
           'button',
           { class: 'cand-row', onclick: () => openCandidate(c.id) },
           h('b', {}, c.name),
-          h('span', { class: `chip ${s.status === 'open' ? 'accent' : s.status === 'hired' ? 'good' : ''}` }, s.status === 'open' ? stageName[s.stage] : M.OUTCOME_LABELS[s.status] || s.status),
-          h('span', { class: 'muted next' }, s.prompt || ''),
-          s.clock && s.clock.state !== 'met' ? h('span', { class: `small ${s.clock.state === 'overdue' ? 'bad-t' : s.clock.daysLeft <= 2 ? 'warn-t' : 'faint'}` }, s.clock.state === 'overdue' ? 'past deadline' : `day ${Math.max(0, s.clock.day)} of ${s.clock.max}`) : h('span', {}),
+          h('span', { class: `round${s.status === 'open' ? '' : ' closed'}` }, s.status === 'open' ? stageName[s.stage] : M.OUTCOME_LABELS[s.status] || s.status),
+          h('span', { class: 'next' }, s.prompt || ''),
+          dayTag(s, c),
         );
       }),
     );
+  }
+
+  // Where the candidate is on the clock, in mono: "day 5 of 7", "today", "past deadline".
+  function dayTag(s, c) {
+    const clk = s.clock && s.clock.state !== 'met' ? s.clock : null;
+    if (clk) return h('span', { class: `day ${clk.state === 'overdue' ? 'bad' : clk.daysLeft <= 2 ? 'late' : ''}` }, clk.state === 'overdue' ? 'past deadline' : clk.state === 'booked' || clk.state === 'booked_late' ? M.formatDay(clk.interviewDate) : `day ${Math.max(0, clk.day)} of ${clk.max}`);
+    if (s.next === 'hr_done' && c.hrDate === TODAY) return h('span', { class: 'day' }, 'today');
+    return h('span', {});
   }
 
   function filterButtons() {
     const all = candidates().map((c) => cstate(c).status === 'open');
     const open = all.filter(Boolean).length;
     return [
-      ['open', `Open (${open})`],
-      ['closed', `Closed (${all.length - open})`],
-      ['all', `All (${all.length})`],
+      ['open', `Open ${open}`],
+      ['closed', `Closed ${all.length - open}`],
+      ['all', `All ${all.length}`],
     ].map(([k, label]) =>
       h(
         'button',
         {
           'aria-pressed': ui.candFilter === k,
-          class: ui.candFilter === k ? 'p' : '',
           onclick: () => {
             ui.candFilter = k;
             rerender();
@@ -2256,68 +2593,107 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     return act(() => S.set('candidates', c.id, withSummary(next)), msg);
   }
 
+  const STAGE_NAME = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Hired' };
+
+  // Candidate drawer: who, the one next step, progress (done steps folded), brief, notes.
   function candidateDetail(c) {
     if (!c) return h('p', { class: 'muted' }, 'This candidate was removed.');
     const s = cstate(c);
     const clk = s.clock && s.clock.state !== 'met' ? s.clock : null;
-    const header = h(
-      'div',
-      { style: 'display:flex;flex-direction:column;gap:4px;padding-right:30px' },
-      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', {}, c.name), clk ? h('span', { class: `chip ${clk.state === 'overdue' ? 'bad' : clk.daysLeft <= 2 ? 'warn' : 'accent'}` }, clk.state === 'booked' ? `booked ${M.formatDay(clk.interviewDate)}` : `day ${Math.max(0, clk.day)} of ${clk.max}`) : h('span', { class: `chip ${s.status === 'hired' ? 'good' : s.status === 'open' ? 'accent' : ''}` }, s.status === 'open' ? 'Open' : M.OUTCOME_LABELS[s.status] || s.status)),
-      h('div', { class: 'contact' }, c.email ? h('span', {}, c.email) : null, c.phone ? h('span', {}, c.phone) : null, c.hrDate ? h('em', {}, `HR interview ${M.formatDay(c.hrDate)}`) : null),
-      c.notes ? h('p', { class: 'small muted', style: 'white-space:pre-wrap' }, c.notes) : null,
-    );
+    const camp = campaigns().find((x) => x.id === c.campaignId) || campaign();
+    const clockText = clk ? (clk.state === 'overdue' ? h('span', { class: 'bad' }, `day ${clk.day} of ${clk.max}, past the deadline`) : clk.state === 'booked' || clk.state === 'booked_late' ? `booked for ${M.formatDay(clk.interviewDate)}` : h('span', { class: clk.daysLeft <= 2 ? 'late' : '' }, `day ${Math.max(0, clk.day)} of ${clk.max}`)) : null;
+    const header = [
+      h('p', { class: 'eyebrow' }, `Candidate · ${camp ? camp.name : ''}`),
+      h('h1', {}, c.name),
+      h('p', { class: 'sub' }, s.status === 'open' ? STAGE_NAME[s.stage] : M.OUTCOME_LABELS[s.status] || s.status, clockText ? ' · ' : '', clockText),
+      c.email || c.phone || c.hrDate ? h('div', { class: 'contact' }, c.email ? h('span', {}, c.email) : null, c.phone ? h('span', {}, c.phone) : null, c.hrDate ? h('em', {}, `HR interview ${M.formatDay(c.hrDate)}`) : null) : null,
+      c.notes ? h('p', { class: 'cnotes' }, c.notes) : null,
+    ];
+
+    const why = clk && clk.deadline && clk.state !== 'booked' ? `Day ${Math.max(0, clk.day)} of ${clk.max}, deadline ${M.formatDay(clk.deadline)}.` : '';
+    const next = s.next
+      ? h(
+          'section',
+          { class: 'next', 'aria-label': 'Next step' },
+          h('span', { class: 'kicker' }, 'Next step'),
+          h('h2', {}, `${s.prompt}.`),
+          why || s.skipped.length ? h('p', {}, [why, s.skipped.length ? `${plural(s.skipped.length, 'earlier step')} not recorded yet.` : ''].filter(Boolean).join(' ')) : null,
+          ui.openStep === s.next ? stepForm(c, s.next, s.done[s.next]) : h('div', { class: 'row go' }, h('button', { class: 'p', onclick: () => ((ui.openStep = s.next), rerender()) }, `Record: ${M.STEP_BY_KEY[s.next].label.toLowerCase()}`)),
+        )
+      : null;
+
     const keys = s.rejectedAt === 'hr' ? ['hr_done', 'reject_call_hr', ...M.STEPS.slice(1).map((x) => x.key)] : M.STEPS.map((x) => x.key);
-    const steps = h(
-      'div',
-      { class: 'steps' },
-      keys.map((key) => {
-        const step = M.STEP_BY_KEY[key];
-        const e = s.done[key];
-        const onPath = s.path.includes(key);
-        let cls = 'up';
-        if (e) cls = e.outcome === 'reject' ? 'done rej' : 'done';
-        else if (s.next === key) cls = 'next';
-        else if (s.skipped.includes(key)) cls = 'skip';
-        else if (!onPath) cls = 'na';
-        const isOpen = ui.openStep === key;
-        let when = '';
-        if (e) when = M.formatDay(e.at.slice(0, 10));
-        else if (s.next === key) when = 'next';
-        else if (s.skipped.includes(key)) when = 'not recorded';
-        else if (!onPath) when = 'n/a';
-        return h(
-          'div',
-          { class: `${cls}${isOpen ? ' open' : ''}` },
-          h(
-            'button',
-            {
-              class: 'st',
-              'aria-expanded': isOpen,
-              onclick: () => {
-                ui.openStep = isOpen ? null : key;
-                rerender();
-              },
-            },
-            h('i', {}, e ? (e.outcome === 'reject' ? '✗' : '✓') : step.n),
-            h('span', {}, step.label, e && e.outcome ? ` · ${M.OUTCOME_LABELS[e.outcome]}` : ''),
-            h('span', { class: 'when' }, when),
-          ),
-          e && !isOpen ? entryDetail(e) : null,
-          isOpen ? stepForm(c, key, e) : null,
-        );
-      }),
+    const row = (key) => {
+      const step = M.STEP_BY_KEY[key];
+      const e = s.done[key];
+      const onPath = s.path.includes(key);
+      let cls = 'later';
+      if (e) cls = e.outcome === 'reject' ? 'done rej' : 'done';
+      else if (s.next === key) cls = 'now';
+      else if (s.skipped.includes(key)) cls = 'skip';
+      else if (!onPath) cls = 'na';
+      const isOpen = ui.openStep === key;
+      let when = '';
+      if (e) when = M.formatDay(e.at.slice(0, 10));
+      else if (s.next === key) when = clk && clk.deadline ? M.formatDay(clk.deadline) : 'next';
+      else if (s.skipped.includes(key)) when = 'not recorded';
+      else if (!onPath) when = 'n/a';
+      return h(
+        'div',
+        { class: `step ${cls}` },
+        h(
+          'button',
+          { class: 'st', 'aria-expanded': isOpen, onclick: () => ((ui.openStep = isOpen && key !== s.next ? null : key), rerender()) },
+          h('span', { class: 'mark' }, e ? (e.outcome === 'reject' ? '✗' : '✓') : cls === 'skip' ? '!' : ''),
+          h('span', { class: 'lbl' }, step.label, e && e.outcome ? ` · ${M.OUTCOME_LABELS[e.outcome]}` : ''),
+          h('span', { class: 'when' }, when),
+        ),
+        e && !isOpen ? entryDetail(e) : null,
+        isOpen && key !== s.next ? stepForm(c, key, e) : null,
+      );
+    };
+    const doneKeys = keys.filter((k) => s.done[k]);
+    const lastDone = doneKeys.map((k) => s.done[k].at.slice(0, 10)).sort().pop();
+    const rest = keys.filter((k) => !s.done[k] && k !== s.next && !s.skipped.includes(k));
+    const soon = rest.filter((k) => s.path.includes(k)).slice(0, 2);
+    const more = rest.filter((k) => !soon.includes(k));
+    const progress = h(
+      'section',
+      { class: 'dsec', 'aria-label': 'Progress' },
+      h('span', { class: 'label' }, 'Progress'),
+      h(
+        'div',
+        { class: 'step-list' },
+        doneKeys.length
+          ? h(
+              'details',
+              { class: 'fold-steps done-sum', open: doneKeys.includes(ui.openStep) || !!ui.doneOpen, ontoggle: (e) => (ui.doneOpen = e.target.open) },
+              h('summary', {}, `${plural(doneKeys.length, 'step')} done${lastDone ? ` · last on ${M.formatDay(lastDone)}` : ''}`),
+              doneKeys.map(row),
+            )
+          : null,
+        s.skipped.map(row),
+        s.next ? row(s.next) : null,
+        soon.map(row),
+        more.length ? h('details', { class: 'fold-steps more-sum', open: more.includes(ui.openStep) }, h('summary', {}, `${plural(more.length, 'more step')}`), more.map(row)) : null,
+      ),
     );
+    return h('div', { style: 'display:flex;flex-direction:column' }, header, next, requestsSection(c, s) ? h('div', { class: 'dsec' }, requestsSection(c, s)) : null, progress, fromInterviewers(c, s), briefPanel(c, s), notesSection(c), h('div', { class: 'dsec' }, candidateAdmin(c, s)));
+  }
+
+  // Interview feedback for the current round, one line per interviewer with their lean.
+  function fromInterviewers(c, s) {
+    const round = s.stage === 'deepdive' || s.stage === 'hired' ? 'deepdive' : 'advisor';
+    const list = notesFor(c).filter((n) => n.kind === 'feedback' && n.round === round);
+    if (!list.length) return null;
     return h(
-      'div',
-      { style: 'display:flex;flex-direction:column;gap:14px' },
-      header,
-      s.prompt ? h('p', { class: 'small' }, h('b', {}, 'Next: '), s.prompt) : null,
-      requestsSection(c, s),
-      steps,
-      briefPanel(c, s),
-      notesSection(c),
-      candidateAdmin(c, s),
+      'section',
+      { class: 'dsec from-iv', 'aria-label': 'Interview feedback' },
+      h('span', { class: 'label' }, round === 'deepdive' ? 'From the team leads' : 'From the advisors'),
+      list.map((n) => {
+        const lean = LEANS.find((l) => n.text.startsWith(l[1]));
+        return h('div', { class: 'fb' }, h('span', {}, authorName(n)), h('span', { class: `lean ${lean ? (lean[0] === 'reject' ? 'no' : lean[0]) : ''}` }, lean ? lean[1] : 'Feedback'), h('p', {}, lean ? n.text.slice(lean[1].length).replace(/^[.\s]+/, '') : n.text));
+      }),
     );
   }
 
@@ -3289,11 +3665,11 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     const err = h('p', { class: 'err-line' });
     return h(
       'section',
-      { style: 'display:flex;flex-direction:column;gap:8px', 'aria-label': 'Notes and feedback' },
-      h('h3', {}, 'Notes and feedback'),
+      { class: 'dsec', 'aria-label': 'Notes and feedback' },
+      h('h2', {}, 'Notes and feedback'),
       h(
         'div',
-        { class: 'step-form', style: 'margin:0' },
+        { class: 'note-form' },
         h('textarea', { id: `note-text-${c.id}`, placeholder: 'What stood out, what to probe next round, your verdict and why…', oninput: (e) => (f.text = e.target.value) }),
         h(
           'div',
@@ -3317,20 +3693,21 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
         err,
       ),
       list.length
-        ? list.map((n) =>
-            h(
-              'div',
-              { class: 'tpanel', style: 'padding:8px 10px;display:flex;flex-direction:column;gap:3px' },
+        ? h(
+            'div',
+            { class: 'note-list' },
+            list.map((n) =>
               h(
                 'div',
-                { class: 'row small' },
-                h('b', {}, authorName(n)),
-                h('span', { class: `chip ${n.kind === 'feedback' ? 'accent' : ''}` }, n.kind === 'feedback' ? 'Feedback' : 'Note'),
-                h('span', { class: 'chip' }, (NOTE_ROUNDS.find((r) => r[0] === n.round) || ['', 'General'])[1]),
-                h('span', { class: 'faint mono' }, M.formatDay((n.createdAt || '').slice(0, 10))),
-                n.authorId === me || !n.authorId ? h('button', { class: 'link', style: 'margin-left:auto;font-size:12px', onclick: () => act(() => S.remove('notes', n.id), 'Note deleted') }, 'Delete') : null,
+                { class: 'note-item' },
+                h(
+                  'div',
+                  { class: 'meta' },
+                  h('span', {}, [authorName(n), M.formatDay((n.createdAt || '').slice(0, 10)), (NOTE_ROUNDS.find((r) => r[0] === n.round) || ['', 'General'])[1], n.kind === 'feedback' ? 'feedback' : ''].filter(Boolean).join(' · ')),
+                  n.authorId === me || !n.authorId ? h('button', { class: 'quiet', style: 'margin-left:auto;font-size:13px', onclick: () => act(() => S.remove('notes', n.id), 'Note deleted') }, 'Delete') : null,
+                ),
+                h('p', {}, n.text),
               ),
-              h('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere' }, n.text),
             ),
           )
         : h('p', { class: 'small muted' }, 'No notes yet. Natalie, advisors and team leads can all add them; they feed the interview brief.'),
@@ -3341,7 +3718,7 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
   function briefPanel(c, s) {
     if (!sample) return null;
     const b = (briefs[c.id] = briefs[c.id] || { text: '', busy: false, error: '', focus: '', round: s.stage === 'deepdive' ? 'deepdive' : 'advisor' });
-    const out = h('div', { class: 'small', style: 'white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5' }, b.text);
+    const out = h('div', { class: 'brief-out' }, b.text);
     const status = h('p', { class: b.error ? 'err-line' : 'small muted' }, b.error || (b.busy ? 'Claude is writing the brief…' : ''));
     async function run() {
       b.busy = true;
@@ -3375,14 +3752,14 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     }
     return h(
       'section',
-      { class: 'tpanel', style: 'padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:var(--s1)', 'aria-label': 'Interview brief' },
-      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h3', {}, 'Interview brief'), h('span', { class: 'small muted' }, 'by Claude, from the notes and timeline')),
+      { class: 'brief dsec', 'aria-label': 'Interview brief' },
+      h('div', { class: 'bh' }, h('h3', {}, 'Interview brief'), h('span', {}, 'by Claude, from notes and timeline')),
       h(
         'div',
         { class: 'row' },
         h('select', { id: `brief-round-${c.id}`, 'aria-label': 'For which interview', onchange: (e) => (b.round = e.target.value) }, h('option', { value: 'advisor', selected: b.round === 'advisor' }, 'For the advisor interview'), h('option', { value: 'deepdive', selected: b.round === 'deepdive' }, 'For the deep dive')),
         h('input', { id: `brief-focus-${c.id}`, style: 'flex:1;min-width:160px', placeholder: 'What do you want to dig into? (optional)', value: b.focus, oninput: (e) => (b.focus = e.target.value) }),
-        h('button', { class: 'p', onclick: run }, b.text ? 'Brief me again' : 'Brief me'),
+        h('button', { class: b.text ? '' : 'p', onclick: run }, b.text ? 'Brief me again' : 'Brief me'),
       ),
       status,
       out,
@@ -4796,6 +5173,7 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
   }
   function setViewAs(id, dev) {
     ui.dev = !!dev;
+    ui.menuOpen = false;
     ui.viewAs = id || null;
     store('flux.viewAs', ui.viewAs || '');
     ui.forms = {};
@@ -4817,7 +5195,7 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     return h(
       'div',
       { class: 'viewas', role: 'group', 'aria-label': 'View the app as' },
-      h('span', {}, 'View'),
+      h('span', { class: 'label' }, 'See the app as'),
       h(
         'div',
         { class: 'seg' },
@@ -4856,62 +5234,59 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     return h(
       'header',
       { class: 'bar gutter' },
-      h('div', { class: 'brand' }, h('i'), 'Flux interviews'),
-      h('nav', {}, h('a', { href: '#run', 'aria-current': 'page' }, me2 ? `${me2.name.split(' ')[0]}’s interviews` : 'My interviews')),
+      h('div', { class: 'brand' }, h('span', {}, 'Flux interviews')),
+      h('nav', {}, h('a', { href: '#run', 'aria-current': 'page' }, 'My interviews')),
       h(
         'div',
-        { class: 'camp' },
-        viewSwitch(),
+        { class: 'end' },
+        testPill(),
+        ctx.mode === 'preview' ? h('button', { class: 'view-pill', title: `This is what ${ctx.person.name} (${roleLabel(ctx.person)}, ${ctx.person.team}) sees. Anything you answer here is saved as mock.`, onclick: () => setViewAs(null) }, `Viewing as ${ctx.person.name.split(' ')[0]} · back to admin`) : null,
+        S.admin ? nameMenu() : me2 ? h('span', {}, me2.name.split(' ')[0]) : null,
         reportFab(),
-        S.admin ? h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, onclick: () => ((ui.mockOpen = !ui.mockOpen), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock') : null,
       ),
-    );
-  }
-
-  function ivBanner(ctx) {
-    if (ctx.mode !== 'preview') return null;
-    return h(
-      'div',
-      { class: 'banner gutter preview' },
-      `This is what ${ctx.person.name} (${roleLabel(ctx.person)}, ${ctx.person.team}) sees. Anything you answer here is saved as mock. `,
-      h('button', { class: 'link', onclick: () => setViewAs(null) }, 'Back to the admin view'),
     );
   }
 
   // ---- The page itself ----
   function interviewerView(ctx) {
-    if (ctx.loading) return h('div', { class: 'section gutter' }, h('p', { class: 'muted' }, 'Loading…'));
+    if (ctx.loading) return h('div', { class: 'home' }, h('div', { class: 'calm-head' }, h('p', { class: 'date' }, 'Loading…')));
     const inbox = ctx.inbox;
     const stats = ctx.stats || [];
     const st = stats.find((x) => x.campaignId === ui.ivCampaign) || stats[0] || null;
     if (!inbox)
       return h(
         'div',
-        { class: 'section gutter iv' },
-        h('h1', {}, 'Welcome'),
-        h('p', { class: 'muted' }, 'Natalie hasn’t linked your Claude account to the interview roster yet, so there’s nothing for you here yet. Ask her to add you, then reopen this page.'),
-        st ? campaignOverview(st) : null,
+        { class: 'home iv-home' },
+        h('div', { class: 'calm-head' }, h('h1', {}, 'Welcome.'), h('p', { class: 'lead' }, 'Natalie hasn’t linked your Claude account to the interview roster yet, so there’s nothing for you here yet. Ask her to add you, then reopen this page.')),
+        st ? h('div', { class: 'cols iv-cols' }, h('div', {}), h('aside', { class: 'iv-aside' }, campaignBlock(st))) : null,
       );
+    const open = (inbox.requests || []).filter((r) => !replyFor(ctx, r.id));
+    const role = `${inbox.role[0].toUpperCase()}${inbox.role.slice(1)}`;
+    const lead = open.length ? (open.length === 1 ? 'One request is waiting for your answer.' : `${open.length} requests are waiting for your answer.`) : 'Nothing is waiting for you right now.';
     return h(
       'div',
-      { class: 'section gutter iv' },
-      h('div', { class: 'head' }, h('div', {}, h('h1', {}, `Hi ${inbox.name.split(' ')[0]}`), h('p', {}, `${inbox.role[0].toUpperCase()}${inbox.role.slice(1)} · ${inbox.team}. Your interview requests, your interviews and how you and your team are doing.`))),
-      stats.length > 1 ? h('div', { class: 'row' }, stats.map((x) => h('button', { class: x === st ? 'p' : '', onclick: () => ((ui.ivCampaign = x.campaignId), rerender()) }, x.name))) : null,
+      { class: 'home iv-home' },
       h(
         'div',
-        { class: 'iv-grid' },
-        h('div', { class: 'iv-col' }, ivRequests(ctx), ivInterviews(ctx), ivAvailability(inbox)),
-        h('div', { class: 'iv-col' }, st ? myScore(inbox, st) : null, st ? teamBoard(st, inbox.team, true) : null, st ? campaignOverview(st) : null),
+        { class: 'cols iv-cols' },
+        h(
+          'div',
+          {},
+          h('div', { class: 'calm-head' }, h('p', { class: 'kicker' }, [role, inbox.team, st ? st.name : ''].filter(Boolean).join(' · ')), h('h1', {}, `Hi ${inbox.name.split(' ')[0]}.`), h('p', { class: 'lead' }, lead)),
+          stats.length > 1 ? h('div', { class: 'row', style: 'margin-top:24px' }, stats.map((x) => h('button', { class: x === st ? 'p' : '', onclick: () => ((ui.ivCampaign = x.campaignId), rerender()) }, x.name))) : null,
+          h('div', { style: 'margin-top:48px' }, ivRequests(ctx)),
+          ivInterviews(ctx),
+          h('div', { style: 'margin-top:8px' }, ivAvailability(inbox), ivRules(st)),
+        ),
+        h('aside', { class: 'iv-aside' }, st ? myScore(inbox, st) : null, st ? campaignBlock(st) : null),
       ),
-      ivRules(st),
     );
   }
 
   function ivRules(st) {
     const camp = st && S.state.campaigns.find((x) => x.id === st.campaignId);
     if (!camp) return null;
-    if (!ui.ivRulesOpen) return h('button', { class: 'link', style: 'align-self:flex-start', onclick: () => ((ui.ivRulesOpen = true), rerender()) }, 'How interviews are planned (rounds and rules)');
-    return h('div', { class: 'tpanel', style: 'padding:0' }, rulesSection(camp, false), h('div', { class: 'gutter', style: 'padding-bottom:12px' }, h('button', { class: 'link', onclick: () => ((ui.ivRulesOpen = false), rerender()) }, 'Hide rules')));
+    return h('details', { class: 'fold', open: !!ui.ivRulesOpen, ontoggle: (e) => (ui.ivRulesOpen = e.target.open) }, h('summary', {}, 'How interviews are planned'), ui.ivRulesOpen ? h('div', { class: 'fold-body' }, rulesSection(camp, false)) : null);
   }
   function replyFor(ctx, id) {
     return ctx.replies && ctx.replies.invites && ctx.replies.invites[id];
@@ -4944,27 +5319,33 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
   function ivRequests(ctx) {
     const reqs = ctx.inbox.requests || [];
     const reasons = (ui.ivReasons = ui.ivReasons || {});
+    const open = reqs.filter((r) => !replyFor(ctx, r.id));
+    const answered = reqs.filter((r) => replyFor(ctx, r.id));
     return h(
-      'section',
-      { class: 'tpanel iv-card', 'aria-label': 'Requests for you' },
-      h('h2', {}, 'Requests for you', reqs.length ? h('span', { class: 'chip accent' }, reqs.length) : null),
-      reqs.length
-        ? reqs.map((r) => {
-            const done = replyFor(ctx, r.id);
-            return h(
-              'div',
-              { class: 'iv-item' },
-              h('div', {}, h('b', {}, `${M.formatDay(r.slotDate)} ${r.time}`), h('span', { class: 'muted' }, ` · ${r.room || 'room tbc'}`)),
-              h('div', { class: 'small' }, `${ROUND_LABEL[r.round]} with ${r.candidate}. One hour, with a colleague from another team.`),
-              done
-                ? h('span', { class: `chip ${done.status === 'accepted' ? 'good' : ''}`, style: 'align-self:flex-start' }, done.status === 'accepted' ? '✓ You accepted. Natalie confirms the pair.' : 'You declined')
-                : [
-                    h('input', { id: `iv-reason-${r.id}`, placeholder: 'Reason if you decline (optional)', value: reasons[r.id] || '', oninput: (e) => (reasons[r.id] = e.target.value) }),
-                    h('div', { class: 'row' }, h('button', { class: 'p', onclick: () => ivAnswer(ctx, r, 'accepted') }, 'Accept'), h('button', { onclick: () => ivAnswer(ctx, r, 'declined', reasons[r.id]) }, 'Decline'), h('span', { class: 'small faint' }, 'or answer the Outlook invite')),
-                  ],
-            );
-          })
-        : h('p', { class: 'small muted' }, 'Nothing waiting for you. When Natalie asks you to interview, it shows up here and in Outlook.'),
+      'div',
+      { 'aria-label': 'Requests for you' },
+      open.map((r) =>
+        h(
+          'section',
+          { class: 'iv-request', 'aria-label': 'Interview request' },
+          h('span', { class: 'kick' }, 'Interview request'),
+          h('div', { class: 'when' }, `${M.formatDay(r.slotDate)}, ${r.time}`),
+          h('p', {}, `${ROUND_LABEL[r.round]} with ${r.candidate.split(' ')[0]} · ${r.room || 'room tbc'} · one hour, together with a colleague from another team.`),
+          h('div', { class: 'row' }, h('button', { class: 'p', onclick: () => ivAnswer(ctx, r, 'accepted') }, 'Accept'), h('button', { onclick: () => ivAnswer(ctx, r, 'declined', reasons[r.id]) }, 'Decline'), h('span', { class: 'small faint' }, 'or answer the Outlook invite')),
+          h('details', { class: 'plus' }, h('summary', {}, '+ Add a reason if you decline'), h('input', { id: `iv-reason-${r.id}`, placeholder: 'Reason (optional)', value: reasons[r.id] || '', oninput: (e) => (reasons[r.id] = e.target.value) })),
+        ),
+      ),
+      answered.length
+        ? h(
+            'div',
+            { class: 'answered' },
+            answered.map((r) => {
+              const done = replyFor(ctx, r.id);
+              return h('div', { class: 'a' }, h('span', {}, `${M.formatDay(r.slotDate)} ${r.time} · ${r.candidate}`), done.status === 'accepted' ? h('span', { class: 'pill-ok' }, '✓ You accepted. Natalie confirms the pair.') : h('span', { class: 'chip' }, 'You declined'));
+            }),
+          )
+        : null,
+      !reqs.length ? h('p', { class: 'muted' }, 'When Natalie asks you to interview, it shows up here and in Outlook.') : null,
     );
   }
 
@@ -4979,14 +5360,14 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
       const f = (ui.forms = ui.forms || {})[fk] || (ui.forms[fk] = { text: '', lean: 'pass', open: false });
       return h(
         'div',
-        { class: 'iv-item' },
-        h('div', { class: 'row', style: 'justify-content:space-between' }, h('div', {}, h('b', {}, iv.name), h('span', { class: 'muted' }, ` · ${ROUND_LABEL[iv.round]}`)), sent ? h('span', { class: 'chip good' }, '✓ Feedback sent') : isPast ? h('span', { class: 'chip warn' }, 'Feedback due') : null),
-        h('div', { class: 'small' }, `${M.formatDay(iv.slotDate)} ${iv.time} · ${iv.room || 'room tbc'}${iv.partners.length ? ` · with ${iv.partners.join(', ')}` : ''}${iv.booked ? '' : ' · pair not confirmed yet'}`),
+        { class: 'iv-row' },
+        h('div', { class: 'top' }, h('b', {}, iv.name), sent ? h('span', { class: 'pill-ok' }, '✓ Feedback sent') : isPast ? h('span', { class: 'chip warn' }, 'Feedback due') : null),
+        h('div', { class: 'meta' }, `${ROUND_LABEL[iv.round]} · ${M.formatDay(iv.slotDate)} ${iv.time} · ${iv.room || 'room tbc'}${iv.partners.length ? ` · with ${iv.partners.join(', ')}` : ''}${iv.booked ? '' : ' · pair not confirmed yet'}`),
         ivBrief(iv),
         isPast && !sent
           ? h(
               'div',
-              { class: 'step-form', style: 'margin:0' },
+              { class: 'step-form' },
               h('textarea', { id: `iv-fb-${iv.key}`, placeholder: 'How did it go? What stood out, what should the next round dig into?', value: f.text, oninput: (e) => (f.text = e.target.value) }),
               h(
                 'div',
@@ -5015,12 +5396,12 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     };
     return h(
       'section',
-      { class: 'tpanel iv-card', 'aria-label': 'Your interviews' },
+      { class: 'iv-sec', 'aria-label': 'Your interviews' },
       h('h2', {}, 'Your interviews'),
-      upcoming.length || past.length ? null : h('p', { class: 'small muted' }, 'No interviews planned for you yet.'),
+      upcoming.length || past.length ? null : h('p', { class: 'muted', style: 'padding:20px 0' }, 'No interviews planned for you yet.'),
       past.filter((x) => !x.feedbackSent).map((x) => card(x, true)),
       upcoming.filter((x) => x.slotDate > TODAY || x.feedbackSent).map((x) => card(x, false)),
-      past.filter((x) => x.feedbackSent).length ? h('p', { class: 'small muted' }, `Earlier: ${past.filter((x) => x.feedbackSent).map((x) => `${x.name.split(' ')[0]} (${M.formatDay(x.slotDate)})`).join(', ')}`) : null,
+      past.filter((x) => x.feedbackSent).length ? h('p', { class: 'iv-row earlier' }, `Earlier: ${past.filter((x) => x.feedbackSent).map((x) => `${x.name.split(' ')[0]} (${M.formatDay(x.slotDate)})`).join(', ')}`) : null,
     );
   }
 
@@ -5066,11 +5447,14 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     const days = Object.keys(inbox.availability || {}).sort();
     if (!days.length) return null;
     return h(
-      'section',
-      { class: 'tpanel iv-card', 'aria-label': 'Your availability' },
-      h('h2', {}, 'Your availability'),
-      h('p', { class: 'small muted' }, 'What Natalie has for you, from the poll or what you told her. Something changed? Update the poll sheet or tell Natalie.'),
+      'details',
+      { class: 'fold', 'aria-label': 'Your availability', open: !!ui.ivAvailOpen, ontoggle: (e) => (ui.ivAvailOpen = e.target.open) },
+      h('summary', {}, 'Your availability · what Natalie has for you'),
       h(
+        'div',
+        { class: 'fold-body' },
+        h('p', { class: 'small muted' }, 'From the poll or what you told her. Something changed? Update the poll sheet or tell Natalie.'),
+        h(
         'div',
         { class: 'sheet-wrap' },
         h(
@@ -5080,25 +5464,51 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
           h('tbody', {}, h('tr', {}, days.map((d) => h('td', { class: `v ${inbox.availability[d] || 'null'}`, title: NL[inbox.availability[d]] || 'No answer' }, inbox.availability[d] ? NL[inbox.availability[d]].split(' ')[0] : '')))),
         ),
       ),
+      ),
     );
   }
 
   const hrs = (x) => (x === null || x === undefined ? '–' : x < 1 ? '<1 h' : x < 48 ? `${Math.round(x)} h` : `${Math.round(x / 24)} d`);
 
+  const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+
   function myScore(inbox, st) {
     const s = inbox.scores && inbox.scores[st.campaignId];
     if (!s) return null;
+    const mine = (st.teams || []).find((t) => t.team === inbox.team);
     return h(
       'section',
-      { class: 'tpanel iv-card score', 'aria-label': 'Your score' },
-      h('h2', {}, 'Your score'),
-      h('div', { class: 'row', style: 'align-items:baseline;gap:14px' }, h('span', { class: 'big' }, s.points), h('span', {}, 'points'), h('span', { class: 'chip accent' }, `#${s.rank} of ${s.of} overall`), h('span', { class: 'chip' }, `#${s.teamRank} of ${s.teamOf} in ${s.team}`)),
-      s.nudge ? h('p', { class: 'small' }, s.nudge) : null,
-      h('div', { class: 'kpis' }, kpi('Interviews done', s.done, s.upcoming ? `${s.upcoming} coming up` : `fair share ${st.fairEach}`), kpi('Avg reply time', hrs(s.avgReplyHours), `${s.quickReplies} within a day`), kpi('Feedback on time', s.feedbackDue ? `${s.feedbackOnTime}/${s.feedbackDue}` : '–', 'within a day')),
-      s.badges.length ? h('div', { class: 'row' }, s.badges.map((b) => h('span', { class: 'chip good' }, `★ ${b}`))) : null,
-      h('p', { class: 'small faint' }, `${M.POINTS.interview} points per interview, ${M.POINTS.quickReply} for answering a request within a day, ${M.POINTS.quickFeedback} for feedback within a day. Only you and Natalie see your own numbers.`),
+      { class: 'blk score', 'aria-label': 'Your score' },
+      h('span', { class: 'label' }, 'Your score'),
+      h('div', { class: 'rank' }, `#${s.rank} of ${s.of} overall,`, h('br'), `#${s.teamRank} of ${s.teamOf} in ${s.team}.`),
+      h('p', {}, `${plural(s.points, 'point')}. ${s.nudge || ''}`.trim()),
+      h(
+        'details',
+        { open: !!ui.ivNumbersOpen, ontoggle: (e) => (ui.ivNumbersOpen = e.target.open) },
+        h('summary', {}, 'Your numbers'),
+        h('div', { class: 'kpis' }, kpi('Interviews done', s.done, s.upcoming ? `${s.upcoming} coming up` : `fair share ${st.fairEach}`), kpi('Avg reply time', hrs(s.avgReplyHours), `${s.quickReplies} within a day`), kpi('Feedback on time', s.feedbackDue ? `${s.feedbackOnTime}/${s.feedbackDue}` : '–', 'within a day')),
+        s.badges.length ? h('div', { class: 'row', style: 'margin-top:10px' }, s.badges.map((b) => h('span', { class: 'chip good' }, `★ ${b}`))) : null,
+        h('p', { class: 'small faint', style: 'margin-top:10px' }, `${M.POINTS.interview} points per interview, ${M.POINTS.quickReply} for answering a request within a day, ${M.POINTS.quickFeedback} for feedback within a day. Only you and Natalie see your own numbers.`),
+      ),
+      h('details', { open: !!ui.ivBoardOpen, ontoggle: (e) => (ui.ivBoardOpen = e.target.open) }, h('summary', {}, mine ? `Team board · ${inbox.team} is ${ordinal(mine.rank)}` : 'Team board'), teamBoard(st, inbox.team, true)),
     );
   }
+
+  // The campaign at a glance for interviewers: hires, the week ahead, where candidates are.
+  function campaignBlock(st) {
+    const p = st.pipeline || {};
+    const pct = st.targetHires ? Math.min(100, Math.round(((p.hired || 0) / st.targetHires) * 100)) : 0;
+    return h(
+      'section',
+      { class: 'blk', 'aria-label': 'Campaign overview' },
+      h('span', { class: 'label' }, st.name),
+      h('div', { class: 'big-num' }, `${p.hired || 0}`, h('span', {}, ` of ${st.targetHires || '?'} hired`)),
+      h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
+      h('p', {}, `${plural(st.interviewsNext7 || 0, 'interview')} in the next 7 days`),
+      h('details', { open: !!ui.ivPipeOpen, ontoggle: (e) => (ui.ivPipeOpen = e.target.open) }, h('summary', {}, 'Where candidates are'), campaignOverview(st)),
+    );
+  }
+
   function kpi(label, value, sub) {
     return h('div', { class: 'kpi' }, h('span', { class: 'small muted' }, label), h('b', {}, String(value)), sub ? h('span', { class: 'small faint' }, sub) : null);
   }
@@ -5195,7 +5605,7 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
   // Feedback reports: everyone can send a screenshot and a note to the
   // developer. Stored in reports/{id}; editors read them in the Developer view.
   // ------------------------------------------------------------------
-  const BUILD = '2026-11-24 00:02 ee46b55';
+  const BUILD = '2026-11-24 00:31 91c9d87';
   const recentErrors = [];
   window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
   window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
@@ -5223,7 +5633,8 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
       height: window.innerHeight,
       windowWidth: window.innerWidth,
       windowHeight: window.innerHeight,
-      ignoreElements: (el) => el.classList && (el.classList.contains('report-btn') || el.classList.contains('toast')),
+      // html2canvas draws the inside of closed <details> too, so skip those (and the report button and toasts).
+      ignoreElements: (el) => (el.classList && (el.classList.contains('report-btn') || el.classList.contains('toast'))) || (el.parentElement && el.parentElement.tagName === 'DETAILS' && !el.parentElement.open && el.tagName !== 'SUMMARY'),
     });
     const max = 1100;
     const k = Math.min(1, max / canvas.width);
@@ -5279,24 +5690,25 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     const err = h('p', { class: 'err-line' }, r.error && !r.shot ? r.error : '');
     return h(
       'div',
-      { class: 'welcome-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'report-title' },
+      { class: 'dialog-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'report-title' },
       h(
         'div',
-        { class: 'welcome report' },
-        h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', { id: 'report-title' }, 'Report to the developer'), h('button', { class: 'x', 'aria-label': 'Close', onclick: close }, '×')),
-        h('div', { class: 'seg' }, REPORT_KINDS.map(([k, l]) => h('button', { 'aria-pressed': r.kind === k, onclick: () => ((r.kind = k), rerender()) }, l))),
+        { class: 'dialog report' },
+        h('div', { class: 'top' }, h('h1', { id: 'report-title' }, 'Send a report'), h('button', { class: 'x', 'aria-label': 'Close', onclick: close }, '×')),
+        h('p', { class: 'sub' }, 'It goes straight to the person building the app.'),
+        h('div', { class: 'choices' }, REPORT_KINDS.map(([k, l]) => h('button', { class: 'choice', 'aria-pressed': r.kind === k, onclick: () => ((r.kind = k), rerender()) }, l))),
         h('label', { class: 'f' }, 'What happened?', h('textarea', { id: 'report-what', rows: 3, value: r.what, placeholder: 'What were you doing, and what went wrong or felt odd?', oninput: (e) => (r.what = e.target.value) })),
-        h('label', { class: 'f' }, 'What did you expect? (optional)', h('textarea', { id: 'report-expected', rows: 2, value: r.expected, oninput: (e) => (r.expected = e.target.value) })),
+        h('details', { class: 'plus', open: !!r.expected || !!r.expectOpen, ontoggle: (e) => (r.expectOpen = e.target.open) }, h('summary', {}, '+ What did you expect? (optional)'), h('textarea', { id: 'report-expected', rows: 2, 'aria-label': 'What did you expect?', value: r.expected, oninput: (e) => (r.expected = e.target.value), style: 'width:100%' })),
         r.busy
           ? h('p', { class: 'muted' }, 'Taking a screenshot…')
           : r.shot
-          ? h('div', { class: 'shot' }, h('img', { src: r.shot, alt: 'Screenshot of the app' }), h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'report-include', checked: r.include, onchange: (e) => (r.include = e.target.checked) }), 'Include this screenshot (it may show candidate names; only Natalie and the developer see reports)'))
+          ? h('div', { class: 'shot' }, h('img', { src: r.shot, alt: 'Screenshot of the app' }), h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'report-include', checked: r.include, onchange: (e) => (r.include = e.target.checked) }), h('span', {}, 'Include this screenshot', h('span', { class: 'muted' }, ' · it may show candidate names; only Natalie and the developer see reports.'))))
           : null,
         err,
         h(
           'div',
-          { class: 'row end' },
-          h('button', { onclick: close }, 'Cancel'),
+          { class: 'foot plain' },
+          h('button', { class: 'quiet', onclick: close }, 'Cancel'),
           h(
             'button',
             {
@@ -5383,10 +5795,11 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
   const WELCOME = {
     en: {
       title: 'Welcome to Flux Interviews',
+      more: 'What’s a Claude app, and how do I give feedback?',
       body: [
         'Flux Partners is small, and our people are everything, including the people we hire next. We want to find them ourselves instead of leaning on expensive agencies, and that only works if interviewing runs smoothly for you.',
         'This app is our first step. It spreads interviews fairly across teams, gives you notice when plans change, and gives you a short brief on each candidate before you walk in. You can keep answering in Outlook if you prefer.',
-        'This is a Claude app: a small tool built for us that runs inside Claude. Working this way is new for all of us, so your feedback matters. Whenever something is broken, confusing or could be better, press Report (bottom right). It sends a screenshot and your note straight to the person building the app, and we improve it for everyone.',
+        'This is a Claude app: a small tool built for us that runs inside Claude. Working this way is new for all of us, so your feedback matters. Whenever something is broken, confusing or could be better, press Report (top right). It sends a screenshot and your note straight to the person building the app, and we improve it for everyone.',
       ],
       privacy: 'Candidate details are only visible to the people interviewing them and to HR.',
       ok: 'I’m in',
@@ -5395,10 +5808,11 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
     },
     nl: {
       title: 'Welkom bij Flux Interviews',
+      more: 'Wat is een Claude-app, en hoe geef ik feedback?',
       body: [
         'Flux Partners is klein, en onze mensen zijn alles, ook de mensen die we hierna aannemen. We willen ze zelf vinden in plaats van te leunen op dure bureaus, en dat lukt alleen als interviewen voor jou soepel loopt.',
         'Deze app is onze eerste stap. Hij verdeelt interviews eerlijk over de teams, laat het je op tijd weten als plannen veranderen, en geeft je voor elk gesprek een korte brief over de kandidaat. Je kunt ook gewoon in Outlook blijven reageren.',
-        'Dit is een Claude-app: een kleine tool, voor ons gebouwd, die in Claude draait. Op deze manier werken is voor ons allemaal nieuw, dus jouw feedback telt. Is er iets kapot, onduidelijk of kan het beter? Druk op Report (rechtsonder). Dan gaan een screenshot en jouw toelichting direct naar degene die de app bouwt, en verbeteren we hem voor iedereen.',
+        'Dit is een Claude-app: een kleine tool, voor ons gebouwd, die in Claude draait. Op deze manier werken is voor ons allemaal nieuw, dus jouw feedback telt. Is er iets kapot, onduidelijk of kan het beter? Druk op Report (rechtsboven). Dan gaan een screenshot en jouw toelichting direct naar degene die de app bouwt, en verbeteren we hem voor iedereen.',
       ],
       privacy: 'Kandidaatgegevens zijn alleen zichtbaar voor de mensen die hen interviewen en voor HR.',
       ok: 'Ik doe mee',
@@ -5437,20 +5851,17 @@ details.round-sum[open] > summary { padding-bottom: 8px; }
       }, w.mock ? `${w.name} joined (mock)` : 'Welcome aboard');
     return h(
       'div',
-      { class: 'welcome-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'welcome-title' },
+      { class: 'dialog-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'welcome-title' },
       h(
         'div',
-        { class: 'welcome' },
-        h(
-          'div',
-          { class: 'row', style: 'justify-content:space-between;align-items:flex-start' },
-          h('h2', { id: 'welcome-title' }, t.title),
-          h('button', { class: 'link small', onclick: () => ((ui.welcomeLang = lang === 'en' ? 'nl' : 'en'), rerender()) }, t.other),
-        ),
-        w.mock ? h('p', { class: 'warn-line small' }, `Mock: this is what ${w.name} sees the first time they open the app.`) : null,
-        t.body.map((para) => h('p', {}, para)),
-        h('p', { class: 'small muted' }, t.privacy),
-        h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { onclick: close }, t.later), h('button', { class: 'p', onclick: accept }, t.ok)),
+        { class: 'dialog welcome' },
+        h('div', { class: 'top' }, h('span', {}, 'Flux Partners'), h('button', { class: 'link', onclick: () => ((ui.welcomeLang = lang === 'en' ? 'nl' : 'en'), rerender()) }, t.other)),
+        h('h1', { id: 'welcome-title' }, `${t.title}.`),
+        w.mock ? h('p', { class: 'warn-line' }, `Mock: this is what ${w.name} sees the first time they open the app.`) : null,
+        h('p', { class: 'lead' }, t.body[0]),
+        h('p', { class: 'lead soft' }, t.body[1]),
+        h('details', { class: 'plus' }, h('summary', {}, `${t.more} ▸`), h('p', { class: 'lead soft' }, t.body[2])),
+        h('div', { class: 'foot' }, h('span', { class: 'note' }, t.privacy), h('button', { class: 'quiet', onclick: close }, t.later), h('button', { class: 'p', onclick: accept }, t.ok)),
       ),
     );
   }

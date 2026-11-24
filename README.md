@@ -20,22 +20,31 @@ everyone. It's built to improve through the feedback of the people who use it.
 
 ## Trying it out
 
-- **View: Admin / Advisor / Team lead** (top bar, editors only) shows the page
+- **See the app as Admin / Advisor / Team lead** (the name menu at top right, editors only) shows the page
   as an advisor or team lead sees it. Picking a role opens the busiest person
   in that role, and the small menu next to it switches person.
-- **Mock** fast-forwards the flow. Load demo candidates, then press *Next day*
+- **Mock** (also in the name menu) fast-forwards the flow. Load demo candidates, then press *Next day*
   or *Skip a week*: colleagues answer requests (accepting when the poll says
   they're free), candidates send availability the day after they're asked, and
   interviewers write feedback the day after the interview. A log shows what
   happened. You play Natalie: book, call and record results from the to-do list.
   Only demo data is touched.
 
-- **Report** (bottom right, every view) sends a screenshot, a note and the app
+- **Report** (orange-red, top right, every view) sends a screenshot, a note and the app
   context (view, page, build, recent script errors). Editors write straight to
   `reports/`; advisors and team leads send it through their `replies/` doc and
   Natalie's page copies it over. The
   **Developer** view lists them with a status and a *Copy for Claude Code* button
   that turns a report into a ready-to-paste fix request.
+
+## Design
+
+The calm redesign came from Claude Design and is kept in
+`design-handoff/from-design/` (tokens, component CSS, the reference canvas and
+PNG previews in `preview/`). `src/styles.css` starts with those tokens; the
+sheet styles for the poll import, step matrix and roster follow, and the calm
+layer at the end applies the design to the top bar, Today, the candidate
+drawer, the advisor and team lead home, the welcome card and the Report dialog.
 
 ## Campaign structures
 
@@ -50,8 +59,10 @@ each round, then gives her an invitation to send. A new structure (for example a
 
 - **Campaigns**: the first is Trainee hiring (target 10 hires, about 25 interviews).
   Rounds and scheduling defaults are stored on the campaign.
-- **Run view**: a to-do list of next actions grouped into overdue, today and
-  coming up, above a step matrix with one row per candidate and one column per step.
+- **Today** (was Run view): the one next step large on top, then the rest of
+  today's to-do list, with coming up folded away and campaign progress beside it.
+  Below sits a simple candidate list; the step matrix (one row per candidate, one
+  column per step) is one click away.
 - **Candidate drawer**: the 11-step timeline from the plan (HR result, availability
   asked and received, advisor interview booked and done, result call, deep dive,
   final call, closed). Any step can be recorded out of order, corrected or removed.
