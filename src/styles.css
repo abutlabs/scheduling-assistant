@@ -771,3 +771,6 @@ a.btn:hover { filter: brightness(1.05); }
 .w-col:hover .w-bar { filter: brightness(1.15); }
 .w-pace { position: absolute; left: 14px; right: 14px; border-top: 2px dashed var(--muted, #888); pointer-events: none; }
 @media (max-width: 600px) { .f-row { grid-template-columns: 110px 1fr 28px 36px; gap: 6px; } }
+.camp-end { padding-top: 4px; }
+.camp-end.confirm { background: var(--sunk); border-radius: var(--r-md); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.camp-end.confirm p { margin: 0; }
