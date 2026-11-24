@@ -729,6 +729,8 @@ details.fold .fold-body > .section { padding: 12px 0 0; margin: 0; }
 details.fold .fold-body > .section.gutter { padding-inline: 0; }
 details.fold .fold-body > .section > .head h2 { font: 400 20px/1.3 var(--font-ui); }
 details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px; }
+.ok-t { color: var(--ok); font-weight: 600; }
+.iv-aside .goal + .score { margin-top: 8px; }
 
 </style>
 <div id="app"></div>
@@ -1715,6 +1717,45 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
     return { totalDone, fairEach: Math.round(fairEach * 10) / 10, teams: teamList, people: personList };
   }
 
+  /**
+   * Personal hiring goals. Each hire is credited to everyone who interviewed
+   * that candidate in a round, so a round needs targetHires x interviewers
+   * credits. Those are split evenly over the round's members (remainder to
+   * the first by name, and at least 1 each), so the goals add up to at least
+   * the campaign target. Someone in two rounds gets both shares.
+   * Returns { [personId]: { goal, hires, byRound: { advisor: { goal, hires } } } }.
+   */
+  function hiringGoals({ camp, cands, invites, people }) {
+    const target = Number(camp && camp.targetHires) || 0;
+    const out = {};
+    const hired = new Set(
+      cands
+        .filter((c) => {
+          const d = latestByStep(c.timeline || []);
+          return (d.closed && d.closed.outcome === 'hired') || (d.deepdive_done && d.deepdive_done.outcome === 'hire');
+        })
+        .map((c) => c.id),
+    );
+    const ivs = interviewsOf(cands, invites).filter((r) => r.booked || r.slotDate);
+    for (const round of (camp && camp.rounds) || []) {
+      if (round.role === 'hr') continue;
+      const members = roundMembers(camp, round.key, people).sort((a, b) => a.name.localeCompare(b.name));
+      if (!members.length) continue;
+      const need = target * (Number(round.interviewers) || 2);
+      const base = Math.floor(need / members.length);
+      const rem = need % members.length;
+      members.forEach((p, i) => {
+        const goal = target ? Math.max(1, base + (i < rem ? 1 : 0)) : 0;
+        const hires = new Set(ivs.filter((r) => r.personId === p.id && r.round === round.key && hired.has(r.candidateId)).map((r) => r.candidateId)).size;
+        const x = (out[p.id] = out[p.id] || { goal: 0, hires: 0, byRound: {} });
+        x.goal += goal;
+        x.hires += hires;
+        x.byRound[round.key] = { goal, hires };
+      });
+    }
+    return out;
+  }
+
   /** Counts per stage for the campaign overview (no names). */
   function pipelineCounts(cands, today) {
     const out = { total: cands.length, hr: 0, advisor: 0, deepdive: 0, hired: 0, closed: 0 };
@@ -1780,6 +1821,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
     POINTS,
     interviewsOf,
     scoreboard,
+    hiringGoals,
     pipelineCounts,
   };
 
@@ -5235,7 +5277,15 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
   function scoresFor(camp) {
     // Only the people in this campaign's interview rounds take part.
     const ids = new Set((camp.rounds || []).filter((r) => r.role !== 'hr').flatMap((r) => M.roundMembers(camp, r.key, S.state.people).map((p) => p.id)));
-    return M.scoreboard({ cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().filter((n) => n.campaignId === camp.id), people: S.state.people.filter((p) => ids.has(p.id)), today: TODAY });
+    const sb = M.scoreboard({ cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().filter((n) => n.campaignId === camp.id), people: S.state.people.filter((p) => ids.has(p.id)), today: TODAY });
+    // Personal hiring goals: each person's share of the campaign target.
+    const goals = M.hiringGoals({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), people: S.state.people });
+    for (const x of sb.people) {
+      const g = goals[x.personId];
+      x.goal = g ? g.goal : 0;
+      x.hires = g ? g.hires : 0;
+    }
+    return sb;
   }
 
   function statsFor(camp) {
@@ -5496,7 +5546,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
           ivInterviews(ctx),
           h('div', { style: 'margin-top:8px' }, ivAvailability(inbox), ivRules(st)),
         ),
-        h('aside', { class: 'iv-aside' }, st ? myScore(inbox, st) : null, st ? campaignBlock(st) : null),
+        h('aside', { class: 'iv-aside' }, st ? myGoal(inbox, st) : null, st ? myScore(inbox, st) : null, st ? campaignBlock(st) : null),
       ),
     );
   }
@@ -5712,6 +5762,23 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
     );
   }
 
+  // Your share of the campaign's hiring goal, and how far you are.
+  function myGoal(inbox, st) {
+    const s = inbox.scores && inbox.scores[st.campaignId];
+    if (!s || !s.goal) return null;
+    const pct = Math.min(100, Math.round((s.hires / s.goal) * 100));
+    const left = Math.max(0, s.goal - s.hires);
+    return h(
+      'section',
+      { class: 'blk goal', 'aria-label': 'Your hiring goal' },
+      h('span', { class: 'label' }, 'Your hiring goal'),
+      h('div', { class: 'big-num' }, String(s.hires), h('span', {}, ` of ${s.goal} hired`)),
+      h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
+      h('p', {}, left ? `${plural(left, 'more hire')} from candidates you interview reaches your goal.` : 'Goal reached. Every extra hire helps the campaign go past its target.'),
+      h('p', { class: 'small faint' }, `A hire counts for everyone who interviewed that candidate. ${st.targetHires || '?'} hires for ${st.name} are shared out over the interviewers, so if everyone reaches their goal, the campaign does too.`),
+    );
+  }
+
   // The campaign at a glance for interviewers: hires, the week ahead, where candidates are.
   function campaignBlock(st) {
     const p = st.pipeline || {};
@@ -5792,7 +5859,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
       'div',
       { class: 'section gutter' },
       h('h2', {}, 'Scoreboard'),
-      h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row and rank. This full list is for you.'),
+      h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row, rank and hiring goal. Goals split this campaign\'s target hires over the people in each round, so they add up to at least the target. This full list is for you.'),
       teamBoard(st, null),
       h(
         'details',
@@ -5804,13 +5871,13 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
         h(
           'table',
           { class: 'x' },
-          h('thead', {}, h('tr', {}, ['#', 'Name', 'Team', 'Points', 'Interviews', 'Coming up', 'Avg reply', 'Feedback on time', 'Badges', ''].map((x) => h('th', {}, x)))),
+          h('thead', {}, h('tr', {}, ['#', 'Name', 'Team', 'Hired / goal', 'Points', 'Interviews', 'Coming up', 'Avg reply', 'Feedback on time', 'Badges', ''].map((x) => h('th', {}, x)))),
           h(
             'tbody',
             {},
             sb.people.map((x) => {
               const p = personById(x.personId);
-              return h('tr', {}, h('td', { class: 'mono' }, x.rank), h('td', { class: 'name' }, p ? p.name : '?'), h('td', { class: 'mono' }, x.team), h('td', { class: 'mono' }, x.points), h('td', { class: 'mono' }, x.done), h('td', { class: 'mono' }, x.upcoming || ''), h('td', { class: 'mono' }, hrs(x.avgReplyHours)), h('td', { class: 'mono' }, x.feedbackDue ? `${x.feedbackOnTime}/${x.feedbackDue}` : '–'), h('td', { class: 'small' }, x.badges.join(', ')), h('td', {}, h('button', { class: 'link', onclick: () => setViewAs(x.personId) }, 'View as')));
+              return h('tr', {}, h('td', { class: 'mono' }, x.rank), h('td', { class: 'name' }, p ? p.name : '?'), h('td', { class: 'mono' }, x.team), h('td', { class: `mono ${x.goal && x.hires >= x.goal ? 'ok-t' : ''}` }, x.goal ? `${x.hires} / ${x.goal}` : '–'), h('td', { class: 'mono' }, x.points), h('td', { class: 'mono' }, x.done), h('td', { class: 'mono' }, x.upcoming || ''), h('td', { class: 'mono' }, hrs(x.avgReplyHours)), h('td', { class: 'mono' }, x.feedbackDue ? `${x.feedbackOnTime}/${x.feedbackDue}` : '–'), h('td', { class: 'small' }, x.badges.join(', ')), h('td', {}, h('button', { class: 'link', onclick: () => setViewAs(x.personId) }, 'View as')));
             }),
           ),
         ),
@@ -5823,7 +5890,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
   // Feedback reports: everyone can send a screenshot and a note to the
   // developer. Stored in reports/{id}; editors read them in the Developer view.
   // ------------------------------------------------------------------
-  const BUILD = '2026-11-24 01:03 f4cbe58';
+  const BUILD = '2026-11-24 01:05 8e54197';
   const recentErrors = [];
   window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
   window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());

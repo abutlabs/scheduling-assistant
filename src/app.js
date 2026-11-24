@@ -3230,7 +3230,15 @@
   function scoresFor(camp) {
     // Only the people in this campaign's interview rounds take part.
     const ids = new Set((camp.rounds || []).filter((r) => r.role !== 'hr').flatMap((r) => M.roundMembers(camp, r.key, S.state.people).map((p) => p.id)));
-    return M.scoreboard({ cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().filter((n) => n.campaignId === camp.id), people: S.state.people.filter((p) => ids.has(p.id)), today: TODAY });
+    const sb = M.scoreboard({ cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().filter((n) => n.campaignId === camp.id), people: S.state.people.filter((p) => ids.has(p.id)), today: TODAY });
+    // Personal hiring goals: each person's share of the campaign target.
+    const goals = M.hiringGoals({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), people: S.state.people });
+    for (const x of sb.people) {
+      const g = goals[x.personId];
+      x.goal = g ? g.goal : 0;
+      x.hires = g ? g.hires : 0;
+    }
+    return sb;
   }
 
   function statsFor(camp) {
@@ -3491,7 +3499,7 @@
           ivInterviews(ctx),
           h('div', { style: 'margin-top:8px' }, ivAvailability(inbox), ivRules(st)),
         ),
-        h('aside', { class: 'iv-aside' }, st ? myScore(inbox, st) : null, st ? campaignBlock(st) : null),
+        h('aside', { class: 'iv-aside' }, st ? myGoal(inbox, st) : null, st ? myScore(inbox, st) : null, st ? campaignBlock(st) : null),
       ),
     );
   }
@@ -3707,6 +3715,23 @@
     );
   }
 
+  // Your share of the campaign's hiring goal, and how far you are.
+  function myGoal(inbox, st) {
+    const s = inbox.scores && inbox.scores[st.campaignId];
+    if (!s || !s.goal) return null;
+    const pct = Math.min(100, Math.round((s.hires / s.goal) * 100));
+    const left = Math.max(0, s.goal - s.hires);
+    return h(
+      'section',
+      { class: 'blk goal', 'aria-label': 'Your hiring goal' },
+      h('span', { class: 'label' }, 'Your hiring goal'),
+      h('div', { class: 'big-num' }, String(s.hires), h('span', {}, ` of ${s.goal} hired`)),
+      h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
+      h('p', {}, left ? `${plural(left, 'more hire')} from candidates you interview reaches your goal.` : 'Goal reached. Every extra hire helps the campaign go past its target.'),
+      h('p', { class: 'small faint' }, `A hire counts for everyone who interviewed that candidate. ${st.targetHires || '?'} hires for ${st.name} are shared out over the interviewers, so if everyone reaches their goal, the campaign does too.`),
+    );
+  }
+
   // The campaign at a glance for interviewers: hires, the week ahead, where candidates are.
   function campaignBlock(st) {
     const p = st.pipeline || {};
@@ -3787,7 +3812,7 @@
       'div',
       { class: 'section gutter' },
       h('h2', {}, 'Scoreboard'),
-      h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row and rank. This full list is for you.'),
+      h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row, rank and hiring goal. Goals split this campaign\'s target hires over the people in each round, so they add up to at least the target. This full list is for you.'),
       teamBoard(st, null),
       h(
         'details',
@@ -3799,13 +3824,13 @@
         h(
           'table',
           { class: 'x' },
-          h('thead', {}, h('tr', {}, ['#', 'Name', 'Team', 'Points', 'Interviews', 'Coming up', 'Avg reply', 'Feedback on time', 'Badges', ''].map((x) => h('th', {}, x)))),
+          h('thead', {}, h('tr', {}, ['#', 'Name', 'Team', 'Hired / goal', 'Points', 'Interviews', 'Coming up', 'Avg reply', 'Feedback on time', 'Badges', ''].map((x) => h('th', {}, x)))),
           h(
             'tbody',
             {},
             sb.people.map((x) => {
               const p = personById(x.personId);
-              return h('tr', {}, h('td', { class: 'mono' }, x.rank), h('td', { class: 'name' }, p ? p.name : '?'), h('td', { class: 'mono' }, x.team), h('td', { class: 'mono' }, x.points), h('td', { class: 'mono' }, x.done), h('td', { class: 'mono' }, x.upcoming || ''), h('td', { class: 'mono' }, hrs(x.avgReplyHours)), h('td', { class: 'mono' }, x.feedbackDue ? `${x.feedbackOnTime}/${x.feedbackDue}` : '–'), h('td', { class: 'small' }, x.badges.join(', ')), h('td', {}, h('button', { class: 'link', onclick: () => setViewAs(x.personId) }, 'View as')));
+              return h('tr', {}, h('td', { class: 'mono' }, x.rank), h('td', { class: 'name' }, p ? p.name : '?'), h('td', { class: 'mono' }, x.team), h('td', { class: `mono ${x.goal && x.hires >= x.goal ? 'ok-t' : ''}` }, x.goal ? `${x.hires} / ${x.goal}` : '–'), h('td', { class: 'mono' }, x.points), h('td', { class: 'mono' }, x.done), h('td', { class: 'mono' }, x.upcoming || ''), h('td', { class: 'mono' }, hrs(x.avgReplyHours)), h('td', { class: 'mono' }, x.feedbackDue ? `${x.feedbackOnTime}/${x.feedbackDue}` : '–'), h('td', { class: 'small' }, x.badges.join(', ')), h('td', {}, h('button', { class: 'link', onclick: () => setViewAs(x.personId) }, 'View as')));
             }),
           ),
         ),

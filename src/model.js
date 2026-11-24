@@ -979,6 +979,45 @@
     return { totalDone, fairEach: Math.round(fairEach * 10) / 10, teams: teamList, people: personList };
   }
 
+  /**
+   * Personal hiring goals. Each hire is credited to everyone who interviewed
+   * that candidate in a round, so a round needs targetHires x interviewers
+   * credits. Those are split evenly over the round's members (remainder to
+   * the first by name, and at least 1 each), so the goals add up to at least
+   * the campaign target. Someone in two rounds gets both shares.
+   * Returns { [personId]: { goal, hires, byRound: { advisor: { goal, hires } } } }.
+   */
+  function hiringGoals({ camp, cands, invites, people }) {
+    const target = Number(camp && camp.targetHires) || 0;
+    const out = {};
+    const hired = new Set(
+      cands
+        .filter((c) => {
+          const d = latestByStep(c.timeline || []);
+          return (d.closed && d.closed.outcome === 'hired') || (d.deepdive_done && d.deepdive_done.outcome === 'hire');
+        })
+        .map((c) => c.id),
+    );
+    const ivs = interviewsOf(cands, invites).filter((r) => r.booked || r.slotDate);
+    for (const round of (camp && camp.rounds) || []) {
+      if (round.role === 'hr') continue;
+      const members = roundMembers(camp, round.key, people).sort((a, b) => a.name.localeCompare(b.name));
+      if (!members.length) continue;
+      const need = target * (Number(round.interviewers) || 2);
+      const base = Math.floor(need / members.length);
+      const rem = need % members.length;
+      members.forEach((p, i) => {
+        const goal = target ? Math.max(1, base + (i < rem ? 1 : 0)) : 0;
+        const hires = new Set(ivs.filter((r) => r.personId === p.id && r.round === round.key && hired.has(r.candidateId)).map((r) => r.candidateId)).size;
+        const x = (out[p.id] = out[p.id] || { goal: 0, hires: 0, byRound: {} });
+        x.goal += goal;
+        x.hires += hires;
+        x.byRound[round.key] = { goal, hires };
+      });
+    }
+    return out;
+  }
+
   /** Counts per stage for the campaign overview (no names). */
   function pipelineCounts(cands, today) {
     const out = { total: cands.length, hr: 0, advisor: 0, deepdive: 0, hired: 0, closed: 0 };
@@ -1044,6 +1083,7 @@
     POINTS,
     interviewsOf,
     scoreboard,
+    hiringGoals,
     pipelineCounts,
   };
 
