@@ -6,6 +6,7 @@ All collections live in the artifact database at the root.
 `name`, `startDate`, `endDate`, `targetHires`, `targetInterviews`, `archived`, `createdAt`,
 `open` (false: only Natalie sees it; advisors and team leads see open campaigns they're part of. Missing counts as open; new campaigns after the first start closed),
 `rounds[]` (`key`, `name`, `role`, `interviewers`, `differentTeams`, `durationMin`, `maxDaysAfterPrevious`, `fallbacks`),
+`recruitee` (`offerId`, `offerTitle`, `offers[]`, `stages[]`, `stageMap` (stage name to round, Natalie's corrections), `mode` (`live` or `mock`), `syncedAt`, `counts`),
 `settings` (invites per slot, reply window, holds per week and so on; used from phase 2). `settings.rooms` is `[{ name, email }]`: the rooms to book, with the room's Outlook address so a meeting draft books the room too.
 
 ## people/{id}
@@ -24,6 +25,10 @@ A rule narrows the poll for some dates: `kind` (`window`, `unavailable`, `tentat
 Blank answers mean unknown, not unavailable.
 
 ## candidates/{id}
+Synced from Recruitee: id `rc_<recruiteeId>`, plus `source: "recruitee"`, `recruiteeId`, `recruiteeUrl`, `recruiteeStage`,
+`recruiteeRound`, `recruiteeDisqualified`, `syncedAt`; timeline entries from Recruitee have `source: "recruitee"` and ids `rc-<step>`.
+`flow: "lite"` (V0) follows the short path without calls or a close step.
+
 `campaignId`, `name`, `email`, `phone`, `hrDate`, `notes`, `createdAt`, `timeline[]`,
 plus derived `status`, `stage`, `nextStep`, `updatedAt` (recomputed on every save so queries don't replay timelines).
 

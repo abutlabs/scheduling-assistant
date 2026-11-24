@@ -645,6 +645,7 @@
   ];
   const HR_REJECT_CALL = { key: 'reject_call_hr', n: '1b', label: 'Call: not moving on', actor: 'Natalie', round: 'hr', call: true, prompt: (c) => `Call ${c}: not moving on after HR` };
   const ALL_STEPS = [STEPS[0], HR_REJECT_CALL, ...STEPS.slice(1)];
+  const LITE_PATH = ['hr_done', 'avail_received_r2', 'advisor_booked', 'advisor_done', 'avail_received_final', 'deepdive_booked', 'deepdive_done'];
   const STEP_BY_KEY = Object.fromEntries(ALL_STEPS.map((s) => [s.key, s]));
 
   const OUTCOME_LABELS = {
@@ -682,13 +683,18 @@
     else if (done.advisor_done && done.advisor_done.outcome === 'reject') rejectedAt = 'advisor';
     else if (done.deepdive_done && done.deepdive_done.outcome === 'reject') rejectedAt = 'deepdive';
 
+    // V0 "lite" flow: Recruitee holds the candidate file, so there are no
+    // calls, no availability-asked step and no separate close. The app only
+    // tracks what it needs to plan interviewer pairs.
+    const lite = cand.flow === 'lite';
     let path;
-    if (rejectedAt === 'hr') path = ['hr_done', 'reject_call_hr', 'closed'];
+    if (lite) path = rejectedAt === 'advisor' ? LITE_PATH.slice(0, 4) : rejectedAt === 'hr' ? ['hr_done'] : LITE_PATH;
+    else if (rejectedAt === 'hr') path = ['hr_done', 'reject_call_hr', 'closed'];
     else if (rejectedAt === 'advisor') path = ['hr_done', 'avail_asked_r2', 'avail_received_r2', 'advisor_booked', 'advisor_done', 'result_call_r2', 'closed'];
     else path = STEPS.map((s) => s.key);
 
     let next = null;
-    if (!done.closed) {
+    if (!done.closed && !(lite && (rejectedAt || (done.deepdive_done && done.deepdive_done.outcome === 'hire')))) {
       // First missing step after the furthest recorded one, so steps
       // entered out of order don't send Natalie backwards.
       let furthest = -1;
@@ -707,6 +713,8 @@
     const closed = done.closed || null;
     let status = 'open';
     if (closed) status = closed.outcome || 'closed';
+    else if (lite && rejectedAt) status = 'rejected';
+    else if (lite && done.deepdive_done && done.deepdive_done.outcome === 'hire') status = 'hired';
 
     // Stage for the funnel.
     let stage = 'hr';
@@ -717,12 +725,12 @@
     // 1-week clock: runs from the moment availability is asked until the
     // interview of that round takes place.
     let clock = null;
-    if (!closed && !rejectedAt) {
+    if (status === 'open' && !rejectedAt) {
       if (stage === 'advisor') {
         const start = (done.avail_asked_r2 || done.hr_done).at;
         clock = makeClock('advisor', start, done.advisor_booked, done.advisor_done, today, lim.advisor);
-      } else if (stage === 'deepdive' && done.result_call_r2) {
-        clock = makeClock('deepdive', done.result_call_r2.at, done.deepdive_booked, done.deepdive_done, today, lim.deepdive);
+      } else if (stage === 'deepdive' && (lite ? done.advisor_done : done.result_call_r2)) {
+        clock = makeClock('deepdive', (lite ? done.advisor_done : done.result_call_r2).at, done.deepdive_booked, done.deepdive_done, today, lim.deepdive);
       }
     }
 
@@ -1582,6 +1590,7 @@
     newCampaign,
     latestByStep,
     candidateState,
+    LITE_PATH,
     funnel,
     pairProblems,
     availabilityOn,

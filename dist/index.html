@@ -1562,6 +1562,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
   ];
   const HR_REJECT_CALL = { key: 'reject_call_hr', n: '1b', label: 'Call: not moving on', actor: 'Natalie', round: 'hr', call: true, prompt: (c) => `Call ${c}: not moving on after HR` };
   const ALL_STEPS = [STEPS[0], HR_REJECT_CALL, ...STEPS.slice(1)];
+  const LITE_PATH = ['hr_done', 'avail_received_r2', 'advisor_booked', 'advisor_done', 'avail_received_final', 'deepdive_booked', 'deepdive_done'];
   const STEP_BY_KEY = Object.fromEntries(ALL_STEPS.map((s) => [s.key, s]));
 
   const OUTCOME_LABELS = {
@@ -1599,13 +1600,18 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     else if (done.advisor_done && done.advisor_done.outcome === 'reject') rejectedAt = 'advisor';
     else if (done.deepdive_done && done.deepdive_done.outcome === 'reject') rejectedAt = 'deepdive';
 
+    // V0 "lite" flow: Recruitee holds the candidate file, so there are no
+    // calls, no availability-asked step and no separate close. The app only
+    // tracks what it needs to plan interviewer pairs.
+    const lite = cand.flow === 'lite';
     let path;
-    if (rejectedAt === 'hr') path = ['hr_done', 'reject_call_hr', 'closed'];
+    if (lite) path = rejectedAt === 'advisor' ? LITE_PATH.slice(0, 4) : rejectedAt === 'hr' ? ['hr_done'] : LITE_PATH;
+    else if (rejectedAt === 'hr') path = ['hr_done', 'reject_call_hr', 'closed'];
     else if (rejectedAt === 'advisor') path = ['hr_done', 'avail_asked_r2', 'avail_received_r2', 'advisor_booked', 'advisor_done', 'result_call_r2', 'closed'];
     else path = STEPS.map((s) => s.key);
 
     let next = null;
-    if (!done.closed) {
+    if (!done.closed && !(lite && (rejectedAt || (done.deepdive_done && done.deepdive_done.outcome === 'hire')))) {
       // First missing step after the furthest recorded one, so steps
       // entered out of order don't send Natalie backwards.
       let furthest = -1;
@@ -1624,6 +1630,8 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     const closed = done.closed || null;
     let status = 'open';
     if (closed) status = closed.outcome || 'closed';
+    else if (lite && rejectedAt) status = 'rejected';
+    else if (lite && done.deepdive_done && done.deepdive_done.outcome === 'hire') status = 'hired';
 
     // Stage for the funnel.
     let stage = 'hr';
@@ -1634,12 +1642,12 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     // 1-week clock: runs from the moment availability is asked until the
     // interview of that round takes place.
     let clock = null;
-    if (!closed && !rejectedAt) {
+    if (status === 'open' && !rejectedAt) {
       if (stage === 'advisor') {
         const start = (done.avail_asked_r2 || done.hr_done).at;
         clock = makeClock('advisor', start, done.advisor_booked, done.advisor_done, today, lim.advisor);
-      } else if (stage === 'deepdive' && done.result_call_r2) {
-        clock = makeClock('deepdive', done.result_call_r2.at, done.deepdive_booked, done.deepdive_done, today, lim.deepdive);
+      } else if (stage === 'deepdive' && (lite ? done.advisor_done : done.result_call_r2)) {
+        clock = makeClock('deepdive', (lite ? done.advisor_done : done.result_call_r2).at, done.deepdive_booked, done.deepdive_done, today, lim.deepdive);
       }
     }
 
@@ -2499,6 +2507,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     newCampaign,
     latestByStep,
     candidateState,
+    LITE_PATH,
     funnel,
     pairProblems,
     availabilityOn,
@@ -2531,6 +2540,351 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FluxModel = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/*
+ * Recruitee (Tellent ATS) read-only sync: shared by the page and the desktop
+ * extension (tools/pack-extension.js copies this file into the bundle).
+ *
+ * Recruitee stays the system of record for candidates. The app reads three
+ * things from it: the vacancy (offer) with its pipeline stages, the
+ * candidates on that vacancy with their stage, and the interviews booked in
+ * Recruitee's agenda. It writes nothing back.
+ *
+ *  normalizeOffers / normalizeCandidates / normalizeEvents
+ *      Turn raw API JSON into small, stable shapes. Defensive: field names
+ *      differ between list and detail endpoints, so several are tried.
+ *  roundOfStage(name, category)
+ *      Which interview round a pipeline stage belongs to.
+ *  toCandidateDoc(...)
+ *      One synced candidate as an app candidate (flow "lite") whose
+ *      timeline is derived from the Recruitee stage and booked interviews.
+ *  mockRecruitee(today)
+ *      Raw-API-shaped mock data, used until a real token exists.
+ */
+(function (root) {
+  'use strict';
+
+  const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== '');
+  const dateOf = (iso) => (iso ? String(iso).slice(0, 10) : '');
+  // Local wall-clock time in the Netherlands for an ISO instant (interviews are booked in Dutch time).
+  function amsterdamParts(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return { date: dateOf(iso), time: '' };
+    try {
+      const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Amsterdam', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+      const p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
+      return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
+    } catch (e) {
+      return { date: dateOf(iso), time: String(iso).slice(11, 16) };
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Stages
+  // ------------------------------------------------------------------
+  const ROUND_PATTERNS = [
+    ['hired', /aangenomen|\bhired?\b|in dienst/i],
+    ['offer', /aanbod|\boffer|contract/i],
+    ['deepdive', /deep ?dive|team ?lead|eindgesprek|final|tweede gesprek|2e gesprek/i],
+    ['advisor', /advis|adviseur|competentie|eerste gesprek|1e gesprek|kennismaking/i],
+    ['hr', /hr|telefo|phone|screen|video/i],
+  ];
+  const CATEGORY_ROUND = { hire: 'hired', offer: 'offer', apply: 'applied', none: 'applied', phone_screen: 'hr', evaluation: 'hr' };
+  /** Which round a pipeline stage stands for: applied, hr, advisor, deepdive, offer or hired. */
+  function roundOfStage(name, category, overrides) {
+    if (overrides && name && overrides[name]) return overrides[name];
+    for (const [round, re] of ROUND_PATTERNS) if (re.test(name || '')) return round;
+    return CATEGORY_ROUND[category] || (category === 'interview' ? 'advisor' : 'applied');
+  }
+  const ROUND_ORDER = ['applied', 'hr', 'advisor', 'deepdive', 'offer', 'hired'];
+
+  // ------------------------------------------------------------------
+  // Normalisers
+  // ------------------------------------------------------------------
+  function stagesOfOffer(o) {
+    const list = pick(o.pipeline_template && o.pipeline_template.stages, o.pipeline && o.pipeline.stages, o.stages) || [];
+    return list.map((s) => ({ id: s.id, name: s.name || '', category: s.category || '' }));
+  }
+  function normalizeOffers(raw) {
+    const list = Array.isArray(raw) ? raw : (raw && (raw.offers || raw.data)) || [];
+    return list.map((o) => ({
+      id: o.id,
+      title: pick(o.title, o.position, o.name) || `Vacancy ${o.id}`,
+      status: o.status || '',
+      kind: o.kind || 'job',
+      candidatesCount: pick(o.candidates_count, o.candidates_count_total) || 0,
+      stages: stagesOfOffer(o),
+    }));
+  }
+
+  /**
+   * Candidates on one offer, one row per placement on that offer.
+   * `stages` (from the offer) names stage ids the candidate list leaves bare.
+   */
+  function normalizeCandidates(raw, offerId, stages, urlTemplate) {
+    const list = Array.isArray(raw) ? raw : (raw && (raw.candidates || raw.data)) || [];
+    const refs = (raw && raw.references) || [];
+    const stageById = new Map();
+    for (const s of stages || []) stageById.set(String(s.id), s);
+    for (const r of refs) if (/stage/i.test(r.type || '')) stageById.set(String(r.id), { id: r.id, name: r.name || '', category: r.category || '' });
+    const out = [];
+    for (const c of list) {
+      const placements = c.placements || [];
+      const pl = placements.find((p) => String(p.offer_id) === String(offerId)) || (offerId ? null : placements[0]);
+      if (!pl) continue;
+      const st = pl.stage || stageById.get(String(pl.stage_id)) || {};
+      out.push({
+        id: c.id,
+        name: pick(c.name, [c.first_name, c.last_name].filter(Boolean).join(' ')) || `Candidate ${c.id}`,
+        email: pick((c.emails || [])[0], c.email) || '',
+        offerId: pl.offer_id,
+        stageId: pick(pl.stage_id, st.id) || null,
+        stageName: st.name || '',
+        stageCategory: st.category || '',
+        disqualified: !!(pl.disqualified_at || pl.disqualify_reason || pl.disqualified),
+        stageChangedAt: pick(pl.positioned_at, pl.stage_changed_at, pl.updated_at, c.updated_at, c.created_at) || '',
+        // Candidate links in Tellent aren't documented; fill in a template once we see a real one.
+        url: urlTemplate ? urlTemplate.replace('{id}', c.id) : '',
+      });
+    }
+    return out;
+  }
+
+  function normalizeEvents(raw) {
+    const list = Array.isArray(raw) ? raw : (raw && (raw.interview_events || raw.events || raw.data)) || [];
+    return list
+      .map((e) => {
+        const startsAt = pick(e.starts_at, e.start_time, e.start, e.date);
+        const endsAt = pick(e.ends_at, e.end_time, e.end);
+        const people = [...(e.attendees || []), ...(e.admins || []), ...(e.interviewers || []), ...(e.participants || [])];
+        return {
+          id: e.id,
+          candidateId: pick(e.candidate_id, e.candidate && e.candidate.id),
+          offerId: pick(e.offer_id, e.offer && e.offer.id) || null,
+          startsAt: startsAt || '',
+          endsAt: endsAt || '',
+          title: pick(e.title, e.name, e.subject) || '',
+          location: pick(e.location, e.meeting_room && e.meeting_room.name, e.room) || '',
+          attendees: people
+            .filter((a) => a && !/candidate/i.test(a.type || a.role || ''))
+            .map((a) => ({ name: pick(a.name, a.full_name, a.admin && a.admin.name) || '', email: String(pick(a.email, a.admin && a.admin.email) || '').toLowerCase() })),
+          cancelled: !!(e.cancelled_at || e.status === 'cancelled' || e.canceled),
+        };
+      })
+      .filter((e) => e.candidateId && e.startsAt && !e.cancelled);
+  }
+
+  // ------------------------------------------------------------------
+  // Matching interviewers to the roster
+  // ------------------------------------------------------------------
+  const norm = (s) =>
+    String(s || '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  function matchPerson(att, people) {
+    if (att.email) {
+      const p = people.find((x) => (x.email || '').toLowerCase() === att.email);
+      if (p) return p;
+    }
+    const n = norm(att.name);
+    if (!n) return null;
+    return people.find((x) => norm(x.name) === n || (x.aliases || []).some((a) => norm(a) === n)) || null;
+  }
+  const hasRole = (p, r) => (p.roles || []).includes(r) || (r === 'teamlead' && (p.roles || []).includes('joker'));
+
+  /** Which round an interview is: by its title first, then by who sits on it. Null for an HR or unknown interview. */
+  function roundOfEvent(ev, interviewers, currentRound) {
+    if (/deep ?dive|team ?lead|eindgesprek|final/i.test(ev.title)) return 'deepdive';
+    if (/advis|adviseur|competentie/i.test(ev.title)) return 'advisor';
+    if (/video|\bhr\b|telefo|phone|screen/i.test(ev.title)) return null;
+    const leads = interviewers.filter((p) => hasRole(p, 'teamlead') && !hasRole(p, 'advisor')).length;
+    const advisors = interviewers.filter((p) => hasRole(p, 'advisor')).length;
+    if (leads || advisors) return leads > advisors ? 'deepdive' : 'advisor';
+    // Nobody on the roster: assume it's the round the candidate is in.
+    return ev.attendees.length && (currentRound === 'advisor' || currentRound === 'deepdive') ? currentRound : null;
+  }
+
+  // ------------------------------------------------------------------
+  // One synced candidate as an app candidate
+  // ------------------------------------------------------------------
+  /**
+   * Returns null for candidates the app doesn't plan for (still before the
+   * advisor round). Timeline entries carry `source: "recruitee"` and stable
+   * ids, so a re-sync replaces them; entries Natalie recorded in the app
+   * (a booking made from an accepted pair) are kept unless Recruitee has a
+   * booking for the same round.
+   */
+  function toCandidateDoc({ rc, events, people, campaignId, existing, stageOverrides, now }) {
+    const round = roundOfStage(rc.stageName, rc.stageCategory, stageOverrides);
+    const mine = (events || []).filter((e) => String(e.candidateId) === String(rc.id));
+    const booked = {};
+    for (const ev of mine.sort((a, b) => a.startsAt.localeCompare(b.startsAt))) {
+      const ivs = ev.attendees.map((a) => matchPerson(a, people)).filter(Boolean);
+      const r = roundOfEvent(ev, ivs, round);
+      if (!r) continue;
+      const { date, time } = amsterdamParts(ev.startsAt);
+      booked[r] = { eventId: ev.id, slotDate: date, time, room: ev.location, interviewers: [...new Set(ivs.map((p) => p.id))], unmatched: ev.attendees.filter((a) => !matchPerson(a, people)).map((a) => a.name || a.email) };
+    }
+    const reached = ROUND_ORDER.indexOf(round);
+    const anyBooking = booked.advisor || booked.deepdive;
+    if (reached < ROUND_ORDER.indexOf('advisor') && !anyBooking) return null;
+
+    const stamp = now || new Date().toISOString();
+    const since = dateOf(rc.stageChangedAt) || dateOf(stamp);
+    const tl = [];
+    const add = (step, at, outcome, data) => tl.push({ id: `rc-${step}`, step, at, outcome: outcome || null, note: '', recordedAt: stamp, source: 'recruitee', ...(data ? { data } : {}) });
+    const atLeast = (r) => reached >= ROUND_ORDER.indexOf(r);
+    const advisorDone = atLeast('deepdive');
+    const ddDone = atLeast('offer');
+    // The stage date is when they entered their current round; the advisor
+    // round's 1-week clock starts there (or at its interview, once past it).
+    const advisorStart = advisorDone && booked.advisor && booked.advisor.slotDate < since ? booked.advisor.slotDate : since;
+    add('hr_done', advisorStart, 'pass');
+    add('avail_received_r2', advisorStart);
+    if (booked.advisor) add('advisor_booked', since <= booked.advisor.slotDate ? since : booked.advisor.slotDate, null, booked.advisor);
+    if (advisorDone) add('advisor_done', since, 'pass');
+    else if (rc.disqualified && round === 'advisor') add('advisor_done', since, 'reject');
+    if (advisorDone) add('avail_received_final', since);
+    if (booked.deepdive) add('deepdive_booked', since <= booked.deepdive.slotDate ? since : booked.deepdive.slotDate, null, booked.deepdive);
+    if (ddDone) add('deepdive_done', since, 'hire');
+    else if (rc.disqualified && round === 'deepdive') add('deepdive_done', since, 'reject');
+
+    // Keep what Natalie recorded in the app, except bookings Recruitee now has.
+    const local = ((existing && existing.timeline) || []).filter((e) => e.source !== 'recruitee' && !(e.step === 'advisor_booked' && booked.advisor) && !(e.step === 'deepdive_booked' && booked.deepdive));
+    // A Recruitee booking whose interviewers aren't on the roster borrows the pair Natalie booked here.
+    for (const r of ['advisor', 'deepdive']) {
+      const b = booked[r];
+      const prev = ((existing && existing.timeline) || []).filter((e) => e.step === `${r}_booked` && e.source !== 'recruitee' && !e.voided).pop();
+      if (b && b.interviewers.length < 2 && prev && prev.data && prev.data.interviewers) b.interviewers = [...new Set([...b.interviewers, ...prev.data.interviewers])].slice(0, Math.max(2, b.interviewers.length));
+    }
+    return {
+      ...(existing || {}),
+      campaignId,
+      name: rc.name,
+      email: rc.email || (existing && existing.email) || '',
+      flow: 'lite',
+      source: 'recruitee',
+      recruiteeId: rc.id,
+      recruiteeUrl: rc.url || (existing && existing.recruiteeUrl) || '',
+      recruiteeStage: rc.stageName,
+      recruiteeRound: round,
+      recruiteeDisqualified: rc.disqualified,
+      syncedAt: stamp,
+      createdAt: (existing && existing.createdAt) || stamp,
+      timeline: [...tl, ...local],
+    };
+  }
+
+  /** Plan a whole sync: candidate docs to write, plus counts for the status line. */
+  function planSync({ offer, candidates, events, people, campaignId, existing, stageOverrides, now }) {
+    const byRc = new Map((existing || []).filter((c) => c.recruiteeId != null).map((c) => [String(c.recruiteeId), c]));
+    const docs = [];
+    const counts = { total: candidates.length, planned: 0, earlier: 0, interviews: 0, unmatched: [] };
+    for (const rc of candidates) {
+      const cur = byRc.get(String(rc.id));
+      const doc = toCandidateDoc({ rc, events, people, campaignId, existing: cur, stageOverrides, now });
+      if (!doc) {
+        counts.earlier++;
+        continue;
+      }
+      counts.planned++;
+      for (const e of doc.timeline) if (/_booked$/.test(e.step) && e.source === 'recruitee') {
+        counts.interviews++;
+        for (const u of (e.data && e.data.unmatched) || []) if (u && !counts.unmatched.includes(u)) counts.unmatched.push(u);
+      }
+      docs.push({ id: cur ? cur.id : `rc_${rc.id}`, doc });
+    }
+    return { docs, counts, offer: offer ? { id: offer.id, title: offer.title } : null };
+  }
+
+  // ------------------------------------------------------------------
+  // Mock data in the raw API shape, until a real token exists.
+  // ------------------------------------------------------------------
+  function mockRecruitee(today, people) {
+    const T = today || new Date().toISOString().slice(0, 10);
+    const add = (n) => {
+      const d = new Date(`${T}T12:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+    const wd = (n) => {
+      let d = T;
+      let k = Math.abs(n);
+      const step = n < 0 ? -1 : 1;
+      let i = 0;
+      while (k > 0) {
+        i += step;
+        d = add(i);
+        const w = new Date(`${d}T12:00:00Z`).getUTCDay();
+        if (w >= 1 && w <= 5) k--;
+      }
+      return d;
+    };
+    const stages = [
+      { id: 101, name: 'Gesolliciteerd', category: 'apply' },
+      { id: 102, name: 'Video-interview HR', category: 'phone_screen' },
+      { id: 103, name: 'Competentiegesprek adviseurs', category: 'interview' },
+      { id: 104, name: 'Deep dive teamleads', category: 'interview' },
+      { id: 105, name: 'Aanbod', category: 'offer' },
+      { id: 106, name: 'Aangenomen', category: 'hire' },
+    ];
+    const offers = [
+      { id: 9001, title: 'Traineeship', status: 'published', kind: 'job', candidates_count: 35, pipeline_template: { stages } },
+      { id: 9002, title: 'Adviseur Contractmanagement', status: 'published', kind: 'job', candidates_count: 42, pipeline_template: { stages } },
+    ];
+    const rows = [
+      ['Anne van der Woude', 103, -3],
+      ['Tim van der Vuurst', 103, -1],
+      ['Hugo Wessels', 102, -2],
+      ['Sam van Haren', 102, -1],
+      ['Lucas Zijlstra', 103, -6],
+      ['Fleur Brouwer', 104, -2],
+      ['Milan de Groot', 104, -5],
+      ['Iris Mulder', 105, -1],
+      ['Noor Hendriks', 103, -4, true],
+      ['Jesse Kok', 101, 0],
+    ];
+    const candidates = rows.map(([name, stageId, ago, dq], i) => ({
+      id: 70000 + i,
+      name,
+      emails: [`${name.toLowerCase().replace(/[^a-z]+/g, '.')}@example.com`],
+      created_at: `${wd(ago - 10)}T09:00:00Z`,
+      updated_at: `${wd(ago)}T09:00:00Z`,
+      placements: [{ id: 80000 + i, offer_id: 9001, stage_id: stageId, positioned_at: `${wd(ago)}T09:00:00Z`, disqualified_at: dq ? `${wd(ago + 1)}T10:00:00Z` : null }],
+    }));
+    // Interviews booked in Recruitee's agenda, with roster people when we know them.
+    const ps = people || [];
+    const adv = ps.filter((p) => hasRole(p, 'advisor'));
+    const tls = ps.filter((p) => hasRole(p, 'teamlead') && !hasRole(p, 'advisor'));
+    const two = (pool, k) => {
+      if (pool.length < 2) return [];
+      const a = pool[k % pool.length];
+      const b = pool.find((p, j) => j > k % pool.length && p.team !== a.team) || pool.find((p) => p.team !== a.team) || pool[(k + 1) % pool.length];
+      return [a, b].map((p) => ({ name: p.name, email: p.email || '' }));
+    };
+    const at = (d, hm) => `${d}T${hm}:00+01:00`;
+    const events = [
+      { id: 5001, candidate_id: 70000, offer_id: 9001, title: 'Anne van der Woude - Interview met Flux Partners', starts_at: at(wd(2), '10:00'), ends_at: at(wd(2), '11:00'), location: 'Room 1', attendees: two(adv, 0) },
+      { id: 5002, candidate_id: 70001, offer_id: 9001, title: 'Video-interview voor Traineeship - Tim van der Vuurst', starts_at: at(wd(-2), '11:10'), ends_at: at(wd(-2), '11:50'), location: 'Video', attendees: [{ name: 'Natalie', email: '' }] },
+      { id: 5003, candidate_id: 70002, offer_id: 9001, title: 'Video-interview voor Traineeship - Hugo Wessels', starts_at: at(wd(2), '13:00'), ends_at: at(wd(2), '13:40'), location: 'Video', attendees: [{ name: 'Natalie', email: '' }] },
+      { id: 5004, candidate_id: 70005, offer_id: 9001, title: 'Competentiegesprek - Fleur Brouwer', starts_at: at(wd(-4), '14:00'), ends_at: at(wd(-4), '15:00'), location: 'Room 2', attendees: two(adv, 2) },
+      { id: 5005, candidate_id: 70006, offer_id: 9001, title: 'Deep dive - Milan de Groot', starts_at: at(wd(3), '09:30'), ends_at: at(wd(3), '10:30'), location: 'Room 1', attendees: two(tls, 0) },
+      { id: 5006, candidate_id: 70007, offer_id: 9001, title: 'Deep dive - Iris Mulder', starts_at: at(wd(-3), '15:00'), ends_at: at(wd(-3), '16:00'), location: 'Room 2', attendees: two(tls, 1) },
+      { id: 5007, candidate_id: 70004, offer_id: 9001, title: 'Interview met Flux Partners - Lucas Zijlstra', starts_at: at(wd(1), '14:00'), ends_at: at(wd(1), '15:00'), location: 'Room 2', attendees: [{ name: 'Onbekende Collega', email: 'someone@fluxpartners.nl' }] },
+    ];
+    return { company: { id: 0, name: 'Flux Partners (mock)', slug: '' }, offers, candidates, events };
+  }
+
+  const api = { roundOfStage, normalizeOffers, normalizeCandidates, normalizeEvents, matchPerson, roundOfEvent, toCandidateDoc, planSync, mockRecruitee, amsterdamParts, ROUND_ORDER };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.FluxRecruitee = api;
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -2814,6 +3168,45 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     return out;
   }
   const cstate = (c) => M.candidateState(c, TODAY, roundLimits(c.campaignId));
+
+  // ------------------------------------------------------------------
+  // Versions. V0 is live: Natalie's admin view as a pair planner, while
+  // Recruitee stays the candidate system. Later work is hidden, not deleted:
+  //   recruitee        V1  candidates and interviews synced from Recruitee
+  //   interviewerViews V2  advisor and team lead pages, in-app answers, welcome card
+  //   ats              V2  the full candidate file: calls, notes, briefs, Claude advice, step table
+  // The Developer view can turn them on in one browser to preview them.
+  // ------------------------------------------------------------------
+  const VERSION = 'V0';
+  const FEATURE_INFO = [
+    ['recruitee', 'V0', 'Recruitee sync', 'Candidates and booked interviews come from Recruitee through the desktop extension.'],
+    ['interviewerViews', 'V2', 'Advisor and team lead pages', 'Their own page with requests, availability, briefs and scores, plus the welcome card.'],
+    ['ats', 'V2', 'Full candidate file', 'Calls, notes and feedback, Claude briefs and advice, the step table and the Candidates page.'],
+  ];
+  const FEATURES = (function () {
+    const on = { recruitee: true, interviewerViews: false, ats: false };
+    try {
+      Object.assign(on, JSON.parse(localStorage.getItem('flux.features') || '{}'));
+    } catch (e) {
+      /* no storage: defaults */
+    }
+    return on;
+  })();
+  function setFeature(key, val) {
+    FEATURES[key] = !!val;
+    store('flux.features', JSON.stringify(FEATURES));
+    rerender();
+  }
+  // Candidates added in V0 follow the short path (no calls, no close step).
+  const isLite = (c) => c && c.flow === 'lite';
+  // Synced candidates: results and stage moves happen in Recruitee, so a "verdict" step is a wait, not a task.
+  const waitsOnRecruitee = (c, s) => c && c.source === 'recruitee' && s.next && /_done$/.test(s.next);
+  function nextLine(c, s) {
+    if (!waitsOnRecruitee(c, s)) return s.prompt || '';
+    const b = s.done[s.next.replace('_done', '_booked')];
+    const d = b && b.data && b.data.slotDate;
+    return d && d >= TODAY ? `Interview ${M.formatDay(d)}${b.data.time ? ` ${b.data.time}` : ''}` : 'Waiting for the result in Recruitee';
+  }
   // replaceChildren() turns null and arrays into text; flatten and drop empties first.
   const fill = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
   const short = (iso) => (iso ? `${Number(iso.slice(8, 10))}-${Number(iso.slice(5, 7))}` : '');
@@ -2848,6 +3241,8 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     error: null,
   };
   let sample = null;
+  // The viewer's MCP bridge: reaches the Recruitee desktop extension (host:recruitee) in the Claude app.
+  let mcp = null;
 
   const people = () => [...S.state.people].sort((a, b) => a.name.localeCompare(b.name));
   const campaigns = () => S.state.campaigns.filter((c) => !c.archived).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
@@ -2924,16 +3319,18 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     render();
   }
 
-  function topBar() {
-    const c = campaign();
-    const nav = [
+  const NAV = () =>
+    [
       ['run', 'Today'],
-      ['candidates', 'Candidates'],
+      FEATURES.ats ? ['candidates', 'Candidates'] : null,
       ['availability', 'Availability'],
       ['roster', 'Roster'],
       ['campaign', 'Campaign'],
       ['metrics', 'Metrics'],
-    ];
+    ].filter(Boolean);
+  function topBar() {
+    const c = campaign();
+    const nav = NAV();
     return h(
       'header',
       { class: 'bar gutter' },
@@ -2988,7 +3385,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
         h(
           'nav',
           { class: 'phone-only', 'aria-label': 'Pages' },
-          [['run', 'Today'], ['candidates', 'Candidates'], ['availability', 'Availability'], ['roster', 'Roster'], ['campaign', 'Campaign'], ['metrics', 'Metrics']].map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
+          NAV().map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
         ),
         viewSwitch(),
         h('hr'),
@@ -3004,7 +3401,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     if (ui.view === 'roster') return rosterView();
     if (ui.view === 'campaign') return campaignView();
     if (ui.view === 'metrics') return metricsView();
-    if (ui.view === 'candidates') return candidatesView();
+    if (ui.view === 'candidates' && FEATURES.ats) return candidatesView();
     return runView();
   }
 
@@ -3045,6 +3442,8 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     for (const c of candidates()) {
       const s = cstate(c);
       if (!s.next) continue;
+      // Recruitee decides results and stages; the app only books pairs for synced candidates.
+      if (c.source === 'recruitee' && !/_booked$/.test(s.next)) continue;
       let group = 'later';
       let reason = '';
       const [kind, tone] = KIND[s.next] || ['Do', ''];
@@ -3088,13 +3487,13 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
         t = t === 'warn' ? 'warn' : '';
         reason = `${inv.state.accepted.length} of 2 accepted, ${inv.state.pending.length} waiting. ${reason}`;
       }
-      if (s.skipped.length) reason += ` ${plural(s.skipped.length, 'earlier step')} not recorded.`;
+      if (s.skipped.length && !isLite(c)) reason += ` ${plural(s.skipped.length, 'earlier step')} not recorded.`;
       const due = s.clock && s.clock.deadline && s.clock.state !== 'booked' ? (s.clock.state === 'overdue' ? 'past the deadline' : `due ${longDay(s.clock.deadline).split(' ')[0]}`) : '';
       items.push({ group, kind: k, tone: t, who: c.name, text: `${prompt}. ${reason}`.trim(), title: `${prompt}.`, sub: `${c.name} · ${reason}`.trim(), due, btn: k === 'Overdue' || k === 'Late' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
     }
     items.push(...inviteTodoItems());
     // Interviews that ended (plus 10 minutes) without feedback from someone.
-    items.push(...feedbackTodoItems());
+    if (FEATURES.ats) items.push(...feedbackTodoItems());
     // Interviewers asking to cancel a booked interview: Natalie talks to them first.
     const inCamp = new Set(candidates().map((c) => c.id));
     for (const n of S.state.notes.filter((x) => x.kind === 'cancel_request' && !x.resolved && inCamp.has(x.candidateId))) {
@@ -3212,7 +3611,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
   function todoRow(i) {
     const cand = i.cand && S.state.candidates.find((x) => x.id === i.cand);
     return [
-      h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.role ? h('span', { class: 'role-tag' }, i.role) : null, i.who), h('p', {}, i.text)), h('div', { class: 'row act-btns' }, cand && sample ? adviceButton(cand, true) : null, h('button', { onclick: todoAction(i) }, i.btn))),
+      h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.role ? h('span', { class: 'role-tag' }, i.role) : null, i.who), h('p', {}, i.text)), h('div', { class: 'row act-btns' }, cand && sample && FEATURES.ats ? adviceButton(cand, true) : null, h('button', { onclick: todoAction(i) }, i.btn))),
       cand ? advicePanel(cand) : null,
     ];
   }
@@ -3413,7 +3812,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
         'div',
         { class: 'row' },
         h('button', { class: 'p', onclick: todoAction(i) }, i.btn),
-        cand && sample ? adviceButton(cand) : null,
+        cand && sample && FEATURES.ats ? adviceButton(cand) : null,
         cand && i.btn !== 'Open' ? h('button', { class: 'link', onclick: () => openCandidate(cand.id) }, `Open ${cand.name.split(' ')[0]}`) : null,
       ),
       cand ? advicePanel(cand) : null,
@@ -3441,7 +3840,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
             rest.length ? [h('p', { class: 'then' }, 'Then'), h('div', {}, rest.slice(0, showN - 1).map(todoRow))] : null,
             rest.length > showN - 1 ? h('button', { class: 'link more', onclick: () => ((ui.showAllTodo = true), rerender()) }, `Show ${rest.length - (showN - 1)} more`) : null,
           ]
-        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : 'Add a candidate after their HR interview and the next steps appear here.'), candidates().length ? null : h('div', { class: 'row' }, h('button', { class: 'p big', onclick: () => openCandidate('new') }, '+ Candidate'), h('button', { class: 'quiet', title: 'Fills the app with mock candidates, interviews and feedback. Clear it any time from Mock.', onclick: loadFullDemo }, 'Try it with a demo campaign'))),
+        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : FEATURES.ats ? 'Add a candidate after their HR interview and the next steps appear here.' : 'Add a candidate when they need an advisor or deep dive pair, and the next steps appear here.'), candidates().length ? null : h('div', { class: 'row' }, h('button', { class: 'p big', onclick: () => openCandidate('new') }, '+ Candidate'), h('button', { class: 'quiet', title: 'Fills the app with mock candidates, interviews and feedback. Clear it any time from Mock.', onclick: loadFullDemo }, 'Try it with a demo campaign'))),
       later.length ? h('details', { class: 'later', open: !!ui.laterOpen, ontoggle: (e) => (ui.laterOpen = e.target.open) }, h('summary', {}, `Coming up · ${later.length}`), h('div', {}, later.map(todoRow))) : null,
     );
 
@@ -3451,10 +3850,11 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       h('span', { class: 'label' }, c.name),
       h('div', { class: 'big-num' }, `${f.hired}`, h('span', {}, ` of ${target || '?'} hired`)),
       h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
-      h('div', { class: 'stat-list' }, h('div', {}, 'Candidates', h('b', {}, f.total)), h('div', {}, 'Passed HR', h('b', {}, f.passedHr)), h('div', {}, 'Through advisor round', h('b', {}, f.passedAdvisor))),
+      h('div', { class: 'stat-list' }, h('div', {}, 'Candidates', h('b', {}, f.total)), h('div', {}, FEATURES.ats ? 'Passed HR' : 'In the advisor round', h('b', {}, FEATURES.ats ? f.passedHr : candidates().filter((x) => cstate(x).status === 'open' && cstate(x).stage === 'advisor').length)), h('div', {}, 'Through advisor round', h('b', {}, f.passedAdvisor))),
+      FEATURES.recruitee ? recruiteeBox(c) : null,
     );
 
-    const showTable = store('flux.stepTable') === '1';
+    const showTable = FEATURES.ats && store('flux.stepTable') === '1';
     return h(
       'div',
       { class: 'home' },
@@ -3465,7 +3865,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
         { class: 'cand-sec', 'aria-label': 'Candidates' },
         h('div', { class: 'cand-head' }, h('h2', {}, 'Candidates'), h('div', { class: 'filters' }, filterButtons()), h('button', { class: 'link add', onclick: () => openCandidate('new') }, '+ Candidate')),
         showTable ? matrix() : candidateList(),
-        h('div', { class: 'cand-foot' }, h('button', { class: 'quiet', onclick: () => (store('flux.stepTable', showTable ? '0' : '1'), rerender()) }, showTable ? 'Simple list' : 'Show every step ▸')),
+        FEATURES.ats ? h('div', { class: 'cand-foot' }, h('button', { class: 'quiet', onclick: () => (store('flux.stepTable', showTable ? '0' : '1'), rerender()) }, showTable ? 'Simple list' : 'Show every step ▸')) : null,
       ),
     );
   }
@@ -3488,7 +3888,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
           { class: 'cand-row', onclick: () => openCandidate(c.id) },
           h('b', {}, c.name),
           h('span', { class: `round${s.status === 'open' ? '' : ' closed'}` }, s.status === 'open' ? stageName[s.stage] : M.OUTCOME_LABELS[s.status] || s.status),
-          h('span', { class: 'next' }, s.prompt || ''),
+          h('span', { class: 'next' }, nextLine(c, s)),
           dayTag(s, c),
         );
       }),
@@ -3582,7 +3982,9 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     ui.openStep = step || null;
     if (id !== 'new' && !step) {
       const c = S.state.candidates.find((x) => x.id === id);
-      if (c) ui.openStep = cstate(c).next;
+      const s = c && cstate(c);
+      // In V0 a booking starts from the interviewer requests, and synced results come from Recruitee.
+      if (c) ui.openStep = isLite(c) && s.next && (/_booked$/.test(s.next) || waitsOnRecruitee(c, s)) ? null : s.next;
     }
     rerender();
   }
@@ -3603,6 +4005,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
   }
 
   function newCandidateForm() {
+    if (!FEATURES.ats) return liteCandidateForm();
     const f = { name: '', email: '', phone: '', hrDate: TODAY, hr: 'pass', asked: true, notes: '' };
     const err = h('p', { class: 'err-line' });
     return h(
@@ -3658,6 +4061,64 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     );
   }
 
+  // V0: Recruitee keeps the candidate file. Natalie only says who needs a pair
+  // and for which round; the clock starts today.
+  function liteCandidateForm() {
+    const f = { name: '', round: 'advisor', url: '', availability: '' };
+    const err = h('p', { class: 'err-line' });
+    return h(
+      'form',
+      {
+        class: 'stack',
+        style: 'display:flex;flex-direction:column;gap:12px',
+        onsubmit: (e) => {
+          e.preventDefault();
+          if (!f.name.trim()) {
+            err.textContent = 'Add the candidate’s name.';
+            return;
+          }
+          const url = f.url.trim();
+          if (url && !/^https:\/\//.test(url)) {
+            err.textContent = 'The Recruitee link should start with https://';
+            return;
+          }
+          const now = new Date().toISOString();
+          const ev = (step, outcome, data) => ({ id: S.uid('e'), step, at: TODAY, outcome: outcome || null, note: '', recordedAt: now, ...(data ? { data } : {}) });
+          const avail = f.availability.trim();
+          const timeline = [ev('hr_done', 'pass')];
+          if (f.round === 'deepdive') {
+            timeline.push(ev('advisor_done', 'pass'));
+            if (avail) timeline.push(ev('avail_received_final', null, { availability: avail }));
+          } else if (avail) timeline.push(ev('avail_received_r2', null, { availability: avail }));
+          const doc = { campaignId: campaign().id, name: f.name.trim(), flow: 'lite', recruiteeUrl: url, timeline, createdAt: now };
+          act(async () => {
+            const id = await S.add('candidates', withSummary(doc));
+            ui.candId = id;
+            ui.openStep = cstate(doc).next;
+            rerender();
+          }, `${doc.name} added`);
+        },
+      },
+      h('h2', {}, 'Who needs a pair?'),
+      h('p', { class: 'muted small' }, 'The candidate stays in Recruitee. Here you only plan the interviewers. The clock for the round starts today.'),
+      h(
+        'div',
+        { class: 'fg' },
+        h('label', { class: 'f wide' }, 'Name', h('input', { id: 'nc-name', required: true, autocomplete: 'off', oninput: (e) => (f.name = e.target.value) })),
+        h(
+          'label',
+          { class: 'f wide' },
+          'Round',
+          h('select', { id: 'nc-round', onchange: (e) => (f.round = e.target.value) }, h('option', { value: 'advisor', selected: true }, 'Advisor interview (two advisors)'), h('option', { value: 'deepdive' }, 'Deep dive (two team leads)')),
+        ),
+        h('label', { class: 'f wide' }, 'Their availability (optional, paste or type it)', h('textarea', { id: 'nc-avail', oninput: (e) => (f.availability = e.target.value) })),
+        h('label', { class: 'f wide' }, 'Link in Recruitee (optional)', h('input', { id: 'nc-url', type: 'url', placeholder: 'https://app.tellent.com/…', oninput: (e) => (f.url = e.target.value) })),
+      ),
+      err,
+      h('div', { class: 'row end' }, h('button', { type: 'button', onclick: closeDrawer }, 'Cancel'), h('button', { class: 'p', type: 'submit' }, 'Add')),
+    );
+  }
+
   // Denormalised fields so Claude sessions and metrics can query without replaying timelines.
   function withSummary(doc) {
     const s = cstate(doc);
@@ -3683,21 +4144,25 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       h('p', { class: 'sub' }, s.status === 'open' ? STAGE_NAME[s.stage] : M.OUTCOME_LABELS[s.status] || s.status, clockText ? ' · ' : '', clockText),
       c.email || c.phone || c.hrDate ? h('div', { class: 'contact' }, c.email ? h('span', {}, c.email) : null, c.phone ? h('span', {}, c.phone) : null, c.hrDate ? h('em', {}, `HR interview ${M.formatDay(c.hrDate)}`) : null) : null,
       c.notes ? h('p', { class: 'cnotes' }, c.notes) : null,
+      c.source === 'recruitee' ? h('p', { class: 'small muted' }, `In Recruitee: ${c.recruiteeStage || 'stage unknown'}${c.recruiteeDisqualified ? ' (disqualified)' : ''} · synced ${c.syncedAt ? `${M.formatDay(c.syncedAt.slice(0, 10))} ${c.syncedAt.slice(11, 16)}` : ''}`) : null,
+      /^https:\/\//.test(c.recruiteeUrl || '') ? h('p', {}, h('a', { href: c.recruiteeUrl, target: '_blank', rel: 'noopener' }, 'Open in Recruitee ↗')) : null,
     ];
 
     const why = clk && clk.deadline && clk.state !== 'booked' ? `Day ${Math.max(0, clk.day)} of ${clk.max}, deadline ${M.formatDay(clk.deadline)}.` : '';
-    const next = s.next
+    const next = waitsOnRecruitee(c, s)
+      ? h('section', { class: 'next', 'aria-label': 'Next step' }, h('span', { class: 'kicker' }, 'Next step'), h('h2', {}, `${nextLine(c, s)}.`), h('p', {}, `The result is decided in Recruitee. When ${c.name.split(' ')[0]} moves to the next stage there, the app follows on the next sync.`))
+      : s.next
       ? h(
           'section',
           { class: 'next', 'aria-label': 'Next step' },
           h('span', { class: 'kicker' }, 'Next step'),
           h('h2', {}, `${s.prompt}.`),
-          why || s.skipped.length ? h('p', {}, [why, s.skipped.length ? `${plural(s.skipped.length, 'earlier step')} not recorded yet.` : ''].filter(Boolean).join(' ')) : null,
+          why || (s.skipped.length && !isLite(c)) ? h('p', {}, [why, s.skipped.length && !isLite(c) ? `${plural(s.skipped.length, 'earlier step')} not recorded yet.` : ''].filter(Boolean).join(' ')) : null,
           ui.openStep === s.next ? stepForm(c, s.next, s.done[s.next]) : h('div', { class: 'row go' }, h('button', { class: 'p', onclick: () => ((ui.openStep = s.next), rerender()) }, `Record: ${M.STEP_BY_KEY[s.next].label.toLowerCase()}`)),
         )
       : null;
 
-    const keys = s.rejectedAt === 'hr' ? ['hr_done', 'reject_call_hr', ...M.STEPS.slice(1).map((x) => x.key)] : M.STEPS.map((x) => x.key);
+    const keys = isLite(c) ? M.LITE_PATH : s.rejectedAt === 'hr' ? ['hr_done', 'reject_call_hr', ...M.STEPS.slice(1).map((x) => x.key)] : M.STEPS.map((x) => x.key);
     const row = (key) => {
       const step = M.STEP_BY_KEY[key];
       const e = s.done[key];
@@ -3729,7 +4194,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     };
     const doneKeys = keys.filter((k) => s.done[k]);
     const lastDone = doneKeys.map((k) => s.done[k].at.slice(0, 10)).sort().pop();
-    const rest = keys.filter((k) => !s.done[k] && k !== s.next && !s.skipped.includes(k));
+    const rest = keys.filter((k) => !s.done[k] && k !== s.next && (!s.skipped.includes(k) || isLite(c)));
     const soon = rest.filter((k) => s.path.includes(k)).slice(0, 2);
     const more = rest.filter((k) => !soon.includes(k));
     const progress = h(
@@ -3747,13 +4212,14 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
               doneKeys.map(row),
             )
           : null,
-        s.skipped.map(row),
+        isLite(c) ? null : s.skipped.map(row),
         s.next ? row(s.next) : null,
         soon.map(row),
         more.length ? h('details', { class: 'fold-steps more-sum', open: more.includes(ui.openStep) }, h('summary', {}, `${plural(more.length, 'more step')}`), more.map(row)) : null,
       ),
     );
-    return h('div', { style: 'display:flex;flex-direction:column' }, header, next, requestsSection(c, s) ? h('div', { class: 'dsec' }, requestsSection(c, s)) : null, progress, fromInterviewers(c, s), briefPanel(c, s), notesSection(c), h('div', { class: 'dsec' }, candidateAdmin(c, s)));
+    const full = FEATURES.ats;
+    return h('div', { style: 'display:flex;flex-direction:column' }, header, next, requestsSection(c, s) ? h('div', { class: 'dsec' }, requestsSection(c, s)) : null, progress, full ? fromInterviewers(c, s) : null, full ? briefPanel(c, s) : null, full ? notesSection(c) : null, h('div', { class: 'dsec' }, candidateAdmin(c, s)));
   }
 
   // Interview feedback for the current round, one line per interviewer with their lean.
@@ -4291,15 +4757,16 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     return h(
       'section',
       { class: 'tpanel', 'aria-label': 'Interviewer requests' },
-      h('div', { class: 'ph' }, `Interviewer requests · ${roundObj.name}`, h('span', { class: 'faint' }, 'replies come from Outlook or the app')),
+      h('div', { class: 'ph' }, `Interviewer requests · ${roundObj.name}`, h('span', { class: 'faint' }, FEATURES.interviewerViews ? 'replies come from Outlook or the app' : 'replies come from Outlook')),
       head,
       s.done[bookedKey] && !(list.length && state.complete)
         ? h('div', { class: 'row', style: 'justify-content:space-between;padding:8px 10px' }, h('span', { class: 'small' }, h('b', {}, 'Booked: '), `${M.formatDay((s.done[bookedKey].data || {}).slotDate || s.done[bookedKey].at)} ${(s.done[bookedKey].data || {}).time || ''}`), h('button', { onclick: () => ((ui.outlookDraft = bookingDraft(c, round, s.done[bookedKey].data || {})), rerender()) }, 'Outlook invite'))
         : null,
+      s.done[bookedKey] && !FEATURES.recruitee ? h('p', { class: 'small muted', style: 'padding:0 10px 8px' }, `Book the interview itself in Recruitee with ${((s.done[bookedKey].data || {}).interviewers || []).map(pname).join(' and ') || 'this pair'}, so the candidate gets the invite from there.`) : null,
       rows,
       outlookPanel(c),
       !list.filter((i) => i.status === 'pending' || i.status === 'accepted').length && !s.done[bookedKey] ? slotSuggestions(c, s, round, roundObj) : null,
-      !state.complete ? askForm(c, round, roundObj, list) : null,
+      !state.complete && !s.done[bookedKey] ? askForm(c, round, roundObj, list) : null,
     );
   }
 
@@ -4946,7 +5413,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     ];
     act(async () => {
       const ids = [];
-      for (const c of demo) ids.push(await S.add('candidates', withSummary({ ...c, campaignId: camp.id, email: '', phone: '', mock: true, createdAt: now })));
+      for (const c of demo) ids.push(await S.add('candidates', withSummary({ ...c, campaignId: camp.id, email: '', phone: '', mock: true, createdAt: now, ...(FEATURES.ats ? {} : { flow: 'lite' }) })));
       // Sanne: three advisors asked for next Friday, from different teams.
       const pool = people().filter((p) => p.active !== false && (p.roles || []).includes('advisor'));
       const picked = [];
@@ -5119,7 +5586,9 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
         const d = wd(Math.min(ddSlot + 2, -1));
         tl.push(ev('final_call', d, null, null, kind === 'hired' ? 'Offer accepted on the phone. Starts in January.' : 'Took it well; asked for written feedback.'), ev('closed', d, kind === 'hired' ? 'hired' : 'rejected'));
       }
-      const doc = withSummary({ name: `${name} (demo)`, campaignId: camp.id, email: '', phone: '', hrDate: hr, notes: hrNotes[made % hrNotes.length], timeline: tl, mock: true, createdAt: `${hr}T12:00:00.000Z` });
+      // V0 tracks candidates from the moment they need an advisor pair.
+      if (!FEATURES.ats && !tl.some((x) => x.step === 'hr_done' && x.outcome === 'pass')) continue;
+      const doc = withSummary({ name: `${name} (demo)`, campaignId: camp.id, email: '', phone: '', hrDate: hr, notes: hrNotes[made % hrNotes.length], timeline: tl, mock: true, createdAt: `${hr}T12:00:00.000Z`, ...(FEATURES.ats ? {} : { flow: 'lite' }) });
       const id = await S.add('candidates', doc);
       for (const i of invites) await S.add('invites', { campaignId: camp.id, candidateId: id, ...i, mock: true });
       for (const n of notes) await S.add('notes', { candidateId: id, campaignId: camp.id, authorId: null, mock: true, ...n });
@@ -6547,7 +7016,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       h(
         'div',
         { class: 'head' },
-        h('div', {}, h('h2', {}, 'Rounds and scheduling rules'), h('p', {}, editable ? 'Everyone in the campaign can read these. Only you can change them.' : 'How interviews are planned in this campaign. Natalie sets these.')),
+        h('div', {}, h('h2', {}, 'Rounds and scheduling rules'), h('p', {}, editable ? (FEATURES.interviewerViews ? 'Everyone in the campaign can read these. Only you can change them.' : 'How pairs are planned in this campaign.') : 'How interviews are planned in this campaign. Natalie sets these.')),
         draft ? null : editable && !editing ? h('button', { onclick: () => ((ui.editRules = c.id), (ui.rulesDraft = null), rerender()) }, 'Edit') : null,
       ),
       h(
@@ -6810,7 +7279,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       step(
         3,
         'Who is in each round',
-        'Everyone you pick gets invited to the app. People without Claude still get Outlook invites.',
+        FEATURES.interviewerViews ? 'Everyone you pick gets invited to the app. People without Claude still get Outlook invites.' : 'Only the people you pick get interview requests. They answer in Outlook, as usual.',
         w.members ? w.draft.rounds.map((r) => h('div', { class: 'wiz-round' }, h('h3', {}, r.name), memberPicker(r, w.members, rerender))) : h('p', { class: 'muted' }, 'Loading the roster…'),
       ),
       h(
@@ -6865,7 +7334,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       h(
         'div',
         { class: 'head' },
-        h('div', {}, h('h2', {}, 'People in this campaign'), h('p', {}, `${all.length} people across ${plural(rounds.length, 'round')}. ${all.filter((x) => memberOf(x.p.accountId)).length} have joined the app.`)),
+        h('div', {}, h('h2', {}, 'People in this campaign'), h('p', {}, `${all.length} people across ${plural(rounds.length, 'round')}.${FEATURES.interviewerViews ? ` ${all.filter((x) => memberOf(x.p.accountId)).length} have joined the app.` : ''}`)),
         editing ? null : h('button', { onclick: () => ((ui.editPeople = c.id), (ui.peopleDraft = null), rerender()) }, 'Change people'),
       ),
       editing
@@ -6879,7 +7348,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
             ),
           ]
         : null,
-      ui.showInvite || Object.keys(invited).length < all.length
+      FEATURES.interviewerViews && (ui.showInvite || Object.keys(invited).length < all.length)
         ? h(
             'div',
             { class: 'invite-box' },
@@ -6902,9 +7371,9 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
         return h(
           'details',
           { class: 'round-sum' },
-          h('summary', {}, h('b', {}, r.name), h('span', { class: 'muted' }, ` · ${plural(ps.length, 'person', 'people')} · ${inv} invited · ${joined} joined`)),
+          h('summary', {}, h('b', {}, r.name), h('span', { class: 'muted' }, ` · ${plural(ps.length, 'person', 'people')}${FEATURES.interviewerViews ? ` · ${inv} invited · ${joined} joined` : ''}`)),
           ps.length ? null : h('p', { class: 'small muted' }, 'Nobody is in this round yet. Use Change people to add someone.'),
-          h('div', { class: 'people-list' }, ps.map((p) => h('div', { class: 'person-row' }, h('span', {}, h('b', {}, p.name), h('span', { class: 'muted' }, ` · ${p.team}`)), h('span', { class: 'row' }, p.accountId ? null : h('span', { class: 'small faint' }, 'Outlook only'), status(p))))),
+          h('div', { class: 'people-list' }, ps.map((p) => h('div', { class: 'person-row' }, h('span', {}, h('b', {}, p.name), h('span', { class: 'muted' }, ` · ${p.team}`)), FEATURES.interviewerViews ? h('span', { class: 'row' }, p.accountId ? null : h('span', { class: 'small faint' }, 'Outlook only'), status(p)) : null))),
         );
       }),
     );
@@ -6916,6 +7385,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       ui.newCampaign
         ? h('div', { class: 'section gutter' }, h('h1', {}, 'New campaign'), campaignWizard())
         : h('div', { class: 'section gutter' }, h('div', { class: 'head' }, h('div', {}, h('h1', {}, c.name), h('p', {}, `${(M.STRUCTURES[c.structure] || M.STRUCTURES[M.DEFAULT_STRUCTURE]).name}. Switch campaigns with the picker at the top.`)), h('button', { onclick: () => ((ui.newCampaign = true), (ui.wiz = null), rerender()) }, '+ New campaign')), campaignForm(c)),
+      ui.newCampaign || !FEATURES.recruitee ? null : recruiteeSettings(c),
       ui.newCampaign ? null : campaignPeople(c),
       ui.newCampaign ? null : rulesSection(c, true),
       ui.newCampaign ? null : adminScoreboard(c),
@@ -6982,7 +7452,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
         { class: 'tpanel camp-facts', style: 'padding:18px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end' },
         h('div', { class: 'kpis', style: 'flex:1' }, fact('Runs', `${c.startDate ? M.formatDay(c.startDate) : '?'} to ${c.endDate ? M.formatDay(c.endDate) : 'open end'}`), fact('Target hires', String(c.targetHires || '–')), fact('Expected interviews', String(c.targetInterviews || '–'))),
         h('button', { onclick: () => ((ui.editCampaign = c.id), rerender()) }, 'Edit details'),
-        h(
+        !FEATURES.interviewerViews ? null : h(
           'div',
           { class: `camp-open ${isOpen(c) ? 'on' : ''}`, style: 'flex-basis:100%' },
           h('span', {}, isOpen(c) ? 'Open: advisors and team leads in this campaign see it on their home.' : 'Not open: only you see this campaign. Open it when you’re ready to invite people.'),
@@ -7279,10 +7749,10 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
                   ...m.load.byTeam.map(([t, n]) => [`Team ${t}`, plural(n, 'interview'), '']),
                 ]),
               ),
-              voicesPanel(m),
+              FEATURES.ats ? voicesPanel(m) : null,
               loadPanel(m),
             ),
-            quotesPanel(m),
+            FEATURES.ats ? quotesPanel(m) : null,
           ]
         : h('p', { class: 'muted' }, 'No candidates in this campaign yet. Metrics fill in as candidates move through the rounds.'),
     );
@@ -7393,6 +7863,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
   let syncTimer = null;
   function scheduleSync() {
     if (!S || !S.admin) return;
+    autoSyncRecruitee();
     clearTimeout(syncTimer);
     syncTimer = setTimeout(() => syncShared().catch((e) => console.error('sync failed', e && e.message)), 1200);
   }
@@ -7408,6 +7879,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     for (const camp of openCampaigns()) await writeIfChanged('stats', camp.id, statsFor(camp));
     const openIds = new Set(openCampaigns().map((c) => c.id));
     for (const d of S.state.stats) if (!openIds.has(d.id)) await S.remove('stats', d.id);
+    if (!FEATURES.interviewerViews) return;
     const linked = S.state.people.filter((p) => p.accountId && !p.accountId.startsWith('mock:') && p.active !== false);
     for (const p of linked) await writeIfChanged('inbox', p.accountId, inboxFor(p));
     const keep = new Set(linked.map((p) => p.accountId));
@@ -7431,7 +7903,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       const stats = S.state.stats;
       return { mode: 'viewer', inbox: S.state.mine.inbox, replies: S.state.mine.replies || null, stats, loading: S.state.mine.inbox === undefined };
     }
-    const p = ui.viewAs && personById(ui.viewAs);
+    const p = FEATURES.interviewerViews && ui.viewAs && personById(ui.viewAs);
     if (!p || !campaign()) return null;
     return { mode: 'preview', person: p, inbox: inboxFor(p), replies: null, stats: openCampaigns().map(statsFor), loading: false };
   }
@@ -7460,8 +7932,8 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
     const curRole = ui.dev ? 'dev' : cur ? roleLabel(cur) : 'admin';
     const seg = [
       ['admin', 'Admin'],
-      ['advisor', 'Advisor'],
-      ['team lead', 'Team lead'],
+      FEATURES.interviewerViews ? ['advisor', 'Advisor'] : null,
+      FEATURES.interviewerViews ? ['team lead', 'Team lead'] : null,
       ['dev', `Developer${S.state.reports.filter((x) => (x.status || 'new') === 'new').length ? ` · ${S.state.reports.filter((x) => (x.status || 'new') === 'new').length}` : ''}`],
     ];
     return h(
@@ -7471,7 +7943,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       h(
         'div',
         { class: 'seg' },
-        seg.map(([r, label]) =>
+        seg.filter(Boolean).map(([r, label]) =>
           h(
             'button',
             {
@@ -7521,6 +7993,8 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
 
   // ---- The page itself ----
   function interviewerView(ctx) {
+    if (ctx.mode === 'viewer' && !FEATURES.interviewerViews)
+      return h('div', { class: 'home iv-home' }, h('div', { class: 'calm-head' }, h('h1', {}, 'Not open yet.'), h('p', { class: 'lead' }, 'This app is Natalie’s interview planner for now. Advisors and team leads keep getting their requests in Outlook, as usual.')));
     if (ctx.loading) return h('div', { class: 'home' }, h('div', { class: 'calm-head' }, h('p', { class: 'date' }, 'Loading…')));
     const inbox = ctx.inbox;
     // Only open campaigns reach this page; of those, show the ones this person is part of.
@@ -7925,7 +8399,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       'div',
       { class: 'section gutter' },
       h('h2', {}, 'Scoreboard'),
-      h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row, rank and interview goal. Goals split this campaign\'s expected interviews over the people in each round (two seats per interview), so they add up to at least what the campaign needs. This full list is for you.'),
+      h('p', { class: 'small muted' }, !FEATURES.interviewerViews ? 'Who is carrying the interviews, per team and per person, so you can spread the load. Only you see this for now.' : 'Interviewers see the team board and only their own row, rank and interview goal. Goals split this campaign\'s expected interviews over the people in each round (two seats per interview), so they add up to at least what the campaign needs. This full list is for you.'),
       teamBoard(st, null),
       h(
         'details',
@@ -7956,7 +8430,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
   // Feedback reports: everyone can send a screenshot and a note to the
   // developer. Stored in reports/{id}; editors read them in the Developer view.
   // ------------------------------------------------------------------
-  const BUILD = '2026-11-24 10:13 d67b071';
+  const BUILD = '2026-11-24 10:38 c608012';
   const recentErrors = [];
   window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
   window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
@@ -8101,7 +8575,19 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
         [['open', `Open (${list.length - count('fixed') - count('wontfix')})`], ['new', `New (${count('new')})`], ['fixed', `Fixed (${count('fixed')})`], ['all', `All (${list.length})`]].map(([k, l]) => h('button', { 'aria-pressed': filter === k, onclick: () => ((ui.devFilter = k), rerender()) }, l)),
       ),
       shown.length ? shown.map(reportCard) : h('div', { class: 'calm-empty' }, h('p', {}, list.length ? 'Nothing here.' : 'No reports yet. They arrive here when someone presses Report.')),
+      versionsPanel(),
       h('p', { class: 'small faint' }, `This build: ${BUILD}`),
+    );
+  }
+  // Hidden work for later versions, switchable in this browser only.
+  function versionsPanel() {
+    return h(
+      'section',
+      { class: 'tpanel', 'aria-label': 'Later versions', style: 'margin-top:32px' },
+      h('div', { class: 'ph' }, `Live: ${VERSION} · later versions`, h('span', { class: 'faint' }, 'only in this browser')),
+      FEATURE_INFO.map(([k, v, label, about]) =>
+        h('label', { class: 'check', style: 'padding:8px 10px;align-items:flex-start' }, h('input', { type: 'checkbox', checked: !!FEATURES[k], onchange: (e) => setFeature(k, e.target.checked) }), h('span', {}, h('b', {}, `${v} · ${label}`), h('br'), h('span', { class: 'small muted' }, about))),
+      ),
     );
   }
   function reportCard(x) {
@@ -8173,6 +8659,7 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
   };
   // ui.welcome: null (hidden) or { memberId, name?, mock? }
   async function checkWelcome() {
+    if (!FEATURES.interviewerViews) return;
     const id = me || 'local';
     if (store(`flux.welcomed.${id}`)) return;
     let doc = null;
@@ -8218,6 +8705,194 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
   }
   const memberOf = (accountId) => accountId && S.state.members.find((m) => m.id === accountId && m.acceptedAt);
 
+
+  // ------------------------------------------------------------------
+  // Recruitee sync (read-only). Natalie's page asks the Recruitee desktop
+  // extension on her computer for the vacancy, its candidates and the booked
+  // interviews, and saves them as candidates here. Nothing is written back.
+  // Without the extension (a browser tab, or before it's installed) the
+  // page can load mock data in the same shapes to try it out.
+  // ------------------------------------------------------------------
+  const RC = window.FluxRecruitee;
+  const RC_SERVER = 'host:recruitee';
+  const rcState = { busy: false, error: null, autoDone: false };
+  async function rcCall(tool, input) {
+    if (!mcp) throw { code: 'server_not_connected', message: 'No connection to the Claude app here.' };
+    const res = await mcp.callTool(RC_SERVER, tool, input || {});
+    const out = res && res.payload !== undefined ? res.payload : res;
+    if (out && out.error) throw { code: 'tool_error', message: out.error };
+    return out;
+  }
+  const RC_ERRORS = {
+    server_not_connected: 'The Recruitee extension isn’t reachable. Open this app in the Claude desktop app, with the Recruitee extension installed and switched on.',
+    unavailable: 'The Recruitee extension isn’t reachable. Open this app in the Claude desktop app, with the Recruitee extension installed and switched on.',
+    approval_required: 'Claude asked for permission to read Recruitee and it wasn’t given. Press Sync again and allow it.',
+    cancelled: 'The Recruitee read was cancelled. Press Sync again and allow it.',
+    blocked_by_policy: 'Your organization doesn’t allow this app to use the Recruitee extension.',
+  };
+  function rcError(e) {
+    const code = (e && e.code) || 'error';
+    return { code, text: RC_ERRORS[code] || `Recruitee: ${(e && e.message) || code}` };
+  }
+  const slimPeople = () => people().map((p) => ({ name: p.name, email: p.email || '', team: p.team, roles: p.roles || [] }));
+
+  async function syncRecruitee(opts) {
+    const camp = campaign();
+    if (!camp || rcState.busy) return;
+    const useMock = !!(opts && opts.mock);
+    rcState.busy = true;
+    rcState.error = null;
+    rerender();
+    const setting = camp.recruitee || {};
+    const now = nowIso();
+    try {
+      let mode;
+      let offers;
+      let cands;
+      let events;
+      if (useMock) {
+        const m = RC.mockRecruitee(TODAY, slimPeople());
+        mode = 'mock';
+        offers = RC.normalizeOffers(m.offers);
+        const offer = offers.find((o) => String(o.id) === String(setting.offerId)) || offers[0];
+        cands = RC.normalizeCandidates({ candidates: m.candidates }, offer.id, offer.stages);
+        events = RC.normalizeEvents(m.events);
+      } else {
+        const o = await rcCall('list_offers');
+        mode = o.mode;
+        offers = o.offers || [];
+      }
+      const offer = offers.find((o) => String(o.id) === String(setting.offerId)) || offers.find((o) => /trainee/i.test(o.title)) || offers.find((o) => o.title === camp.name) || offers[0];
+      if (!offer) throw { code: 'no_offer', message: 'No vacancies found in Recruitee.' };
+      if (!useMock) {
+        const c = await rcCall('list_candidates', { offer_id: offer.id });
+        cands = c.candidates || [];
+        const ev = await rcCall('list_interviews', { from: M.addDays(TODAY, -60), to: M.addDays(TODAY, 60), candidate_ids: cands.map((x) => x.id), mock_people: slimPeople() });
+        events = ev.events || [];
+      }
+      const mock = mode !== 'live';
+      const existing = S.state.candidates.filter((x) => x.campaignId === camp.id);
+      const plan = RC.planSync({ offer, candidates: cands, events, people: people(), campaignId: camp.id, existing, stageOverrides: setting.stageMap || {}, now });
+      let changed = 0;
+      for (const { id, doc } of plan.docs) {
+        const cur = existing.find((x) => x.id === id);
+        const next = withSummary({ ...doc, ...(mock ? { mock: true } : {}) });
+        const same = cur && JSON.stringify({ ...cur, updatedAt: 0, syncedAt: 0, id: 0 }) === JSON.stringify({ ...next, updatedAt: 0, syncedAt: 0, id: 0, timeline: next.timeline.map((e) => ({ ...e, recordedAt: (cur.timeline.find((x) => x.id === e.id) || e).recordedAt })) });
+        if (same) continue;
+        // Keep the first time each Recruitee entry was seen.
+        if (cur) next.timeline = next.timeline.map((e) => ({ ...e, recordedAt: (cur.timeline.find((x) => x.id === e.id) || e).recordedAt }));
+        await S.set('candidates', id, next);
+        changed++;
+      }
+      await S.update('campaigns', camp.id, {
+        recruitee: {
+          ...setting,
+          offerId: offer.id,
+          offerTitle: offer.title,
+          offers: offers.map((o) => ({ id: o.id, title: o.title, candidatesCount: o.candidatesCount || 0 })),
+          stages: offer.stages.map((st) => ({ name: st.name, category: st.category })),
+          mode,
+          syncedAt: now,
+          counts: plan.counts,
+          changed,
+        },
+      });
+      if (opts && opts.toast !== false) toast(`Recruitee${mock ? ' (mock)' : ''}: ${plural(plan.counts.planned, 'candidate')} to plan, ${plural(plan.counts.interviews, 'interview')}${changed ? `, ${changed} updated` : ', nothing new'}.`);
+    } catch (e) {
+      rcState.error = rcError(e);
+    } finally {
+      rcState.busy = false;
+      rerender();
+    }
+  }
+  // Once per page open, when the last sync is over 15 minutes old.
+  function autoSyncRecruitee() {
+    if (rcState.autoDone || !FEATURES.recruitee || !mcp || !S.state.loaded.campaigns || !S.state.loaded.candidates || !S.state.loaded.people) return;
+    const camp = campaign();
+    if (!camp) return;
+    rcState.autoDone = true;
+    const last = camp.recruitee && camp.recruitee.mode === 'live' ? Date.parse(camp.recruitee.syncedAt) : 0;
+    if (Date.now() - last > 15 * 60 * 1000) syncRecruitee({ toast: false });
+  }
+
+  // The small block under campaign progress on Today.
+  function recruiteeBox(camp) {
+    const r = camp.recruitee || {};
+    const when = r.syncedAt ? `${M.formatDay(r.syncedAt.slice(0, 10))} ${new Date(r.syncedAt).toTimeString().slice(0, 5)}` : '';
+    const counts = r.counts || {};
+    return h(
+      'div',
+      { class: 'rc-box', style: 'margin-top:28px;display:flex;flex-direction:column;gap:8px' },
+      h('span', { class: 'label' }, r.mode === 'mock' ? 'Recruitee · mock data' : 'Recruitee'),
+      r.syncedAt ? h('p', { class: 'small' }, `${r.offerTitle || 'Vacancy'} · ${plural(counts.planned || 0, 'candidate')} to plan, ${plural(counts.interviews || 0, 'interview')} booked. Synced ${when}.`) : h('p', { class: 'small muted' }, 'Not synced yet.'),
+      counts.unmatched && counts.unmatched.length ? h('p', { class: 'small warn-line' }, `Not on the roster: ${counts.unmatched.slice(0, 4).join(', ')}${counts.unmatched.length > 4 ? '…' : ''}. Add them, or an alias, so their interviews count.`) : null,
+      rcState.error ? h('p', { class: 'small warn-line', role: 'status' }, rcState.error.text) : null,
+      r.mode !== 'live'
+        ? h(
+            'details',
+            { class: 'fold', open: !!ui.rcHelp, ontoggle: (e) => (ui.rcHelp = e.target.open) },
+            h('summary', {}, 'Connect Recruitee (API key)'),
+            h(
+              'ol',
+              { class: 'small', style: 'padding-left:18px;display:flex;flex-direction:column;gap:6px' },
+              h('li', {}, 'In Recruitee (app.tellent.com): Settings › Apps and plugins › Personal API tokens › New token. Note the company ID shown there too.'),
+              h('li', {}, 'Double-click recruitee.mcpb to add the “Recruitee (read-only)” extension to the Claude desktop app.'),
+              h('li', {}, 'In Claude: Settings › Extensions › Recruitee › Configure. Paste the token and company ID. They stay in this computer’s keychain, never in this app.'),
+              h('li', {}, 'Open this app in the Claude desktop app and press Sync now.'),
+            ),
+          )
+        : null,
+      h(
+        'div',
+        { class: 'row' },
+        h('button', { class: 'quiet', disabled: rcState.busy, onclick: () => syncRecruitee() }, rcState.busy ? 'Syncing…' : 'Sync now'),
+        !mcp || (rcState.error && /server_not_connected|unavailable/.test(rcState.error.code)) || r.mode === 'mock' ? h('button', { class: 'link', disabled: rcState.busy, title: 'Loads mock Recruitee data, marked as mock. Clear it from Mock.', onclick: () => syncRecruitee({ mock: true }) }, 'Use mock data') : null,
+      ),
+    );
+  }
+
+  // Campaign page: which vacancy, and how its stages map to rounds.
+  function recruiteeSettings(camp) {
+    const r = camp.recruitee || {};
+    const overrides = r.stageMap || {};
+    const ROUND_NAMES = { applied: 'Not yet (applied)', hr: 'Not yet (HR)', advisor: 'Advisor interview', deepdive: 'Deep dive', offer: 'Through (offer)', hired: 'Through (hired)' };
+    const save = (patch, msg) => act(() => S.update('campaigns', camp.id, { recruitee: { ...r, ...patch } }), msg);
+    return h(
+      'div',
+      { class: 'section gutter' },
+      h('div', { class: 'head' }, h('div', {}, h('h2', {}, 'Recruitee'), h('p', {}, 'Candidates come from this vacancy in Recruitee, read-only. The app plans the interviewer pairs; results and stages stay in Recruitee.'))),
+      r.offers && r.offers.length
+        ? h(
+            'label',
+            { class: 'f', style: 'max-width:420px' },
+            'Vacancy',
+            h(
+              'select',
+              { id: 'rc-offer', onchange: (e) => save({ offerId: e.target.value }, 'Vacancy saved. Sync to load it.') },
+              r.offers.map((o) => h('option', { value: o.id, selected: String(o.id) === String(r.offerId) }, `${o.title}${o.candidatesCount ? ` (${o.candidatesCount})` : ''}`)),
+            ),
+          )
+        : h('p', { class: 'small muted' }, 'Sync once (on Today) to choose the vacancy.'),
+      r.stages && r.stages.length
+        ? h(
+            'details',
+            { class: 'fold' },
+            h('summary', {}, 'Which Recruitee stage is which round'),
+            h(
+              'div',
+              { class: 'fold-body' },
+              h('p', { class: 'small muted' }, 'Guessed from the stage names. Change one if it’s wrong, then sync.'),
+              h(
+                'table',
+                { class: 'x' },
+                h('tbody', {}, r.stages.map((st) => h('tr', {}, h('td', {}, st.name), h('td', {}, h('select', { 'aria-label': `Round for ${st.name}`, onchange: (e) => save({ stageMap: { ...overrides, [st.name]: e.target.value } }, 'Saved') }, Object.entries(ROUND_NAMES).map(([k, label]) => h('option', { value: k, selected: RC.roundOfStage(st.name, st.category, overrides) === k }, label))))))),
+              ),
+            ),
+          )
+        : null,
+    );
+  }
+
   // ------------------------------------------------------------------
   // Boot
   // ------------------------------------------------------------------
@@ -8240,6 +8915,11 @@ button.ask-claude.small { font-size: 13px; padding: 6px 12px; }
       if (window.claude && window.claude.use) sample = await window.claude.use('sample');
     } catch (e) {
       sample = null;
+    }
+    try {
+      if (window.claude && window.claude.use && FEATURES.recruitee && S.admin) mcp = await window.claude.use('mcp');
+    } catch (e) {
+      mcp = null;
     }
     try {
       if (S.user && S.user.id) me = await S.user.id();

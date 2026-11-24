@@ -5,6 +5,7 @@
   "description": "Interview scheduling assistant for Flux Partners, published as a claude.ai artifact page.",
   "scripts": {
     "build": "node tools/build.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "pack:extension": "node tools/pack-extension.js"
   }
 }

@@ -58,7 +58,52 @@ picks a structure, lets Natalie tune each round's rules and choose who sits in
 each round, then gives her an invitation to send. A new structure (for example a
 2-round interview) is a new entry there plus its candidate steps.
 
-## Phase 1 (this branch)
+## Versions
+
+Flux already runs candidates through **Recruitee** (Tellent ATS), so the app
+doesn't replace it mid-campaign. It plans who interviews and when.
+
+| Version | What's in it |
+| --- | --- |
+| **V0 (live now)** | Natalie's admin view only. Availability poll, roster, interviewer pairs from different teams, Outlook requests and holds, fair load, metrics. Candidates and booked interviews come **read-only from Recruitee** through the desktop extension (mock data until a token exists); a light "who needs a pair" form is the fallback. |
+| V1 | Polishing the Recruitee sync on real data. |
+| V2 | Advisor and team lead pages, then the full candidate file (calls, notes, briefs, Claude advice, step table) as an in-house ATS. |
+
+Later work is hidden, not deleted: the `FEATURES` switches at the top of
+`src/app.js` (`recruitee`, `interviewerViews`, `ats`). The Developer view lists
+them, and ticking one turns it on in that browser only, to preview it.
+
+In V0 a candidate added by hand follows the short path (`flow: "lite"` in
+`M.candidateState`): no calls, no availability-asked step, no close step. A
+synced candidate's timeline is derived from its Recruitee stage and the
+interviews booked in Recruitee's agenda; Natalie only books pairs for it, and
+results come from Recruitee.
+
+## Recruitee sync (read-only)
+
+- `src/recruitee.js` turns Recruitee API JSON into app candidates (shared by the
+  page and the extension). Stage names map to rounds by pattern (Dutch and
+  English); the Campaign page lets Natalie correct a stage. Interviewers on a
+  Recruitee booking are matched to the roster by email, name or alias; anyone
+  unmatched is listed on Today so their interviews still count.
+- `extension/recruitee/` is a Claude desktop extension (MCP server, no
+  dependencies). `npm run pack:extension` writes `dist/recruitee.mcpb`. Natalie
+  double-clicks it, pastes a personal API token and the company ID (Recruitee:
+  Settings, Apps and plugins, Personal API tokens), and the token stays in the
+  keychain. Every call is a GET. Without a token it returns mock data.
+- The page calls it as `host:recruitee` (the `mcp` capability) from Natalie's
+  page in the desktop app: on open when the last sync is over 15 minutes old,
+  and with **Sync now** on Today. Synced candidates are saved under
+  `candidates/rc_<recruiteeId>`. In a browser tab, **Use mock data** loads the
+  same shapes, marked mock.
+- API: `https://api.recruitee.com/c/{company_id}`, `Authorization: Bearer
+  <token>`, 1,000 requests a minute. Used: `GET /admin`, `/offers`,
+  `/offers/{id}`, `/candidates?offer_id=`, `/interview/events` (falling back to
+  `/interview/candidates/{id}/events`). The interview paths and fields aren't in
+  the public docs, so the extension's `get` tool is there to check real
+  responses once a token exists.
+
+## Phase 1 (built before the Recruitee change; parts now hidden)
 
 - **Campaigns**: the first is Trainee hiring (target 10 hires, about 25 interviews).
   Rounds and scheduling defaults are stored on the campaign.
@@ -108,6 +153,9 @@ each round, then gives her an invitation to send. A new structure (for example a
 | `src/model.js` | Data model and pure logic: poll parsing, roster matching, remark rules, candidate state machine, clocks, funnel. No DOM. |
 | `src/store.js` | Storage: the artifact database (`db` capability), or browser storage when opened outside claude.ai (test mode). |
 | `src/app.js` | The screens. |
+| `src/recruitee.js` | Recruitee API normalising, stage-to-round mapping, sync plan, mock data. |
+| `extension/recruitee/` | The read-only Recruitee desktop extension (manifest and MCP server). |
+| `tools/pack-extension.js` | Packs it into `dist/recruitee.mcpb`. |
 | `src/styles.css`, `src/index.html` | Styles and page template. |
 | `tools/build.js` | Inlines everything into `dist/index.html`, the file that gets published. |
 | `test/model.test.js` | Unit tests for the model (synthetic poll fixture, no real names). |
@@ -119,6 +167,7 @@ each round, then gives her an invitation to send. A new structure (for example a
 
 ```sh
 npm run build   # writes dist/index.html
+npm run pack:extension   # writes dist/recruitee.mcpb
 npm test        # unit tests
 node test/e2e/smoke.js <poll.xlsx> <xlsx.full.min.js> <screenshot dir>
 ```
@@ -148,9 +197,13 @@ Publish `dist/index.html` as a claude.ai artifact with these capabilities:
     { "path": "reports", "read": "admin", "write": "admin" }
   ] },
   "user": { "scopes": ["profile"] },
-  "sample": {}
+  "sample": {},
+  "mcp": { "servers": [{ "server": "host:recruitee", "tools": ["status", "list_offers", "list_candidates", "list_interviews"] }] }
 }
 ```
+
+Host servers only answer for the artifact's owner, in the Claude desktop app,
+so V0 is published from Natalie's account and she installs the extension.
 
 Two views share one page. Editors (Natalie) get the full app. Everyone else
 gets the advisor/team lead page: their own requests and interviews (with the

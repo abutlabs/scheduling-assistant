@@ -409,3 +409,23 @@ test('feedbackGaps waits until 10 minutes after the end, then lists who owes fee
   assert.deepEqual(gaps.map((g) => [g.personId, g.lateMin]), [['b', 15]]);
   assert.equal(M.feedbackGaps({ interviews, notes, pending: [{ personId: 'b', candidateId: 'c1', round: 'deepdive' }], now: at('18:00') }).length, 0);
 });
+
+test('lite flow (V0): no calls or close, deep dive clock starts at the advisor result', () => {
+  const lite = (entries) => ({ ...cand(entries), flow: 'lite' });
+  let s = M.candidateState(lite([['hr_done', '2026-11-20', 'pass']]), '2026-11-22');
+  assert.equal(s.next, 'avail_received_r2');
+  assert.equal(s.clock.state, 'running');
+  s = M.candidateState(lite([['hr_done', '2026-11-20', 'pass'], ['avail_received_r2', '2026-11-21'], ['advisor_booked', '2026-11-21', null, { slotDate: '2026-11-25' }], ['advisor_done', '2026-11-25', 'pass']]), '2026-11-26');
+  assert.equal(s.stage, 'deepdive');
+  assert.equal(s.next, 'avail_received_final');
+  assert.equal(s.clock.round, 'deepdive');
+  assert.equal(s.clock.start, '2026-11-25');
+  assert.deepEqual(s.skipped, []);
+  s = M.candidateState(lite([['hr_done', '2026-11-20', 'pass'], ['advisor_done', '2026-11-25', 'reject']]));
+  assert.equal(s.status, 'rejected');
+  assert.equal(s.next, null);
+  s = M.candidateState(lite([['hr_done', '2026-11-20', 'pass'], ['advisor_done', '2026-11-25', 'pass'], ['deepdive_done', '2026-12-01', 'hire']]));
+  assert.equal(s.status, 'hired');
+  assert.equal(s.next, null);
+  assert.equal(M.funnel([lite([['hr_done', '2026-11-20', 'pass'], ['advisor_done', '2026-11-25', 'pass'], ['deepdive_done', '2026-12-01', 'hire']])]).hired, 1);
+});

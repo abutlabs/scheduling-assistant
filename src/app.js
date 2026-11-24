@@ -63,6 +63,45 @@
     return out;
   }
   const cstate = (c) => M.candidateState(c, TODAY, roundLimits(c.campaignId));
+
+  // ------------------------------------------------------------------
+  // Versions. V0 is live: Natalie's admin view as a pair planner, while
+  // Recruitee stays the candidate system. Later work is hidden, not deleted:
+  //   recruitee        V1  candidates and interviews synced from Recruitee
+  //   interviewerViews V2  advisor and team lead pages, in-app answers, welcome card
+  //   ats              V2  the full candidate file: calls, notes, briefs, Claude advice, step table
+  // The Developer view can turn them on in one browser to preview them.
+  // ------------------------------------------------------------------
+  const VERSION = 'V0';
+  const FEATURE_INFO = [
+    ['recruitee', 'V0', 'Recruitee sync', 'Candidates and booked interviews come from Recruitee through the desktop extension.'],
+    ['interviewerViews', 'V2', 'Advisor and team lead pages', 'Their own page with requests, availability, briefs and scores, plus the welcome card.'],
+    ['ats', 'V2', 'Full candidate file', 'Calls, notes and feedback, Claude briefs and advice, the step table and the Candidates page.'],
+  ];
+  const FEATURES = (function () {
+    const on = { recruitee: true, interviewerViews: false, ats: false };
+    try {
+      Object.assign(on, JSON.parse(localStorage.getItem('flux.features') || '{}'));
+    } catch (e) {
+      /* no storage: defaults */
+    }
+    return on;
+  })();
+  function setFeature(key, val) {
+    FEATURES[key] = !!val;
+    store('flux.features', JSON.stringify(FEATURES));
+    rerender();
+  }
+  // Candidates added in V0 follow the short path (no calls, no close step).
+  const isLite = (c) => c && c.flow === 'lite';
+  // Synced candidates: results and stage moves happen in Recruitee, so a "verdict" step is a wait, not a task.
+  const waitsOnRecruitee = (c, s) => c && c.source === 'recruitee' && s.next && /_done$/.test(s.next);
+  function nextLine(c, s) {
+    if (!waitsOnRecruitee(c, s)) return s.prompt || '';
+    const b = s.done[s.next.replace('_done', '_booked')];
+    const d = b && b.data && b.data.slotDate;
+    return d && d >= TODAY ? `Interview ${M.formatDay(d)}${b.data.time ? ` ${b.data.time}` : ''}` : 'Waiting for the result in Recruitee';
+  }
   // replaceChildren() turns null and arrays into text; flatten and drop empties first.
   const fill = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
   const short = (iso) => (iso ? `${Number(iso.slice(8, 10))}-${Number(iso.slice(5, 7))}` : '');
@@ -97,6 +136,8 @@
     error: null,
   };
   let sample = null;
+  // The viewer's MCP bridge: reaches the Recruitee desktop extension (host:recruitee) in the Claude app.
+  let mcp = null;
 
   const people = () => [...S.state.people].sort((a, b) => a.name.localeCompare(b.name));
   const campaigns = () => S.state.campaigns.filter((c) => !c.archived).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
@@ -173,16 +214,18 @@
     render();
   }
 
-  function topBar() {
-    const c = campaign();
-    const nav = [
+  const NAV = () =>
+    [
       ['run', 'Today'],
-      ['candidates', 'Candidates'],
+      FEATURES.ats ? ['candidates', 'Candidates'] : null,
       ['availability', 'Availability'],
       ['roster', 'Roster'],
       ['campaign', 'Campaign'],
       ['metrics', 'Metrics'],
-    ];
+    ].filter(Boolean);
+  function topBar() {
+    const c = campaign();
+    const nav = NAV();
     return h(
       'header',
       { class: 'bar gutter' },
@@ -237,7 +280,7 @@
         h(
           'nav',
           { class: 'phone-only', 'aria-label': 'Pages' },
-          [['run', 'Today'], ['candidates', 'Candidates'], ['availability', 'Availability'], ['roster', 'Roster'], ['campaign', 'Campaign'], ['metrics', 'Metrics']].map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
+          NAV().map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
         ),
         viewSwitch(),
         h('hr'),
@@ -253,7 +296,7 @@
     if (ui.view === 'roster') return rosterView();
     if (ui.view === 'campaign') return campaignView();
     if (ui.view === 'metrics') return metricsView();
-    if (ui.view === 'candidates') return candidatesView();
+    if (ui.view === 'candidates' && FEATURES.ats) return candidatesView();
     return runView();
   }
 
@@ -294,6 +337,8 @@
     for (const c of candidates()) {
       const s = cstate(c);
       if (!s.next) continue;
+      // Recruitee decides results and stages; the app only books pairs for synced candidates.
+      if (c.source === 'recruitee' && !/_booked$/.test(s.next)) continue;
       let group = 'later';
       let reason = '';
       const [kind, tone] = KIND[s.next] || ['Do', ''];
@@ -337,13 +382,13 @@
         t = t === 'warn' ? 'warn' : '';
         reason = `${inv.state.accepted.length} of 2 accepted, ${inv.state.pending.length} waiting. ${reason}`;
       }
-      if (s.skipped.length) reason += ` ${plural(s.skipped.length, 'earlier step')} not recorded.`;
+      if (s.skipped.length && !isLite(c)) reason += ` ${plural(s.skipped.length, 'earlier step')} not recorded.`;
       const due = s.clock && s.clock.deadline && s.clock.state !== 'booked' ? (s.clock.state === 'overdue' ? 'past the deadline' : `due ${longDay(s.clock.deadline).split(' ')[0]}`) : '';
       items.push({ group, kind: k, tone: t, who: c.name, text: `${prompt}. ${reason}`.trim(), title: `${prompt}.`, sub: `${c.name} · ${reason}`.trim(), due, btn: k === 'Overdue' || k === 'Late' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
     }
     items.push(...inviteTodoItems());
     // Interviews that ended (plus 10 minutes) without feedback from someone.
-    items.push(...feedbackTodoItems());
+    if (FEATURES.ats) items.push(...feedbackTodoItems());
     // Interviewers asking to cancel a booked interview: Natalie talks to them first.
     const inCamp = new Set(candidates().map((c) => c.id));
     for (const n of S.state.notes.filter((x) => x.kind === 'cancel_request' && !x.resolved && inCamp.has(x.candidateId))) {
@@ -461,7 +506,7 @@
   function todoRow(i) {
     const cand = i.cand && S.state.candidates.find((x) => x.id === i.cand);
     return [
-      h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.role ? h('span', { class: 'role-tag' }, i.role) : null, i.who), h('p', {}, i.text)), h('div', { class: 'row act-btns' }, cand && sample ? adviceButton(cand, true) : null, h('button', { onclick: todoAction(i) }, i.btn))),
+      h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.role ? h('span', { class: 'role-tag' }, i.role) : null, i.who), h('p', {}, i.text)), h('div', { class: 'row act-btns' }, cand && sample && FEATURES.ats ? adviceButton(cand, true) : null, h('button', { onclick: todoAction(i) }, i.btn))),
       cand ? advicePanel(cand) : null,
     ];
   }
@@ -662,7 +707,7 @@
         'div',
         { class: 'row' },
         h('button', { class: 'p', onclick: todoAction(i) }, i.btn),
-        cand && sample ? adviceButton(cand) : null,
+        cand && sample && FEATURES.ats ? adviceButton(cand) : null,
         cand && i.btn !== 'Open' ? h('button', { class: 'link', onclick: () => openCandidate(cand.id) }, `Open ${cand.name.split(' ')[0]}`) : null,
       ),
       cand ? advicePanel(cand) : null,
@@ -690,7 +735,7 @@
             rest.length ? [h('p', { class: 'then' }, 'Then'), h('div', {}, rest.slice(0, showN - 1).map(todoRow))] : null,
             rest.length > showN - 1 ? h('button', { class: 'link more', onclick: () => ((ui.showAllTodo = true), rerender()) }, `Show ${rest.length - (showN - 1)} more`) : null,
           ]
-        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : 'Add a candidate after their HR interview and the next steps appear here.'), candidates().length ? null : h('div', { class: 'row' }, h('button', { class: 'p big', onclick: () => openCandidate('new') }, '+ Candidate'), h('button', { class: 'quiet', title: 'Fills the app with mock candidates, interviews and feedback. Clear it any time from Mock.', onclick: loadFullDemo }, 'Try it with a demo campaign'))),
+        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : FEATURES.ats ? 'Add a candidate after their HR interview and the next steps appear here.' : 'Add a candidate when they need an advisor or deep dive pair, and the next steps appear here.'), candidates().length ? null : h('div', { class: 'row' }, h('button', { class: 'p big', onclick: () => openCandidate('new') }, '+ Candidate'), h('button', { class: 'quiet', title: 'Fills the app with mock candidates, interviews and feedback. Clear it any time from Mock.', onclick: loadFullDemo }, 'Try it with a demo campaign'))),
       later.length ? h('details', { class: 'later', open: !!ui.laterOpen, ontoggle: (e) => (ui.laterOpen = e.target.open) }, h('summary', {}, `Coming up · ${later.length}`), h('div', {}, later.map(todoRow))) : null,
     );
 
@@ -700,10 +745,11 @@
       h('span', { class: 'label' }, c.name),
       h('div', { class: 'big-num' }, `${f.hired}`, h('span', {}, ` of ${target || '?'} hired`)),
       h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
-      h('div', { class: 'stat-list' }, h('div', {}, 'Candidates', h('b', {}, f.total)), h('div', {}, 'Passed HR', h('b', {}, f.passedHr)), h('div', {}, 'Through advisor round', h('b', {}, f.passedAdvisor))),
+      h('div', { class: 'stat-list' }, h('div', {}, 'Candidates', h('b', {}, f.total)), h('div', {}, FEATURES.ats ? 'Passed HR' : 'In the advisor round', h('b', {}, FEATURES.ats ? f.passedHr : candidates().filter((x) => cstate(x).status === 'open' && cstate(x).stage === 'advisor').length)), h('div', {}, 'Through advisor round', h('b', {}, f.passedAdvisor))),
+      FEATURES.recruitee ? recruiteeBox(c) : null,
     );
 
-    const showTable = store('flux.stepTable') === '1';
+    const showTable = FEATURES.ats && store('flux.stepTable') === '1';
     return h(
       'div',
       { class: 'home' },
@@ -714,7 +760,7 @@
         { class: 'cand-sec', 'aria-label': 'Candidates' },
         h('div', { class: 'cand-head' }, h('h2', {}, 'Candidates'), h('div', { class: 'filters' }, filterButtons()), h('button', { class: 'link add', onclick: () => openCandidate('new') }, '+ Candidate')),
         showTable ? matrix() : candidateList(),
-        h('div', { class: 'cand-foot' }, h('button', { class: 'quiet', onclick: () => (store('flux.stepTable', showTable ? '0' : '1'), rerender()) }, showTable ? 'Simple list' : 'Show every step ▸')),
+        FEATURES.ats ? h('div', { class: 'cand-foot' }, h('button', { class: 'quiet', onclick: () => (store('flux.stepTable', showTable ? '0' : '1'), rerender()) }, showTable ? 'Simple list' : 'Show every step ▸')) : null,
       ),
     );
   }
@@ -737,7 +783,7 @@
           { class: 'cand-row', onclick: () => openCandidate(c.id) },
           h('b', {}, c.name),
           h('span', { class: `round${s.status === 'open' ? '' : ' closed'}` }, s.status === 'open' ? stageName[s.stage] : M.OUTCOME_LABELS[s.status] || s.status),
-          h('span', { class: 'next' }, s.prompt || ''),
+          h('span', { class: 'next' }, nextLine(c, s)),
           dayTag(s, c),
         );
       }),
@@ -831,7 +877,9 @@
     ui.openStep = step || null;
     if (id !== 'new' && !step) {
       const c = S.state.candidates.find((x) => x.id === id);
-      if (c) ui.openStep = cstate(c).next;
+      const s = c && cstate(c);
+      // In V0 a booking starts from the interviewer requests, and synced results come from Recruitee.
+      if (c) ui.openStep = isLite(c) && s.next && (/_booked$/.test(s.next) || waitsOnRecruitee(c, s)) ? null : s.next;
     }
     rerender();
   }
@@ -852,6 +900,7 @@
   }
 
   function newCandidateForm() {
+    if (!FEATURES.ats) return liteCandidateForm();
     const f = { name: '', email: '', phone: '', hrDate: TODAY, hr: 'pass', asked: true, notes: '' };
     const err = h('p', { class: 'err-line' });
     return h(
@@ -907,6 +956,64 @@
     );
   }
 
+  // V0: Recruitee keeps the candidate file. Natalie only says who needs a pair
+  // and for which round; the clock starts today.
+  function liteCandidateForm() {
+    const f = { name: '', round: 'advisor', url: '', availability: '' };
+    const err = h('p', { class: 'err-line' });
+    return h(
+      'form',
+      {
+        class: 'stack',
+        style: 'display:flex;flex-direction:column;gap:12px',
+        onsubmit: (e) => {
+          e.preventDefault();
+          if (!f.name.trim()) {
+            err.textContent = 'Add the candidate’s name.';
+            return;
+          }
+          const url = f.url.trim();
+          if (url && !/^https:\/\//.test(url)) {
+            err.textContent = 'The Recruitee link should start with https://';
+            return;
+          }
+          const now = new Date().toISOString();
+          const ev = (step, outcome, data) => ({ id: S.uid('e'), step, at: TODAY, outcome: outcome || null, note: '', recordedAt: now, ...(data ? { data } : {}) });
+          const avail = f.availability.trim();
+          const timeline = [ev('hr_done', 'pass')];
+          if (f.round === 'deepdive') {
+            timeline.push(ev('advisor_done', 'pass'));
+            if (avail) timeline.push(ev('avail_received_final', null, { availability: avail }));
+          } else if (avail) timeline.push(ev('avail_received_r2', null, { availability: avail }));
+          const doc = { campaignId: campaign().id, name: f.name.trim(), flow: 'lite', recruiteeUrl: url, timeline, createdAt: now };
+          act(async () => {
+            const id = await S.add('candidates', withSummary(doc));
+            ui.candId = id;
+            ui.openStep = cstate(doc).next;
+            rerender();
+          }, `${doc.name} added`);
+        },
+      },
+      h('h2', {}, 'Who needs a pair?'),
+      h('p', { class: 'muted small' }, 'The candidate stays in Recruitee. Here you only plan the interviewers. The clock for the round starts today.'),
+      h(
+        'div',
+        { class: 'fg' },
+        h('label', { class: 'f wide' }, 'Name', h('input', { id: 'nc-name', required: true, autocomplete: 'off', oninput: (e) => (f.name = e.target.value) })),
+        h(
+          'label',
+          { class: 'f wide' },
+          'Round',
+          h('select', { id: 'nc-round', onchange: (e) => (f.round = e.target.value) }, h('option', { value: 'advisor', selected: true }, 'Advisor interview (two advisors)'), h('option', { value: 'deepdive' }, 'Deep dive (two team leads)')),
+        ),
+        h('label', { class: 'f wide' }, 'Their availability (optional, paste or type it)', h('textarea', { id: 'nc-avail', oninput: (e) => (f.availability = e.target.value) })),
+        h('label', { class: 'f wide' }, 'Link in Recruitee (optional)', h('input', { id: 'nc-url', type: 'url', placeholder: 'https://app.tellent.com/…', oninput: (e) => (f.url = e.target.value) })),
+      ),
+      err,
+      h('div', { class: 'row end' }, h('button', { type: 'button', onclick: closeDrawer }, 'Cancel'), h('button', { class: 'p', type: 'submit' }, 'Add')),
+    );
+  }
+
   // Denormalised fields so Claude sessions and metrics can query without replaying timelines.
   function withSummary(doc) {
     const s = cstate(doc);
@@ -932,21 +1039,25 @@
       h('p', { class: 'sub' }, s.status === 'open' ? STAGE_NAME[s.stage] : M.OUTCOME_LABELS[s.status] || s.status, clockText ? ' · ' : '', clockText),
       c.email || c.phone || c.hrDate ? h('div', { class: 'contact' }, c.email ? h('span', {}, c.email) : null, c.phone ? h('span', {}, c.phone) : null, c.hrDate ? h('em', {}, `HR interview ${M.formatDay(c.hrDate)}`) : null) : null,
       c.notes ? h('p', { class: 'cnotes' }, c.notes) : null,
+      c.source === 'recruitee' ? h('p', { class: 'small muted' }, `In Recruitee: ${c.recruiteeStage || 'stage unknown'}${c.recruiteeDisqualified ? ' (disqualified)' : ''} · synced ${c.syncedAt ? `${M.formatDay(c.syncedAt.slice(0, 10))} ${c.syncedAt.slice(11, 16)}` : ''}`) : null,
+      /^https:\/\//.test(c.recruiteeUrl || '') ? h('p', {}, h('a', { href: c.recruiteeUrl, target: '_blank', rel: 'noopener' }, 'Open in Recruitee ↗')) : null,
     ];
 
     const why = clk && clk.deadline && clk.state !== 'booked' ? `Day ${Math.max(0, clk.day)} of ${clk.max}, deadline ${M.formatDay(clk.deadline)}.` : '';
-    const next = s.next
+    const next = waitsOnRecruitee(c, s)
+      ? h('section', { class: 'next', 'aria-label': 'Next step' }, h('span', { class: 'kicker' }, 'Next step'), h('h2', {}, `${nextLine(c, s)}.`), h('p', {}, `The result is decided in Recruitee. When ${c.name.split(' ')[0]} moves to the next stage there, the app follows on the next sync.`))
+      : s.next
       ? h(
           'section',
           { class: 'next', 'aria-label': 'Next step' },
           h('span', { class: 'kicker' }, 'Next step'),
           h('h2', {}, `${s.prompt}.`),
-          why || s.skipped.length ? h('p', {}, [why, s.skipped.length ? `${plural(s.skipped.length, 'earlier step')} not recorded yet.` : ''].filter(Boolean).join(' ')) : null,
+          why || (s.skipped.length && !isLite(c)) ? h('p', {}, [why, s.skipped.length && !isLite(c) ? `${plural(s.skipped.length, 'earlier step')} not recorded yet.` : ''].filter(Boolean).join(' ')) : null,
           ui.openStep === s.next ? stepForm(c, s.next, s.done[s.next]) : h('div', { class: 'row go' }, h('button', { class: 'p', onclick: () => ((ui.openStep = s.next), rerender()) }, `Record: ${M.STEP_BY_KEY[s.next].label.toLowerCase()}`)),
         )
       : null;
 
-    const keys = s.rejectedAt === 'hr' ? ['hr_done', 'reject_call_hr', ...M.STEPS.slice(1).map((x) => x.key)] : M.STEPS.map((x) => x.key);
+    const keys = isLite(c) ? M.LITE_PATH : s.rejectedAt === 'hr' ? ['hr_done', 'reject_call_hr', ...M.STEPS.slice(1).map((x) => x.key)] : M.STEPS.map((x) => x.key);
     const row = (key) => {
       const step = M.STEP_BY_KEY[key];
       const e = s.done[key];
@@ -978,7 +1089,7 @@
     };
     const doneKeys = keys.filter((k) => s.done[k]);
     const lastDone = doneKeys.map((k) => s.done[k].at.slice(0, 10)).sort().pop();
-    const rest = keys.filter((k) => !s.done[k] && k !== s.next && !s.skipped.includes(k));
+    const rest = keys.filter((k) => !s.done[k] && k !== s.next && (!s.skipped.includes(k) || isLite(c)));
     const soon = rest.filter((k) => s.path.includes(k)).slice(0, 2);
     const more = rest.filter((k) => !soon.includes(k));
     const progress = h(
@@ -996,13 +1107,14 @@
               doneKeys.map(row),
             )
           : null,
-        s.skipped.map(row),
+        isLite(c) ? null : s.skipped.map(row),
         s.next ? row(s.next) : null,
         soon.map(row),
         more.length ? h('details', { class: 'fold-steps more-sum', open: more.includes(ui.openStep) }, h('summary', {}, `${plural(more.length, 'more step')}`), more.map(row)) : null,
       ),
     );
-    return h('div', { style: 'display:flex;flex-direction:column' }, header, next, requestsSection(c, s) ? h('div', { class: 'dsec' }, requestsSection(c, s)) : null, progress, fromInterviewers(c, s), briefPanel(c, s), notesSection(c), h('div', { class: 'dsec' }, candidateAdmin(c, s)));
+    const full = FEATURES.ats;
+    return h('div', { style: 'display:flex;flex-direction:column' }, header, next, requestsSection(c, s) ? h('div', { class: 'dsec' }, requestsSection(c, s)) : null, progress, full ? fromInterviewers(c, s) : null, full ? briefPanel(c, s) : null, full ? notesSection(c) : null, h('div', { class: 'dsec' }, candidateAdmin(c, s)));
   }
 
   // Interview feedback for the current round, one line per interviewer with their lean.
@@ -1540,15 +1652,16 @@
     return h(
       'section',
       { class: 'tpanel', 'aria-label': 'Interviewer requests' },
-      h('div', { class: 'ph' }, `Interviewer requests · ${roundObj.name}`, h('span', { class: 'faint' }, 'replies come from Outlook or the app')),
+      h('div', { class: 'ph' }, `Interviewer requests · ${roundObj.name}`, h('span', { class: 'faint' }, FEATURES.interviewerViews ? 'replies come from Outlook or the app' : 'replies come from Outlook')),
       head,
       s.done[bookedKey] && !(list.length && state.complete)
         ? h('div', { class: 'row', style: 'justify-content:space-between;padding:8px 10px' }, h('span', { class: 'small' }, h('b', {}, 'Booked: '), `${M.formatDay((s.done[bookedKey].data || {}).slotDate || s.done[bookedKey].at)} ${(s.done[bookedKey].data || {}).time || ''}`), h('button', { onclick: () => ((ui.outlookDraft = bookingDraft(c, round, s.done[bookedKey].data || {})), rerender()) }, 'Outlook invite'))
         : null,
+      s.done[bookedKey] && !FEATURES.recruitee ? h('p', { class: 'small muted', style: 'padding:0 10px 8px' }, `Book the interview itself in Recruitee with ${((s.done[bookedKey].data || {}).interviewers || []).map(pname).join(' and ') || 'this pair'}, so the candidate gets the invite from there.`) : null,
       rows,
       outlookPanel(c),
       !list.filter((i) => i.status === 'pending' || i.status === 'accepted').length && !s.done[bookedKey] ? slotSuggestions(c, s, round, roundObj) : null,
-      !state.complete ? askForm(c, round, roundObj, list) : null,
+      !state.complete && !s.done[bookedKey] ? askForm(c, round, roundObj, list) : null,
     );
   }
 
@@ -2195,7 +2308,7 @@
     ];
     act(async () => {
       const ids = [];
-      for (const c of demo) ids.push(await S.add('candidates', withSummary({ ...c, campaignId: camp.id, email: '', phone: '', mock: true, createdAt: now })));
+      for (const c of demo) ids.push(await S.add('candidates', withSummary({ ...c, campaignId: camp.id, email: '', phone: '', mock: true, createdAt: now, ...(FEATURES.ats ? {} : { flow: 'lite' }) })));
       // Sanne: three advisors asked for next Friday, from different teams.
       const pool = people().filter((p) => p.active !== false && (p.roles || []).includes('advisor'));
       const picked = [];
@@ -2368,7 +2481,9 @@
         const d = wd(Math.min(ddSlot + 2, -1));
         tl.push(ev('final_call', d, null, null, kind === 'hired' ? 'Offer accepted on the phone. Starts in January.' : 'Took it well; asked for written feedback.'), ev('closed', d, kind === 'hired' ? 'hired' : 'rejected'));
       }
-      const doc = withSummary({ name: `${name} (demo)`, campaignId: camp.id, email: '', phone: '', hrDate: hr, notes: hrNotes[made % hrNotes.length], timeline: tl, mock: true, createdAt: `${hr}T12:00:00.000Z` });
+      // V0 tracks candidates from the moment they need an advisor pair.
+      if (!FEATURES.ats && !tl.some((x) => x.step === 'hr_done' && x.outcome === 'pass')) continue;
+      const doc = withSummary({ name: `${name} (demo)`, campaignId: camp.id, email: '', phone: '', hrDate: hr, notes: hrNotes[made % hrNotes.length], timeline: tl, mock: true, createdAt: `${hr}T12:00:00.000Z`, ...(FEATURES.ats ? {} : { flow: 'lite' }) });
       const id = await S.add('candidates', doc);
       for (const i of invites) await S.add('invites', { campaignId: camp.id, candidateId: id, ...i, mock: true });
       for (const n of notes) await S.add('notes', { candidateId: id, campaignId: camp.id, authorId: null, mock: true, ...n });
@@ -3796,7 +3911,7 @@
       h(
         'div',
         { class: 'head' },
-        h('div', {}, h('h2', {}, 'Rounds and scheduling rules'), h('p', {}, editable ? 'Everyone in the campaign can read these. Only you can change them.' : 'How interviews are planned in this campaign. Natalie sets these.')),
+        h('div', {}, h('h2', {}, 'Rounds and scheduling rules'), h('p', {}, editable ? (FEATURES.interviewerViews ? 'Everyone in the campaign can read these. Only you can change them.' : 'How pairs are planned in this campaign.') : 'How interviews are planned in this campaign. Natalie sets these.')),
         draft ? null : editable && !editing ? h('button', { onclick: () => ((ui.editRules = c.id), (ui.rulesDraft = null), rerender()) }, 'Edit') : null,
       ),
       h(
@@ -4059,7 +4174,7 @@
       step(
         3,
         'Who is in each round',
-        'Everyone you pick gets invited to the app. People without Claude still get Outlook invites.',
+        FEATURES.interviewerViews ? 'Everyone you pick gets invited to the app. People without Claude still get Outlook invites.' : 'Only the people you pick get interview requests. They answer in Outlook, as usual.',
         w.members ? w.draft.rounds.map((r) => h('div', { class: 'wiz-round' }, h('h3', {}, r.name), memberPicker(r, w.members, rerender))) : h('p', { class: 'muted' }, 'Loading the roster…'),
       ),
       h(
@@ -4114,7 +4229,7 @@
       h(
         'div',
         { class: 'head' },
-        h('div', {}, h('h2', {}, 'People in this campaign'), h('p', {}, `${all.length} people across ${plural(rounds.length, 'round')}. ${all.filter((x) => memberOf(x.p.accountId)).length} have joined the app.`)),
+        h('div', {}, h('h2', {}, 'People in this campaign'), h('p', {}, `${all.length} people across ${plural(rounds.length, 'round')}.${FEATURES.interviewerViews ? ` ${all.filter((x) => memberOf(x.p.accountId)).length} have joined the app.` : ''}`)),
         editing ? null : h('button', { onclick: () => ((ui.editPeople = c.id), (ui.peopleDraft = null), rerender()) }, 'Change people'),
       ),
       editing
@@ -4128,7 +4243,7 @@
             ),
           ]
         : null,
-      ui.showInvite || Object.keys(invited).length < all.length
+      FEATURES.interviewerViews && (ui.showInvite || Object.keys(invited).length < all.length)
         ? h(
             'div',
             { class: 'invite-box' },
@@ -4151,9 +4266,9 @@
         return h(
           'details',
           { class: 'round-sum' },
-          h('summary', {}, h('b', {}, r.name), h('span', { class: 'muted' }, ` · ${plural(ps.length, 'person', 'people')} · ${inv} invited · ${joined} joined`)),
+          h('summary', {}, h('b', {}, r.name), h('span', { class: 'muted' }, ` · ${plural(ps.length, 'person', 'people')}${FEATURES.interviewerViews ? ` · ${inv} invited · ${joined} joined` : ''}`)),
           ps.length ? null : h('p', { class: 'small muted' }, 'Nobody is in this round yet. Use Change people to add someone.'),
-          h('div', { class: 'people-list' }, ps.map((p) => h('div', { class: 'person-row' }, h('span', {}, h('b', {}, p.name), h('span', { class: 'muted' }, ` · ${p.team}`)), h('span', { class: 'row' }, p.accountId ? null : h('span', { class: 'small faint' }, 'Outlook only'), status(p))))),
+          h('div', { class: 'people-list' }, ps.map((p) => h('div', { class: 'person-row' }, h('span', {}, h('b', {}, p.name), h('span', { class: 'muted' }, ` · ${p.team}`)), FEATURES.interviewerViews ? h('span', { class: 'row' }, p.accountId ? null : h('span', { class: 'small faint' }, 'Outlook only'), status(p)) : null))),
         );
       }),
     );
@@ -4165,6 +4280,7 @@
       ui.newCampaign
         ? h('div', { class: 'section gutter' }, h('h1', {}, 'New campaign'), campaignWizard())
         : h('div', { class: 'section gutter' }, h('div', { class: 'head' }, h('div', {}, h('h1', {}, c.name), h('p', {}, `${(M.STRUCTURES[c.structure] || M.STRUCTURES[M.DEFAULT_STRUCTURE]).name}. Switch campaigns with the picker at the top.`)), h('button', { onclick: () => ((ui.newCampaign = true), (ui.wiz = null), rerender()) }, '+ New campaign')), campaignForm(c)),
+      ui.newCampaign || !FEATURES.recruitee ? null : recruiteeSettings(c),
       ui.newCampaign ? null : campaignPeople(c),
       ui.newCampaign ? null : rulesSection(c, true),
       ui.newCampaign ? null : adminScoreboard(c),
@@ -4231,7 +4347,7 @@
         { class: 'tpanel camp-facts', style: 'padding:18px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end' },
         h('div', { class: 'kpis', style: 'flex:1' }, fact('Runs', `${c.startDate ? M.formatDay(c.startDate) : '?'} to ${c.endDate ? M.formatDay(c.endDate) : 'open end'}`), fact('Target hires', String(c.targetHires || '–')), fact('Expected interviews', String(c.targetInterviews || '–'))),
         h('button', { onclick: () => ((ui.editCampaign = c.id), rerender()) }, 'Edit details'),
-        h(
+        !FEATURES.interviewerViews ? null : h(
           'div',
           { class: `camp-open ${isOpen(c) ? 'on' : ''}`, style: 'flex-basis:100%' },
           h('span', {}, isOpen(c) ? 'Open: advisors and team leads in this campaign see it on their home.' : 'Not open: only you see this campaign. Open it when you’re ready to invite people.'),
@@ -4528,10 +4644,10 @@
                   ...m.load.byTeam.map(([t, n]) => [`Team ${t}`, plural(n, 'interview'), '']),
                 ]),
               ),
-              voicesPanel(m),
+              FEATURES.ats ? voicesPanel(m) : null,
               loadPanel(m),
             ),
-            quotesPanel(m),
+            FEATURES.ats ? quotesPanel(m) : null,
           ]
         : h('p', { class: 'muted' }, 'No candidates in this campaign yet. Metrics fill in as candidates move through the rounds.'),
     );
@@ -4642,6 +4758,7 @@
   let syncTimer = null;
   function scheduleSync() {
     if (!S || !S.admin) return;
+    autoSyncRecruitee();
     clearTimeout(syncTimer);
     syncTimer = setTimeout(() => syncShared().catch((e) => console.error('sync failed', e && e.message)), 1200);
   }
@@ -4657,6 +4774,7 @@
     for (const camp of openCampaigns()) await writeIfChanged('stats', camp.id, statsFor(camp));
     const openIds = new Set(openCampaigns().map((c) => c.id));
     for (const d of S.state.stats) if (!openIds.has(d.id)) await S.remove('stats', d.id);
+    if (!FEATURES.interviewerViews) return;
     const linked = S.state.people.filter((p) => p.accountId && !p.accountId.startsWith('mock:') && p.active !== false);
     for (const p of linked) await writeIfChanged('inbox', p.accountId, inboxFor(p));
     const keep = new Set(linked.map((p) => p.accountId));
@@ -4680,7 +4798,7 @@
       const stats = S.state.stats;
       return { mode: 'viewer', inbox: S.state.mine.inbox, replies: S.state.mine.replies || null, stats, loading: S.state.mine.inbox === undefined };
     }
-    const p = ui.viewAs && personById(ui.viewAs);
+    const p = FEATURES.interviewerViews && ui.viewAs && personById(ui.viewAs);
     if (!p || !campaign()) return null;
     return { mode: 'preview', person: p, inbox: inboxFor(p), replies: null, stats: openCampaigns().map(statsFor), loading: false };
   }
@@ -4709,8 +4827,8 @@
     const curRole = ui.dev ? 'dev' : cur ? roleLabel(cur) : 'admin';
     const seg = [
       ['admin', 'Admin'],
-      ['advisor', 'Advisor'],
-      ['team lead', 'Team lead'],
+      FEATURES.interviewerViews ? ['advisor', 'Advisor'] : null,
+      FEATURES.interviewerViews ? ['team lead', 'Team lead'] : null,
       ['dev', `Developer${S.state.reports.filter((x) => (x.status || 'new') === 'new').length ? ` · ${S.state.reports.filter((x) => (x.status || 'new') === 'new').length}` : ''}`],
     ];
     return h(
@@ -4720,7 +4838,7 @@
       h(
         'div',
         { class: 'seg' },
-        seg.map(([r, label]) =>
+        seg.filter(Boolean).map(([r, label]) =>
           h(
             'button',
             {
@@ -4770,6 +4888,8 @@
 
   // ---- The page itself ----
   function interviewerView(ctx) {
+    if (ctx.mode === 'viewer' && !FEATURES.interviewerViews)
+      return h('div', { class: 'home iv-home' }, h('div', { class: 'calm-head' }, h('h1', {}, 'Not open yet.'), h('p', { class: 'lead' }, 'This app is Natalie’s interview planner for now. Advisors and team leads keep getting their requests in Outlook, as usual.')));
     if (ctx.loading) return h('div', { class: 'home' }, h('div', { class: 'calm-head' }, h('p', { class: 'date' }, 'Loading…')));
     const inbox = ctx.inbox;
     // Only open campaigns reach this page; of those, show the ones this person is part of.
@@ -5174,7 +5294,7 @@
       'div',
       { class: 'section gutter' },
       h('h2', {}, 'Scoreboard'),
-      h('p', { class: 'small muted' }, 'Interviewers see the team board and only their own row, rank and interview goal. Goals split this campaign\'s expected interviews over the people in each round (two seats per interview), so they add up to at least what the campaign needs. This full list is for you.'),
+      h('p', { class: 'small muted' }, !FEATURES.interviewerViews ? 'Who is carrying the interviews, per team and per person, so you can spread the load. Only you see this for now.' : 'Interviewers see the team board and only their own row, rank and interview goal. Goals split this campaign\'s expected interviews over the people in each round (two seats per interview), so they add up to at least what the campaign needs. This full list is for you.'),
       teamBoard(st, null),
       h(
         'details',
@@ -5350,7 +5470,19 @@
         [['open', `Open (${list.length - count('fixed') - count('wontfix')})`], ['new', `New (${count('new')})`], ['fixed', `Fixed (${count('fixed')})`], ['all', `All (${list.length})`]].map(([k, l]) => h('button', { 'aria-pressed': filter === k, onclick: () => ((ui.devFilter = k), rerender()) }, l)),
       ),
       shown.length ? shown.map(reportCard) : h('div', { class: 'calm-empty' }, h('p', {}, list.length ? 'Nothing here.' : 'No reports yet. They arrive here when someone presses Report.')),
+      versionsPanel(),
       h('p', { class: 'small faint' }, `This build: ${BUILD}`),
+    );
+  }
+  // Hidden work for later versions, switchable in this browser only.
+  function versionsPanel() {
+    return h(
+      'section',
+      { class: 'tpanel', 'aria-label': 'Later versions', style: 'margin-top:32px' },
+      h('div', { class: 'ph' }, `Live: ${VERSION} · later versions`, h('span', { class: 'faint' }, 'only in this browser')),
+      FEATURE_INFO.map(([k, v, label, about]) =>
+        h('label', { class: 'check', style: 'padding:8px 10px;align-items:flex-start' }, h('input', { type: 'checkbox', checked: !!FEATURES[k], onchange: (e) => setFeature(k, e.target.checked) }), h('span', {}, h('b', {}, `${v} · ${label}`), h('br'), h('span', { class: 'small muted' }, about))),
+      ),
     );
   }
   function reportCard(x) {
@@ -5422,6 +5554,7 @@
   };
   // ui.welcome: null (hidden) or { memberId, name?, mock? }
   async function checkWelcome() {
+    if (!FEATURES.interviewerViews) return;
     const id = me || 'local';
     if (store(`flux.welcomed.${id}`)) return;
     let doc = null;
@@ -5467,6 +5600,194 @@
   }
   const memberOf = (accountId) => accountId && S.state.members.find((m) => m.id === accountId && m.acceptedAt);
 
+
+  // ------------------------------------------------------------------
+  // Recruitee sync (read-only). Natalie's page asks the Recruitee desktop
+  // extension on her computer for the vacancy, its candidates and the booked
+  // interviews, and saves them as candidates here. Nothing is written back.
+  // Without the extension (a browser tab, or before it's installed) the
+  // page can load mock data in the same shapes to try it out.
+  // ------------------------------------------------------------------
+  const RC = window.FluxRecruitee;
+  const RC_SERVER = 'host:recruitee';
+  const rcState = { busy: false, error: null, autoDone: false };
+  async function rcCall(tool, input) {
+    if (!mcp) throw { code: 'server_not_connected', message: 'No connection to the Claude app here.' };
+    const res = await mcp.callTool(RC_SERVER, tool, input || {});
+    const out = res && res.payload !== undefined ? res.payload : res;
+    if (out && out.error) throw { code: 'tool_error', message: out.error };
+    return out;
+  }
+  const RC_ERRORS = {
+    server_not_connected: 'The Recruitee extension isn’t reachable. Open this app in the Claude desktop app, with the Recruitee extension installed and switched on.',
+    unavailable: 'The Recruitee extension isn’t reachable. Open this app in the Claude desktop app, with the Recruitee extension installed and switched on.',
+    approval_required: 'Claude asked for permission to read Recruitee and it wasn’t given. Press Sync again and allow it.',
+    cancelled: 'The Recruitee read was cancelled. Press Sync again and allow it.',
+    blocked_by_policy: 'Your organization doesn’t allow this app to use the Recruitee extension.',
+  };
+  function rcError(e) {
+    const code = (e && e.code) || 'error';
+    return { code, text: RC_ERRORS[code] || `Recruitee: ${(e && e.message) || code}` };
+  }
+  const slimPeople = () => people().map((p) => ({ name: p.name, email: p.email || '', team: p.team, roles: p.roles || [] }));
+
+  async function syncRecruitee(opts) {
+    const camp = campaign();
+    if (!camp || rcState.busy) return;
+    const useMock = !!(opts && opts.mock);
+    rcState.busy = true;
+    rcState.error = null;
+    rerender();
+    const setting = camp.recruitee || {};
+    const now = nowIso();
+    try {
+      let mode;
+      let offers;
+      let cands;
+      let events;
+      if (useMock) {
+        const m = RC.mockRecruitee(TODAY, slimPeople());
+        mode = 'mock';
+        offers = RC.normalizeOffers(m.offers);
+        const offer = offers.find((o) => String(o.id) === String(setting.offerId)) || offers[0];
+        cands = RC.normalizeCandidates({ candidates: m.candidates }, offer.id, offer.stages);
+        events = RC.normalizeEvents(m.events);
+      } else {
+        const o = await rcCall('list_offers');
+        mode = o.mode;
+        offers = o.offers || [];
+      }
+      const offer = offers.find((o) => String(o.id) === String(setting.offerId)) || offers.find((o) => /trainee/i.test(o.title)) || offers.find((o) => o.title === camp.name) || offers[0];
+      if (!offer) throw { code: 'no_offer', message: 'No vacancies found in Recruitee.' };
+      if (!useMock) {
+        const c = await rcCall('list_candidates', { offer_id: offer.id });
+        cands = c.candidates || [];
+        const ev = await rcCall('list_interviews', { from: M.addDays(TODAY, -60), to: M.addDays(TODAY, 60), candidate_ids: cands.map((x) => x.id), mock_people: slimPeople() });
+        events = ev.events || [];
+      }
+      const mock = mode !== 'live';
+      const existing = S.state.candidates.filter((x) => x.campaignId === camp.id);
+      const plan = RC.planSync({ offer, candidates: cands, events, people: people(), campaignId: camp.id, existing, stageOverrides: setting.stageMap || {}, now });
+      let changed = 0;
+      for (const { id, doc } of plan.docs) {
+        const cur = existing.find((x) => x.id === id);
+        const next = withSummary({ ...doc, ...(mock ? { mock: true } : {}) });
+        const same = cur && JSON.stringify({ ...cur, updatedAt: 0, syncedAt: 0, id: 0 }) === JSON.stringify({ ...next, updatedAt: 0, syncedAt: 0, id: 0, timeline: next.timeline.map((e) => ({ ...e, recordedAt: (cur.timeline.find((x) => x.id === e.id) || e).recordedAt })) });
+        if (same) continue;
+        // Keep the first time each Recruitee entry was seen.
+        if (cur) next.timeline = next.timeline.map((e) => ({ ...e, recordedAt: (cur.timeline.find((x) => x.id === e.id) || e).recordedAt }));
+        await S.set('candidates', id, next);
+        changed++;
+      }
+      await S.update('campaigns', camp.id, {
+        recruitee: {
+          ...setting,
+          offerId: offer.id,
+          offerTitle: offer.title,
+          offers: offers.map((o) => ({ id: o.id, title: o.title, candidatesCount: o.candidatesCount || 0 })),
+          stages: offer.stages.map((st) => ({ name: st.name, category: st.category })),
+          mode,
+          syncedAt: now,
+          counts: plan.counts,
+          changed,
+        },
+      });
+      if (opts && opts.toast !== false) toast(`Recruitee${mock ? ' (mock)' : ''}: ${plural(plan.counts.planned, 'candidate')} to plan, ${plural(plan.counts.interviews, 'interview')}${changed ? `, ${changed} updated` : ', nothing new'}.`);
+    } catch (e) {
+      rcState.error = rcError(e);
+    } finally {
+      rcState.busy = false;
+      rerender();
+    }
+  }
+  // Once per page open, when the last sync is over 15 minutes old.
+  function autoSyncRecruitee() {
+    if (rcState.autoDone || !FEATURES.recruitee || !mcp || !S.state.loaded.campaigns || !S.state.loaded.candidates || !S.state.loaded.people) return;
+    const camp = campaign();
+    if (!camp) return;
+    rcState.autoDone = true;
+    const last = camp.recruitee && camp.recruitee.mode === 'live' ? Date.parse(camp.recruitee.syncedAt) : 0;
+    if (Date.now() - last > 15 * 60 * 1000) syncRecruitee({ toast: false });
+  }
+
+  // The small block under campaign progress on Today.
+  function recruiteeBox(camp) {
+    const r = camp.recruitee || {};
+    const when = r.syncedAt ? `${M.formatDay(r.syncedAt.slice(0, 10))} ${new Date(r.syncedAt).toTimeString().slice(0, 5)}` : '';
+    const counts = r.counts || {};
+    return h(
+      'div',
+      { class: 'rc-box', style: 'margin-top:28px;display:flex;flex-direction:column;gap:8px' },
+      h('span', { class: 'label' }, r.mode === 'mock' ? 'Recruitee · mock data' : 'Recruitee'),
+      r.syncedAt ? h('p', { class: 'small' }, `${r.offerTitle || 'Vacancy'} · ${plural(counts.planned || 0, 'candidate')} to plan, ${plural(counts.interviews || 0, 'interview')} booked. Synced ${when}.`) : h('p', { class: 'small muted' }, 'Not synced yet.'),
+      counts.unmatched && counts.unmatched.length ? h('p', { class: 'small warn-line' }, `Not on the roster: ${counts.unmatched.slice(0, 4).join(', ')}${counts.unmatched.length > 4 ? '…' : ''}. Add them, or an alias, so their interviews count.`) : null,
+      rcState.error ? h('p', { class: 'small warn-line', role: 'status' }, rcState.error.text) : null,
+      r.mode !== 'live'
+        ? h(
+            'details',
+            { class: 'fold', open: !!ui.rcHelp, ontoggle: (e) => (ui.rcHelp = e.target.open) },
+            h('summary', {}, 'Connect Recruitee (API key)'),
+            h(
+              'ol',
+              { class: 'small', style: 'padding-left:18px;display:flex;flex-direction:column;gap:6px' },
+              h('li', {}, 'In Recruitee (app.tellent.com): Settings › Apps and plugins › Personal API tokens › New token. Note the company ID shown there too.'),
+              h('li', {}, 'Double-click recruitee.mcpb to add the “Recruitee (read-only)” extension to the Claude desktop app.'),
+              h('li', {}, 'In Claude: Settings › Extensions › Recruitee › Configure. Paste the token and company ID. They stay in this computer’s keychain, never in this app.'),
+              h('li', {}, 'Open this app in the Claude desktop app and press Sync now.'),
+            ),
+          )
+        : null,
+      h(
+        'div',
+        { class: 'row' },
+        h('button', { class: 'quiet', disabled: rcState.busy, onclick: () => syncRecruitee() }, rcState.busy ? 'Syncing…' : 'Sync now'),
+        !mcp || (rcState.error && /server_not_connected|unavailable/.test(rcState.error.code)) || r.mode === 'mock' ? h('button', { class: 'link', disabled: rcState.busy, title: 'Loads mock Recruitee data, marked as mock. Clear it from Mock.', onclick: () => syncRecruitee({ mock: true }) }, 'Use mock data') : null,
+      ),
+    );
+  }
+
+  // Campaign page: which vacancy, and how its stages map to rounds.
+  function recruiteeSettings(camp) {
+    const r = camp.recruitee || {};
+    const overrides = r.stageMap || {};
+    const ROUND_NAMES = { applied: 'Not yet (applied)', hr: 'Not yet (HR)', advisor: 'Advisor interview', deepdive: 'Deep dive', offer: 'Through (offer)', hired: 'Through (hired)' };
+    const save = (patch, msg) => act(() => S.update('campaigns', camp.id, { recruitee: { ...r, ...patch } }), msg);
+    return h(
+      'div',
+      { class: 'section gutter' },
+      h('div', { class: 'head' }, h('div', {}, h('h2', {}, 'Recruitee'), h('p', {}, 'Candidates come from this vacancy in Recruitee, read-only. The app plans the interviewer pairs; results and stages stay in Recruitee.'))),
+      r.offers && r.offers.length
+        ? h(
+            'label',
+            { class: 'f', style: 'max-width:420px' },
+            'Vacancy',
+            h(
+              'select',
+              { id: 'rc-offer', onchange: (e) => save({ offerId: e.target.value }, 'Vacancy saved. Sync to load it.') },
+              r.offers.map((o) => h('option', { value: o.id, selected: String(o.id) === String(r.offerId) }, `${o.title}${o.candidatesCount ? ` (${o.candidatesCount})` : ''}`)),
+            ),
+          )
+        : h('p', { class: 'small muted' }, 'Sync once (on Today) to choose the vacancy.'),
+      r.stages && r.stages.length
+        ? h(
+            'details',
+            { class: 'fold' },
+            h('summary', {}, 'Which Recruitee stage is which round'),
+            h(
+              'div',
+              { class: 'fold-body' },
+              h('p', { class: 'small muted' }, 'Guessed from the stage names. Change one if it’s wrong, then sync.'),
+              h(
+                'table',
+                { class: 'x' },
+                h('tbody', {}, r.stages.map((st) => h('tr', {}, h('td', {}, st.name), h('td', {}, h('select', { 'aria-label': `Round for ${st.name}`, onchange: (e) => save({ stageMap: { ...overrides, [st.name]: e.target.value } }, 'Saved') }, Object.entries(ROUND_NAMES).map(([k, label]) => h('option', { value: k, selected: RC.roundOfStage(st.name, st.category, overrides) === k }, label))))))),
+              ),
+            ),
+          )
+        : null,
+    );
+  }
+
   // ------------------------------------------------------------------
   // Boot
   // ------------------------------------------------------------------
@@ -5489,6 +5810,11 @@
       if (window.claude && window.claude.use) sample = await window.claude.use('sample');
     } catch (e) {
       sample = null;
+    }
+    try {
+      if (window.claude && window.claude.use && FEATURES.recruitee && S.admin) mcp = await window.claude.use('mcp');
+    } catch (e) {
+      mcp = null;
     }
     try {
       if (S.user && S.user.id) me = await S.user.id();
