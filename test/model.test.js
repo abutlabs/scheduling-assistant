@@ -323,3 +323,23 @@ test('campaign metrics: funnel, speed, requests and feedback', () => {
   assert.equal(m.load.max, 2);
   assert.deepEqual(m.weeks.map((w) => w.n), [1, 2, 0]);
 });
+
+test('reply writes: answers, feedback and reports apply once', () => {
+  const people = [{ id: 'p1', accountId: 'u_a', team: 'TM' }, { id: 'p2', accountId: 'u_b', team: 'PM' }];
+  const candidates = [{ id: 'c1', campaignId: 'k', timeline: [{ id: 'e', step: 'advisor_booked', at: '2026-11-20', data: { slotDate: '2026-11-23', time: '10:00', interviewers: ['p1', 'p2'] } }] }];
+  const invites = [
+    { id: 'i1', candidateId: 'c1', personId: 'p1', status: 'pending' },
+    { id: 'i2', candidateId: 'c1', personId: 'p2', status: 'accepted' },
+    { id: 'i3', candidateId: 'c1', personId: 'p2', status: 'pending' },
+  ];
+  const replies = [
+    { id: 'u_a', invites: { i1: { status: 'accepted', at: '2026-11-24T08:00:00Z' }, i3: { status: 'declined' } }, feedback: { f1: { candidateId: 'c1', round: 'advisor', text: 'Strong' }, f2: { candidateId: 'zz', round: 'advisor', text: 'x' } }, reports: { rp_1: { note: 'Button' } } },
+    { id: 'u_stranger', invites: { i3: { status: 'accepted' } } },
+  ];
+  const w = M.planReplyWrites({ replies, people, invites, candidates, notes: [], reports: [], now: '2026-11-24T09:00:00Z' });
+  assert.deepEqual(w.map((x) => `${x.op} ${x.collection}/${x.doc_id}`), ['set reports/rp_1', 'update invites/i1', 'set notes/no_u_a:f1']);
+  assert.equal(w[1].data.status, 'accepted');
+  assert.equal(w[2].data.authorPersonId, 'p1');
+  const again = M.planReplyWrites({ replies, people, invites: [{ ...invites[0], status: 'accepted' }, invites[1], invites[2]], candidates, notes: [{ id: 'no_u_a:f1', replyKey: 'u_a:f1' }], reports: [{ id: 'rp_1' }] });
+  assert.equal(again.length, 0);
+});

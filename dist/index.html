@@ -2082,6 +2082,48 @@ a.btn:hover { filter: brightness(1.05); }
     };
   }
 
+  /**
+   * What interviewers wrote to replies/{accountId} that hasn't been applied yet,
+   * as database writes: [{ op, collection, doc_id, data }]. Pure, so Natalie's
+   * page and the hourly routine (tools/apply-replies.js) apply answers the same
+   * way. Ids are derived from the reply, so applying twice writes nothing new.
+   *  - an answer to a pending request -> update invites/{id}
+   *  - feedback on an interview the person is in -> set notes/{no_<account>:<key>}
+   *  - a Report sent by an interviewer -> set reports/{id}
+   */
+  function planReplyWrites({ replies, people, invites, candidates, notes, reports, now }) {
+    now = now || new Date().toISOString();
+    const out = [];
+    const noteKeys = new Set((notes || []).map((n) => n.replyKey).filter(Boolean));
+    const noteIds = new Set((notes || []).map((n) => n.id));
+    const reportIds = new Set((reports || []).map((r) => r.id));
+    const interviews = interviewsOf(candidates || [], invites || []);
+    for (const r of replies || []) {
+      const p = (people || []).find((x) => x.accountId && x.accountId === r.id);
+      for (const [rid, rep] of Object.entries(r.reports || {})) {
+        if (reportIds.has(rid)) continue;
+        out.push({ op: 'set', collection: 'reports', doc_id: rid, data: { ...rep, authorId: r.id, authorName: rep.authorName || (p ? p.name : ''), status: 'new' } });
+      }
+      if (!p) continue;
+      for (const [iid, a] of Object.entries(r.invites || {})) {
+        const inv = (invites || []).find((i) => i.id === iid);
+        if (!inv || inv.personId !== p.id || inv.status !== 'pending') continue;
+        if (!a || (a.status !== 'accepted' && a.status !== 'declined')) continue;
+        out.push({ op: 'update', collection: 'invites', doc_id: iid, data: { status: a.status, respondedAt: a.at || now, via: 'app', declineReason: String(a.reason || '').slice(0, 300) } });
+      }
+      const mine = interviews.filter((x) => x.personId === p.id);
+      for (const [k, fb] of Object.entries(r.feedback || {})) {
+        const key = `${r.id}:${k}`;
+        const id = `no_${key}`.replace(/[^A-Za-z0-9_\-.~:@+]/g, '_').slice(0, 200);
+        if (noteKeys.has(key) || noteIds.has(id)) continue;
+        const iv = mine.find((x) => x.candidateId === fb.candidateId && x.round === fb.round);
+        if (!iv || !String(fb.text || '').trim()) continue;
+        out.push({ op: 'set', collection: 'notes', doc_id: id, data: { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text: String(fb.text).slice(0, 4000), authorId: r.id, authorPersonId: p.id, replyKey: key, createdAt: fb.at || now } });
+      }
+    }
+    return out;
+  }
+
   const api = {
     TEAMS,
     TEAM_CODES,
@@ -2145,6 +2187,7 @@ a.btn:hover { filter: brightness(1.05); }
     icsEvent,
     pipelineCounts,
     campaignMetrics,
+    planReplyWrites,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -6030,32 +6073,15 @@ a.btn:hover { filter: brightness(1.05); }
     const keep = new Set(linked.map((p) => p.accountId));
     for (const d of S.state.inbox) if (!keep.has(d.id)) await S.remove('inbox', d.id);
   }
+  // Same rules as the hourly routine (tools/apply-replies.js): M.planReplyWrites.
   async function applyReplies() {
-    const notes = S.state.notes;
-    for (const r of S.state.replies) {
-      const p = S.state.people.find((x) => x.accountId === r.id);
-      for (const [rid, rep] of Object.entries(r.reports || {})) {
-        if (applied.has(`r:${rid}`) || S.state.reports.some((x) => x.id === rid)) continue;
-        applied.add(`r:${rid}`);
-        await S.set('reports', rid, { ...rep, authorId: r.id, authorName: rep.authorName || (p ? p.name : ''), status: 'new' });
-      }
-      if (!p) continue;
-      for (const [iid, a] of Object.entries(r.invites || {})) {
-        const inv = S.state.invites.find((i) => i.id === iid);
-        if (!inv || inv.personId !== p.id || inv.status !== 'pending' || applied.has(`i:${iid}`)) continue;
-        if (a.status !== 'accepted' && a.status !== 'declined') continue;
-        applied.add(`i:${iid}`);
-        await S.update('invites', iid, { status: a.status, respondedAt: a.at || nowIso(), via: 'app', declineReason: String(a.reason || '').slice(0, 300) });
-      }
-      const mine = M.interviewsOf(S.state.candidates, S.state.invites).filter((x) => x.personId === p.id);
-      for (const [k, fb] of Object.entries(r.feedback || {})) {
-        const key = `${r.id}:${k}`;
-        if (applied.has(key) || notes.some((n) => n.replyKey === key)) continue;
-        const iv = mine.find((x) => x.candidateId === fb.candidateId && x.round === fb.round);
-        if (!iv || !String(fb.text || '').trim()) continue;
-        applied.add(key);
-        await S.add('notes', { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text: String(fb.text).slice(0, 4000), authorId: r.id, authorPersonId: p.id, replyKey: key, createdAt: fb.at || new Date().toISOString() });
-      }
+    const writes = M.planReplyWrites({ replies: S.state.replies, people: S.state.people, invites: S.state.invites, candidates: S.state.candidates, notes: S.state.notes, reports: S.state.reports, now: nowIso() });
+    for (const w of writes) {
+      const k = `${w.collection}:${w.doc_id}`;
+      if (applied.has(k)) continue;
+      applied.add(k);
+      if (w.op === 'update') await S.update(w.collection, w.doc_id, w.data);
+      else await S.set(w.collection, w.doc_id, w.data);
     }
   }
 
@@ -6537,7 +6563,7 @@ a.btn:hover { filter: brightness(1.05); }
   // Feedback reports: everyone can send a screenshot and a note to the
   // developer. Stored in reports/{id}; editors read them in the Developer view.
   // ------------------------------------------------------------------
-  const BUILD = '2026-11-24 01:34 9f6bd0e';
+  const BUILD = '2026-11-24 01:38 8277ad8';
   const recentErrors = [];
   window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
   window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
