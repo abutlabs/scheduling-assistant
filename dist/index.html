@@ -1383,12 +1383,12 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
   const STEPS = [
     { key: 'hr_done', n: 1, label: 'HR interview done', actor: 'Natalie', round: 'hr', outcome: ['pass', 'reject'], prompt: (c) => `Record HR result for ${c}` },
     { key: 'avail_asked_r2', n: 2, label: 'Availability asked', actor: 'Natalie', round: 'advisor', prompt: (c) => `Ask ${c} for next week's availability` },
-    { key: 'avail_received_r2', n: 3, label: 'Availability received', actor: 'Natalie', round: 'advisor', fields: ['availability'], prompt: (c) => `Match ${c} to an advisor slot` },
-    { key: 'advisor_booked', n: 4, label: 'Advisor interview booked', actor: 'Tool + Natalie', round: 'advisor', fields: ['slot', 'interviewers'], prompt: (c) => `Send ${c}'s invite` },
+    { key: 'avail_received_r2', n: 3, label: 'Availability received', actor: 'Natalie', round: 'advisor', fields: ['availability'], prompt: (c) => `Note ${c}'s availability when it comes in` },
+    { key: 'advisor_booked', n: 4, label: 'Advisor interview booked', actor: 'Tool + Natalie', round: 'advisor', fields: ['slot', 'interviewers'], prompt: (c) => `Book ${c}'s advisor interview` },
     { key: 'advisor_done', n: 5, label: 'Advisor interview done', actor: 'Advisors → Natalie', round: 'advisor', outcome: ['pass', 'reject'], prompt: (c) => `Get the advisors' verdict on ${c}` },
     { key: 'result_call_r2', n: 6, label: 'Result call made', actor: 'Natalie', round: 'advisor', call: true, prompt: (c, s) => (s.rejectedAt === 'advisor' ? `Call ${c}: not moving on` : `Call ${c}: passed the advisor round`) },
-    { key: 'avail_received_final', n: 7, label: 'Availability received (final)', actor: 'Natalie', round: 'deepdive', fields: ['availability'], prompt: (c) => `Match ${c} to a deep dive` },
-    { key: 'deepdive_booked', n: 8, label: 'Deep dive booked', actor: 'Tool + Natalie', round: 'deepdive', fields: ['slot', 'interviewers'], prompt: (c) => `Send ${c}'s deep dive invite` },
+    { key: 'avail_received_final', n: 7, label: 'Availability received (final)', actor: 'Natalie', round: 'deepdive', fields: ['availability'], prompt: (c) => `Note ${c}'s availability for the deep dive` },
+    { key: 'deepdive_booked', n: 8, label: 'Deep dive booked', actor: 'Tool + Natalie', round: 'deepdive', fields: ['slot', 'interviewers'], prompt: (c) => `Book ${c}'s deep dive` },
     { key: 'deepdive_done', n: 9, label: 'Deep dive done', actor: 'Team leads → Natalie', round: 'deepdive', outcome: ['hire', 'reject'], prompt: (c) => `Get the team leads' verdict on ${c}` },
     { key: 'final_call', n: 10, label: 'Final call made', actor: 'Natalie', round: 'deepdive', call: true, prompt: (c, s) => (s.rejectedAt === 'deepdive' ? `Call ${c}: not hired` : `Call ${c}: offer`) },
     { key: 'closed', n: 11, label: 'Closed', actor: 'Natalie', round: 'end', outcome: ['hired', 'rejected', 'withdrew', 'no_show'], prompt: (c) => `Close ${c}'s file` },
@@ -2383,11 +2383,11 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
     hr_done: ['Record', ''],
     reject_call_hr: ['Call', 'accent'],
     avail_asked_r2: ['Ask', 'accent'],
-    avail_received_r2: ['Match', 'accent'],
+    avail_received_r2: ['Note', ''],
     advisor_booked: ['Book', 'accent'],
     advisor_done: ['Record', ''],
     result_call_r2: ['Call', 'accent'],
-    avail_received_final: ['Match', 'accent'],
+    avail_received_final: ['Note', ''],
     deepdive_booked: ['Book', 'accent'],
     deepdive_done: ['Record', ''],
     final_call: ['Call', 'accent'],
@@ -2556,7 +2556,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
       return ui.candFilter === 'all' ? true : ui.candFilter === 'closed' ? st !== 'open' : st === 'open';
     });
     if (!list.length) return h('p', { class: 'muted', style: 'padding:18px 0' }, 'No candidates here.');
-    const stageName = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Hired' };
+    const stageName = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Offer' };
     return h(
       'div',
       { class: 'cand-list' },
@@ -2747,7 +2747,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
     return act(() => S.set('candidates', c.id, withSummary(next)), msg);
   }
 
-  const STAGE_NAME = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Hired' };
+  const STAGE_NAME = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Offer stage' };
 
   // Candidate drawer: who, the one next step, progress (done steps folded), brief, notes.
   function candidateDetail(c) {
@@ -6057,7 +6057,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
   // Feedback reports: everyone can send a screenshot and a note to the
   // developer. Stored in reports/{id}; editors read them in the Developer view.
   // ------------------------------------------------------------------
-  const BUILD = '2026-11-24 01:17 26b5db2';
+  const BUILD = '2026-11-24 01:19 8b31f92';
   const recentErrors = [];
   window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
   window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
