@@ -153,7 +153,7 @@
     const scroll = { x: window.scrollX, y: window.scrollY };
     const drawerScroll = document.querySelector('.drawer') ? document.querySelector('.drawer').scrollTop : 0;
     const iv = ivContext();
-    root.replaceChildren(...[iv ? ivTopBar(iv) : topBar(), iv ? ivBanner(iv) : null, banner(), h('main', {}, iv ? interviewerView(iv) : ui.dev ? devView() : view()), iv || ui.dev ? null : drawer(), sidecar(), welcomeCard(), reportFab(), reportDialog(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
+    root.replaceChildren(...[iv ? ivTopBar(iv) : topBar(), iv ? ivBanner(iv) : null, banner(), h('main', {}, iv ? interviewerView(iv) : ui.dev ? devView() : view()), iv || ui.dev ? null : drawer(), sidecar(), welcomeCard(), reportDialog(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
     window.scrollTo(scroll.x, scroll.y);
     const d = document.querySelector('.drawer');
     if (d) d.scrollTop = drawerScroll;
@@ -198,6 +198,7 @@
             ),
             h('span', {}, `${f.hired} of ${c.targetHires || '?'} hired`),
             viewSwitch(),
+            reportFab(),
             h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, title: 'Test tool: act as colleagues, fake replies, change the date', onclick: () => ((ui.mockOpen = !ui.mockOpen), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock'),
           )
         : null,
@@ -3195,6 +3196,7 @@
         'div',
         { class: 'camp' },
         viewSwitch(),
+        reportFab(),
         S.admin ? h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, onclick: () => ((ui.mockOpen = !ui.mockOpen), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock') : null,
       ),
     );
@@ -3555,7 +3557,7 @@
       height: window.innerHeight,
       windowWidth: window.innerWidth,
       windowHeight: window.innerHeight,
-      ignoreElements: (el) => el.classList && (el.classList.contains('report-fab') || el.classList.contains('toast')),
+      ignoreElements: (el) => el.classList && (el.classList.contains('report-btn') || el.classList.contains('toast')),
     });
     const max = 1100;
     const k = Math.min(1, max / canvas.width);
@@ -3601,7 +3603,7 @@
 
   function reportFab() {
     if (!S || ui.report) return null;
-    return h('button', { class: 'report-fab', onclick: openReport, disabled: !!ui.reportBusy, title: 'Send a screenshot and a note to the developer' }, ui.reportBusy ? '…' : 'Report');
+    return h('button', { class: 'report-btn', onclick: openReport, disabled: !!ui.reportBusy, title: 'Send a screenshot and a note to the developer' }, ui.reportBusy ? 'Taking screenshot…' : 'Report');
   }
 
   function reportDialog() {
