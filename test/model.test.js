@@ -366,3 +366,36 @@ test('campaign metrics: where time goes per step, and who is stuck', () => {
   assert.deepEqual(d.verdict_r2.stuck.map((x) => x.candidateId), ['b']);
   assert.equal(m.slowest, 'book_r2');
 });
+
+test('reply writes: give up a hold early, ask Natalie to cancel a booked interview', () => {
+  const people = [{ id: 'p1', accountId: 'u_a' }];
+  const candidates = [
+    { id: 'c1', campaignId: 'k', timeline: [] },
+    { id: 'c2', campaignId: 'k', timeline: [{ id: 'e', step: 'advisor_booked', at: '2026-11-20', data: { slotDate: '2026-11-27', interviewers: ['p1', 'p9'] } }] },
+  ];
+  const invites = [
+    { id: 'i1', candidateId: 'c1', round: 'advisor', personId: 'p1', status: 'accepted' },
+    { id: 'i2', candidateId: 'c2', round: 'advisor', personId: 'p1', status: 'accepted' },
+  ];
+  const replies = [{ id: 'u_a', invites: { i1: { status: 'withdrawn', reason: 'Client workshop' }, i2: { status: 'withdrawn' } }, cancels: { x1: { candidateId: 'c2', round: 'advisor', reason: 'Sick' }, x2: { candidateId: 'c1', round: 'advisor', reason: 'not booked' } } }];
+  const w = M.planReplyWrites({ replies, people, invites, candidates, notes: [], reports: [], now: '2026-11-24T09:00:00Z' });
+  assert.deepEqual(w.map((x) => `${x.op} ${x.collection}/${x.doc_id}`), ['update invites/i1', 'set notes/nc_u_a:x1']);
+  assert.equal(w[0].data.status, 'declined');
+  assert.match(w[0].data.declineReason, /Client workshop/);
+  assert.equal(w[1].data.kind, 'cancel_request');
+});
+
+test('pairGrid lists pairs from different teams per half-day', () => {
+  const people = [
+    { id: 'a', team: 'X' },
+    { id: 'b', team: 'X' },
+    { id: 'c', team: 'Y' },
+  ];
+  const free = { a: { am: true, pm: true }, b: { am: true, pm: false }, c: { am: true, pm: false } };
+  const cells = M.pairGrid({ people, dates: ['2026-12-04'], freeOf: (id) => free[id] });
+  const am = cells.find((c) => c.half === 'am');
+  const pm = cells.find((c) => c.half === 'pm');
+  assert.equal(am.free.length, 3);
+  assert.deepEqual(am.pairs.map((p) => p.map((x) => x.id).join('+')), ['a+c', 'b+c']);
+  assert.equal(pm.pairs.length, 0);
+});

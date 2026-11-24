@@ -336,6 +336,14 @@
       items.push({ group, kind: k, tone: t, who: c.name, text: `${s.prompt}. ${reason}`.trim(), title: `${s.prompt}.`, sub: `${c.name} · ${reason}`.trim(), due, btn: k === 'Overdue' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
     }
     items.push(...inviteTodoItems());
+    // Interviewers asking to cancel a booked interview: Natalie talks to them first.
+    const inCamp = new Set(candidates().map((c) => c.id));
+    for (const n of S.state.notes.filter((x) => x.kind === 'cancel_request' && !x.resolved && inCamp.has(x.candidateId))) {
+      const c = S.state.candidates.find((x) => x.id === n.candidateId);
+      const b = c && cstate(c).done[n.round === 'deepdive' ? 'deepdive_booked' : 'advisor_booked'];
+      const when = b && b.data ? `${M.formatDay(b.data.slotDate)}${b.data.time ? ` ${b.data.time}` : ''}` : '';
+      items.push({ group: 'today', kind: 'Cancel?', tone: 'warn', who: pname(n.authorPersonId), text: `Asks to cancel ${first(c)}’s ${(ROUND_LABEL[n.round] || 'interview').toLowerCase()}${when ? ` on ${when}` : ''}${n.text ? `: “${n.text}”` : ''}. Talk to them, then rebook or keep it.`, title: `${pname(n.authorPersonId)} asks to cancel ${first(c)}’s interview.`, sub: `${when}${n.text ? ` · “${n.text}”` : ''}`, btn: 'Talked, open', resolveNote: n.id, cand: c.id, sortKey: 1 });
+    }
     // Availability housekeeping
     const snaps = snapshots();
     if (!snaps.length) {
@@ -362,7 +370,10 @@
   function todoAction(i) {
     return () => {
       if (i.go) location.hash = i.go;
-      else if (i.invite) releaseInvite(i.invite, i.why);
+      else if (i.resolveNote) {
+        act(() => S.update('notes', i.resolveNote, { resolved: true, resolvedAt: nowIso() }), 'Marked as talked through');
+        openCandidate(i.cand);
+      } else if (i.invite) releaseInvite(i.invite, i.why);
       else if (i.prefill) {
         const c = S.state.candidates.find((x) => x.id === i.cand);
         const r = roundInvites(c);
@@ -1790,9 +1801,89 @@
   // data (demo candidates and their requests) is touched.
   // ------------------------------------------------------------------
   const sim = (ui.sim = ui.sim || { replies: true, candidates: true, feedback: true, log: [], busy: false });
+  // Simulation: how often colleagues are free in the mock poll. In-person
+  // interviews are hard to plan because most people are busy most days.
+  {
+    let saved = {};
+    try { saved = JSON.parse(store('flux.sim') || '{}') || {}; } catch (e) { saved = {}; }
+    sim.freeFri = Number.isFinite(saved.freeFri) ? saved.freeFri : 50;
+    sim.freeMonThu = Number.isFinite(saved.freeMonThu) ? saved.freeMonThu : 15;
+  }
+  const saveSim = () => store('flux.sim', JSON.stringify({ freeFri: sim.freeFri, freeMonThu: sim.freeMonThu }));
+
+  /** A mock availability poll from the simulation settings. */
+  function mockPollTabs(dates, advisors, leads, rnd) {
+    const pct = (d) => (M.weekdayOf(d) === 5 ? sim.freeFri : sim.freeMonThu) / 100;
+    const cellFor = (d, f) => {
+      const x = rnd();
+      if (x < Math.min(1, pct(d) * f)) {
+        const y = rnd();
+        return y < 0.4 ? 'all' : y < 0.7 ? 'am' : 'pm';
+      }
+      return x > 0.96 ? null : 'no';
+    };
+    const tab = (sheet, role, list) => ({
+      sheet,
+      role,
+      dates,
+      rows: list.map((p) => {
+        const f = 0.6 + rnd() * 0.8; // some people are a bit freer than others
+        return { personId: p.id, name: p.name, team: p.team, remark: '', cells: Object.fromEntries(dates.map((d) => [d, cellFor(d, f)])), rules: [] };
+      }),
+    });
+    const tabs = [tab('Beschikbaarheid competentiegesprekken', 'advisor', advisors), tab('Beschikbaarheid Deepdive', 'teamlead', leads)];
+    const r0 = tabs[0].rows[0];
+    if (r0) {
+      r0.remark = 'Op woensdagen tot uiterlijk 12 uur';
+      r0.rules.push({ kind: 'window', dates: dates.filter((d) => M.weekdayOf(d) === 3), to: '12:00', summary: 'Wednesdays until 12:00', quote: r0.remark, source: 'claude', status: 'confirmed' });
+    }
+    return tabs;
+  }
+
+  async function rebuildMockPoll() {
+    const camp = campaign();
+    const active = people().filter((p) => p.active !== false);
+    const advisors = active.filter((p) => (p.roles || []).includes('advisor'));
+    const leads = active.filter((p) => (p.roles || []).some((r) => r === 'teamlead' || r === 'joker'));
+    const old = snapshots().filter((x) => x.mock);
+    const dates = old[0] ? old[0].tabs[0].dates : (() => {
+      const out = [];
+      for (let d = M.addDays(TODAY, -21); d <= M.addDays(TODAY, 35); d = M.addDays(d, 1)) { const w = M.weekdayOf(d); if (w >= 1 && w <= 5) out.push(d); }
+      return out;
+    })();
+    for (const x of old) await S.remove('snapshots', x.id);
+    const tabs = mockPollTabs(dates, advisors, leads, Math.random);
+    const snap = { campaignId: camp.id, fileName: 'Demo poll (mock).xlsx', pollDate: (old[0] && old[0].pollDate) || M.addDays(dates[0], -1), from: dates[0], to: dates[dates.length - 1], importedAt: nowIso(), tabs, mock: true };
+    snap.stats = M.snapshotStats(snap);
+    await S.add('snapshots', snap);
+  }
   function simLog(day, text) {
     sim.log.unshift({ day, text });
     sim.log.length = Math.min(sim.log.length, 80);
+  }
+
+  function simPct(k, label) {
+    return h(
+      'label',
+      { class: 'row sim-pct' },
+      h('span', { class: 'small', style: 'min-width:190px' }, label),
+      h('input', {
+        type: 'number',
+        id: `sim-${k}`,
+        min: 0,
+        max: 100,
+        step: 5,
+        value: sim[k],
+        style: 'width:80px',
+        onchange: (e) => {
+          const v = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+          sim[k] = v;
+          e.target.value = v;
+          saveSim();
+        },
+      }),
+      h('span', { class: 'small faint' }, '%'),
+    );
   }
 
   function sidecar() {
@@ -1835,6 +1926,15 @@
           h('button', { disabled: sim.busy, onclick: () => fastForward(7) }, 'Skip a week ▸▸'),
           h('button', { disabled: sim.busy, onclick: () => fastForward(0) }, 'Replies now'),
         ),
+      ),
+      h(
+        'section',
+        { class: 'mock-sec' },
+        h('h3', {}, 'Simulation'),
+        h('p', { class: 'small muted' }, 'How often a colleague is free for an in-person interview in the demo poll.'),
+        simPct('freeFri', 'Free on Fridays'),
+        simPct('freeMonThu', 'Free Monday to Thursday'),
+        h('div', { class: 'row' }, h('button', { disabled: sim.busy, onclick: () => act(rebuildMockPoll, 'Demo poll rebuilt') }, snapshots().some((x) => x.mock) ? 'Rebuild demo poll' : 'Create demo poll')),
       ),
       h(
         'section',
@@ -2073,15 +2173,7 @@
     if (!snapshots().length) {
       const dates = [];
       for (let d = wd(-15); d <= wd(25); d = M.addDays(d, 1)) if (isWd(d)) dates.push(d);
-      const cellFor = (d) => {
-        const x = rnd() + (M.weekdayOf(d) === 5 ? 0.25 : 0);
-        return x > 0.8 ? 'all' : x > 0.62 ? 'pm' : x > 0.45 ? 'am' : x > 0.08 ? 'no' : null;
-      };
-      const tab = (sheet, role, list) => ({ sheet, role, dates, rows: list.map((p) => ({ personId: p.id, name: p.name, team: p.team, remark: '', cells: Object.fromEntries(dates.map((d) => [d, cellFor(d)])), rules: [] })) });
-      const tabs = [tab('Beschikbaarheid competentiegesprekken', 'advisor', advisors), tab('Beschikbaarheid Deepdive', 'teamlead', leads)];
-      const r0 = tabs[0].rows[0];
-      r0.remark = 'Op woensdagen tot uiterlijk 12 uur';
-      r0.rules.push({ kind: 'window', dates: dates.filter((d) => M.weekdayOf(d) === 3), to: '12:00', summary: 'Wednesdays until 12:00', quote: r0.remark, source: 'claude', status: 'confirmed' });
+      const tabs = mockPollTabs(dates, advisors, leads, rnd);
       const snap = { campaignId: camp.id, fileName: 'Demo poll (mock).xlsx', pollDate: wd(-16), from: dates[0], to: dates[dates.length - 1], importedAt: now, tabs, mock: true };
       snap.stats = M.snapshotStats(snap);
       await S.add('snapshots', snap);
@@ -2661,8 +2753,121 @@
         ),
         dropZone(),
       ),
+      snap ? pairFinder() : null,
       snap ? snapshotSheet(snap) : h('div', { class: 'empty gutter' }, h('p', {}, 'No poll imported yet for this campaign.')),
     ];
+  }
+
+  // ------------------------------------------------------------------
+  // Pair finder: like a sudoku hint, it shows at a glance every half-day
+  // where two advisors (or two team leads) from different teams are free.
+  // ------------------------------------------------------------------
+  function pairFinder() {
+    const role = ui.pairRole || 'advisor';
+    const pool = people().filter((p) => p.active !== false && (role === 'advisor' ? (p.roles || []).includes('advisor') : (p.roles || []).some((r) => r === 'teamlead' || r === 'joker')));
+    const wdNow = M.weekdayOf(TODAY);
+    const monday = M.addDays(TODAY, wdNow === 0 ? 1 : wdNow === 6 ? 2 : 1 - wdNow);
+    const start = M.addDays(monday, 7 * (ui.pairWeek || 0));
+    const dates = [0, 1, 2, 3, 4].map((i) => M.addDays(start, i));
+    const srcs = availSources();
+    const busy = new Set();
+    for (const i of S.state.invites) {
+      if (!i.slotDate || !['pending', 'accepted'].includes(i.status)) continue;
+      busy.add(`${i.personId}|${i.slotDate}|${(i.time || '09:00') < '12:00' ? 'am' : 'pm'}`);
+    }
+    const freeOf = (pid, date) => {
+      const a = M.availabilityOn(srcs, pid, role, date);
+      if (!a) return null;
+      let am = a.value === 'all' || a.value === 'am';
+      let pm = a.value === 'all' || a.value === 'pm';
+      const w = a.window;
+      if (w && w.to && w.to <= '13:00') pm = false;
+      if (w && w.from && w.from >= '12:00') am = false;
+      if (busy.has(`${pid}|${date}|am`)) am = false;
+      if (busy.has(`${pid}|${date}|pm`)) pm = false;
+      return { am, pm };
+    };
+    const cells = M.pairGrid({ people: pool, dates, freeOf });
+    const cellAt = (d, half) => cells.find((c) => c.date === d && c.half === half);
+    const focus = ui.pairPerson && pool.find((p) => p.id === ui.pairPerson) ? ui.pairPerson : null;
+    const sel = ui.pairCell && cells.find((c) => `${c.date}|${c.half}` === ui.pairCell);
+    const total = cells.reduce((n, c) => n + (c.pairs.length ? 1 : 0), 0);
+    const level = (n) => (n === 0 ? 'none' : n <= 2 ? 'few' : 'many');
+    const label = role === 'advisor' ? 'advisors' : 'team leads';
+    const halfName = { am: 'Morning', pm: 'Afternoon' };
+    const pick = (id) => {
+      ui.pairPerson = ui.pairPerson === id ? null : id;
+      rerender();
+    };
+    const personChip = (p) => h('button', { class: `pf-person${focus === p.id ? ' on' : ''}`, onclick: () => pick(p.id), title: 'Show every half-day this person is free' }, p.name, p.team ? h('span', { class: 'faint' }, ` · ${p.team}`) : null);
+
+    const gridCell = (d, half) => {
+      const c = cellAt(d, half);
+      const n = focus ? c.pairs.filter((pr) => pr.some((x) => x.id === focus)).length : c.pairs.length;
+      const lit = focus ? c.free.some((x) => x.id === focus) : true;
+      const key = `${d}|${half}`;
+      const past = d < TODAY;
+      return h(
+        'button',
+        {
+          class: `pf-cell lvl-${level(n)}${lit ? '' : ' dim'}${ui.pairCell === key ? ' sel' : ''}${past ? ' past' : ''}`,
+          'aria-label': `${M.formatDay(d)} ${halfName[half]}: ${plural(n, 'pair')}`,
+          onclick: () => {
+            ui.pairCell = ui.pairCell === key ? null : key;
+            rerender();
+          },
+        },
+        h('b', {}, n ? String(n) : '·'),
+        h('span', {}, n ? (n === 1 ? 'pair' : 'pairs') : focus && !lit ? 'not free' : 'no pair'),
+        h('i', {}, `${c.free.length} free`),
+      );
+    };
+
+    return h(
+      'div',
+      { class: 'section gutter pair-finder' },
+      h(
+        'div',
+        { class: 'head' },
+        h('div', {}, h('h2', {}, 'Pair finder'), h('p', { class: 'muted' }, `Every half-day where two ${label} from different teams are free at the same time. Pick a name to light up where they fit, like the hints in a sudoku.`)),
+        h(
+          'div',
+          { class: 'seg' },
+          [['advisor', 'Advisors'], ['teamlead', 'Team leads']].map(([k, t]) => h('button', { class: role === k ? 'on' : '', 'aria-pressed': String(role === k), onclick: () => ((ui.pairRole = k), (ui.pairPerson = null), (ui.pairCell = null), rerender()) }, t)),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'row pf-week' },
+        h('button', { class: 'quiet', 'aria-label': 'Previous week', onclick: () => ((ui.pairWeek = (ui.pairWeek || 0) - 1), (ui.pairCell = null), rerender()) }, '‹'),
+        h('b', {}, `Week of ${M.formatDay(start)}`),
+        h('button', { class: 'quiet', 'aria-label': 'Next week', onclick: () => ((ui.pairWeek = (ui.pairWeek || 0) + 1), (ui.pairCell = null), rerender()) }, '›'),
+        ui.pairWeek ? h('button', { class: 'link', onclick: () => ((ui.pairWeek = 0), (ui.pairCell = null), rerender()) }, 'This week') : null,
+        h('span', { class: 'small muted', style: 'margin-left:auto' }, total ? `${plural(total, 'half-day')} of 10 can seat a pair` : `No half-day this week can seat a pair of ${label}`),
+      ),
+      h(
+        'div',
+        { class: 'pf-grid' },
+        h('span', {}),
+        dates.map((d) => h('span', { class: `pf-day${d === TODAY ? ' today' : ''}` }, M.formatDay(d))),
+        ['am', 'pm'].map((half) => [h('span', { class: 'pf-half' }, halfName[half]), dates.map((d) => gridCell(d, half))]),
+      ),
+      focus ? h('p', { class: 'small' }, h('b', {}, personById(focus).name), ' is lit up. Numbers count only the pairs that include them. ', h('button', { class: 'link', onclick: () => pick(focus) }, 'Show everyone')) : null,
+      sel
+        ? h(
+            'div',
+            { class: 'pf-detail' },
+            h('h3', {}, `${M.formatDay(sel.date)}, ${halfName[sel.half].toLowerCase()}`),
+            sel.free.length ? h('div', { class: 'pf-people' }, h('span', { class: 'small muted' }, 'Free: '), sel.free.map(personChip)) : h('p', { class: 'muted' }, `Nobody in the ${label} poll is free then.`),
+            sel.pairs.length
+              ? h('ul', { class: 'pf-pairs' }, sel.pairs.filter((pr) => !focus || pr.some((x) => x.id === focus)).map((pr) => h('li', {}, pr.map((x) => h('span', {}, x.name, x.team ? h('span', { class: 'faint' }, ` (${x.team})`) : null)).reduce((a, b) => [a, h('span', { class: 'faint' }, ' + '), b]))))
+              : sel.free.length
+                ? h('p', { class: 'muted' }, 'No pair from two different teams here.')
+                : null,
+          )
+        : h('p', { class: 'small muted' }, 'Pick a half-day to see who is free and every pair that works.'),
+      h('div', { class: 'pf-people pf-all' }, h('span', { class: 'small muted' }, `All ${label}: `), pool.map(personChip)),
+    );
   }
 
   function dropZone() {
@@ -4267,6 +4472,8 @@
           time: r.time,
           room: r.room,
           booked: r.booked,
+          inviteId: (S.state.invites.find((i) => i.candidateId === r.candidateId && i.round === r.round && i.personId === p.id && i.status === 'accepted') || {}).id || null,
+          cancelAsked: notes.some((n) => n.kind === 'cancel_request' && !n.resolved && n.personId === p.id && n.candidateId === r.candidateId && n.round === r.round),
           partners: r.partners.map((id) => pname(id)),
           feedbackSent: notes.filter((n) => n.kind === 'feedback' && n.personId === p.id && n.candidateId === r.candidateId && n.round === r.round).length,
           record: briefRecord(c),
@@ -4477,7 +4684,7 @@
     const reports = Object.entries({ ...(cur.reports || {}), ...(patch.reports || {}) })
       .sort((a, b) => (b[1].createdAt || '').localeCompare(a[1].createdAt || ''))
       .slice(0, 3);
-    const doc = { invites: { ...(cur.invites || {}), ...(patch.invites || {}) }, feedback: { ...(cur.feedback || {}), ...(patch.feedback || {}) }, reports: Object.fromEntries(reports) };
+    const doc = { invites: { ...(cur.invites || {}), ...(patch.invites || {}) }, feedback: { ...(cur.feedback || {}), ...(patch.feedback || {}) }, cancels: { ...(cur.cancels || {}), ...(patch.cancels || {}) }, reports: Object.fromEntries(reports) };
     await S.set('replies', S.myId || 'local', doc);
   }
   function ivAnswer(ctx, req, status, reason) {
@@ -4496,6 +4703,19 @@
     return act(() => saveReply(ctx, { feedback: { [k]: { candidateId: iv.candidateId, round: iv.round, text, at: new Date().toISOString() } } }), 'Feedback sent to Natalie');
   }
 
+  // Give up an accepted hold before it's booked with the candidate. Natalie's to-do then tops up.
+  function ivWithdraw(ctx, iv, reason) {
+    if (ctx.mode === 'preview') return act(() => S.update('invites', iv.inviteId, { status: 'declined', respondedAt: nowIso(), via: 'app', declineReason: `Gave up the hold${reason ? `: ${reason}` : ''}`, withdrawnAt: nowIso() }), 'Hold given up. Natalie will find someone else.');
+    return act(() => saveReply(ctx, { invites: { [iv.inviteId]: { status: 'withdrawn', reason: reason || '', at: new Date().toISOString() } } }), 'Hold given up. Natalie will find someone else.');
+  }
+  // A booked interview isn't cancelled from here: it goes to Natalie as a request to talk.
+  function ivCancelRequest(ctx, iv, reason) {
+    if (ctx.mode === 'preview') {
+      const c = S.state.candidates.find((x) => x.id === iv.candidateId);
+      return act(() => S.add('notes', { candidateId: iv.candidateId, campaignId: c ? c.campaignId : '', round: iv.round, kind: 'cancel_request', text: reason || '', authorId: null, authorPersonId: ctx.inbox.personId, resolved: false, mock: true, createdAt: nowIso() }), 'Sent to Natalie. She’ll get in touch.');
+    }
+    return act(() => saveReply(ctx, { cancels: { [S.uid('cx')]: { candidateId: iv.candidateId, round: iv.round, reason: reason || '', at: new Date().toISOString() } } }), 'Sent to Natalie. She’ll get in touch.');
+  }
   function ivRequests(ctx) {
     const reqs = ctx.inbox.requests || [];
     const reasons = (ui.ivReasons = ui.ivReasons || {});
@@ -4542,7 +4762,8 @@
         'div',
         { class: 'iv-row' },
         h('div', { class: 'top' }, h('b', {}, iv.name), sent ? h('span', { class: 'pill-ok' }, '✓ Feedback sent') : isPast ? h('span', { class: 'chip warn' }, 'Feedback due') : null),
-        h('div', { class: 'meta' }, `${ROUND_LABEL[iv.round]} · ${M.formatDay(iv.slotDate)} ${iv.time} · ${iv.room || 'room tbc'}${iv.partners.length ? ` · with ${iv.partners.join(', ')}` : ''}${iv.booked ? '' : ' · pair not confirmed yet'}`),
+        h('div', { class: 'meta' }, `${ROUND_LABEL[iv.round]} · ${M.formatDay(iv.slotDate)} ${iv.time} · ${iv.room || 'room tbc'}${iv.partners.length ? ` · with ${iv.partners.join(', ')}` : ''}`),
+        isPast ? null : ivStatus(ctx, iv),
         ivBrief(iv),
         isPast && !sent
           ? h(
@@ -4582,6 +4803,38 @@
       past.filter((x) => !x.feedbackSent).map((x) => card(x, true)),
       upcoming.filter((x) => x.slotDate > TODAY || x.feedbackSent).map((x) => card(x, false)),
       past.filter((x) => x.feedbackSent).length ? h('p', { class: 'iv-row earlier' }, `Earlier: ${past.filter((x) => x.feedbackSent).map((x) => `${x.name.split(' ')[0]} (${M.formatDay(x.slotDate)})`).join(', ')}`) : null,
+    );
+  }
+
+  // Held: you said yes, the candidate isn't booked yet, so you can still give it up.
+  // Booked: it's in the candidate's calendar too; cancelling takes a talk with Natalie.
+  function ivStatus(ctx, iv) {
+    const mine = ctx.replies || {};
+    const gaveUp = iv.inviteId && mine.invites && mine.invites[iv.inviteId] && mine.invites[iv.inviteId].status === 'withdrawn';
+    const asked = iv.cancelAsked || Object.values(mine.cancels || {}).some((x) => x.candidateId === iv.candidateId && x.round === iv.round);
+    const f = ((ui.forms = ui.forms || {})[`ivst:${iv.key}`] = ui.forms[`ivst:${iv.key}`] || { open: false, reason: '' });
+    if (gaveUp) return h('div', { class: 'iv-status held' }, h('span', { class: 'chip' }, 'Given up'), h('span', { class: 'small muted' }, 'You gave up this hold. Natalie is finding someone else.'));
+    if (!iv.booked)
+      return h(
+        'div',
+        { class: 'iv-status held' },
+        h('span', { class: 'chip accent' }, 'Held'),
+        h('span', { class: 'small muted' }, `You’re holding the time; ${iv.name.split(' ')[0]} isn’t booked yet. Can’t make it after all? Give it up now so Natalie can ask someone else.`),
+        f.open
+          ? h('div', { class: 'row' }, h('input', { id: `iv-wd-${iv.key}`, placeholder: 'Reason (optional)', value: f.reason, oninput: (e) => (f.reason = e.target.value) }), h('button', { class: 'p', onclick: () => ivWithdraw(ctx, iv, f.reason.trim()) }, 'Give up the hold'), h('button', { class: 'quiet', onclick: () => ((f.open = false), rerender()) }, 'Keep it'))
+          : iv.inviteId
+            ? h('button', { class: 'link', onclick: () => ((f.open = true), rerender()) }, 'Give up this hold')
+            : null,
+      );
+    return h(
+      'div',
+      { class: 'iv-status booked' },
+      h('span', { class: 'chip good' }, `Booked with ${iv.name.split(' ')[0]}`),
+      asked
+        ? h('span', { class: 'small muted' }, 'You asked Natalie to cancel. She’ll get in touch; until then it stays in your calendar.')
+        : f.open
+          ? h('div', { class: 'stack', style: 'display:flex;flex-direction:column;gap:8px;width:100%' }, h('span', { class: 'small muted' }, 'The candidate is booked, so Natalie needs to sort this out with you. Tell her what’s going on.'), h('textarea', { id: `iv-cx-${iv.key}`, placeholder: 'What happened, and when could you do instead?', value: f.reason, oninput: (e) => (f.reason = e.target.value) }), h('div', { class: 'row' }, h('button', { class: 'p', onclick: () => ivCancelRequest(ctx, iv, f.reason.trim()) }, 'Ask Natalie to cancel'), h('button', { class: 'quiet', onclick: () => ((f.open = false), rerender()) }, 'Never mind')))
+          : h('button', { class: 'link', onclick: () => ((f.open = true), rerender()) }, 'Can’t make it?'),
     );
   }
 

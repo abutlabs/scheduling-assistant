@@ -782,6 +782,27 @@
     return problems;
   }
 
+  /**
+   * Pair finder: for each date and half-day, who is free and which pairs
+   * (two people from different teams) could interview together.
+   * freeOf(personId, date) returns { am, pm } booleans.
+   */
+  function pairGrid({ people, dates, freeOf }) {
+    const cells = [];
+    for (const date of dates) {
+      for (const half of ['am', 'pm']) {
+        const free = people.filter((p) => {
+          const f = freeOf(p.id, date);
+          return f && f[half];
+        });
+        const pairs = [];
+        for (let i = 0; i < free.length; i++) for (let j = i + 1; j < free.length; j++) if (free[i].team !== free[j].team || !free[i].team) pairs.push([free[i], free[j]]);
+        cells.push({ date, half, free, pairs });
+      }
+    }
+    return cells;
+  }
+
   /** Who is available on a date, by half-day, according to the latest snapshot covering that date for a role. */
   function availabilityOn(snapshots, personId, role, date) {
     const sorted = [...snapshots].sort((a, b) => (b.pollDate || '').localeCompare(a.pollDate || '') || (b.importedAt || '').localeCompare(a.importedAt || ''));
@@ -1417,11 +1438,33 @@
         out.push({ op: 'set', collection: 'reports', doc_id: rid, data: { ...rep, authorId: r.id, authorName: rep.authorName || (p ? p.name : ''), status: 'new' } });
       }
       if (!p) continue;
+      const bookedFor = (cid, round) => {
+        const c = (candidates || []).find((x) => x.id === cid);
+        const e = c && latestByStep(c.timeline)[round === 'deepdive' ? 'deepdive_booked' : 'advisor_booked'];
+        return e && e.data && (e.data.interviewers || []).includes(p.id);
+      };
       for (const [iid, a] of Object.entries(r.invites || {})) {
         const inv = (invites || []).find((i) => i.id === iid);
-        if (!inv || inv.personId !== p.id || inv.status !== 'pending') continue;
+        if (!inv || inv.personId !== p.id) continue;
+        // Giving up an accepted hold early. Once the interview is booked with
+        // the candidate it takes a conversation with Natalie instead.
+        if (a && a.status === 'withdrawn') {
+          if (inv.status !== 'accepted' || bookedFor(inv.candidateId, inv.round)) continue;
+          out.push({ op: 'update', collection: 'invites', doc_id: iid, data: { status: 'declined', respondedAt: a.at || now, via: 'app', declineReason: `Gave up the hold${a.reason ? `: ${String(a.reason).slice(0, 280)}` : ''}`, withdrawnAt: a.at || now } });
+          continue;
+        }
+        if (inv.status !== 'pending') continue;
         if (!a || (a.status !== 'accepted' && a.status !== 'declined')) continue;
         out.push({ op: 'update', collection: 'invites', doc_id: iid, data: { status: a.status, respondedAt: a.at || now, via: 'app', declineReason: String(a.reason || '').slice(0, 300) } });
+      }
+      // Asking Natalie to cancel a booked interview: a note she sees on Today.
+      for (const [k, cr] of Object.entries(r.cancels || {})) {
+        const key = `${r.id}:${k}`;
+        const id = `nc_${key}`.replace(/[^A-Za-z0-9_\-.~:@+]/g, '_').slice(0, 200);
+        if (noteKeys.has(key) || noteIds.has(id) || !cr || !cr.candidateId) continue;
+        const c = (candidates || []).find((x) => x.id === cr.candidateId);
+        if (!c || !bookedFor(c.id, cr.round)) continue;
+        out.push({ op: 'set', collection: 'notes', doc_id: id, data: { candidateId: c.id, campaignId: c.campaignId, round: cr.round, kind: 'cancel_request', text: String(cr.reason || '').slice(0, 1000), authorId: r.id, authorPersonId: p.id, replyKey: key, resolved: false, createdAt: cr.at || now } });
       }
       const mine = interviews.filter((x) => x.personId === p.id);
       for (const [k, fb] of Object.entries(r.feedback || {})) {
@@ -1515,6 +1558,7 @@
     funnel,
     pairProblems,
     availabilityOn,
+    pairGrid,
     normTime,
     INVITE_STATUS,
     RELEASE_REASONS,
