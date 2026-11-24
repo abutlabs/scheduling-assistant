@@ -15,7 +15,9 @@ const R = require('./recruitee.js');
 
 const TOKEN = (process.env.RECRUITEE_TOKEN || '').trim();
 const COMPANY = (process.env.RECRUITEE_COMPANY_ID || '').trim();
-const LIVE = !!(TOKEN && COMPANY && !/^\$\{/.test(TOKEN));
+// An empty setting can arrive as the literal placeholder text.
+const set = (v) => !!v && !/^\$\{/.test(v);
+const LIVE = set(TOKEN) && set(COMPANY);
 const BASE = `https://api.recruitee.com/c/${encodeURIComponent(COMPANY)}`;
 
 // ---------------------------------------------------------------- API
