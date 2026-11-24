@@ -1,0 +1,47 @@
+{
+  "manifest_version": "0.2",
+  "name": "recruitee",
+  "display_name": "Recruitee (read-only)",
+  "version": "0.1.0",
+  "description": "Lets the Flux interviews app read vacancies, candidates and booked interviews from Recruitee. It never changes anything in Recruitee.",
+  "long_description": "Paste a personal API token from Recruitee (Settings, Apps and plugins, Personal API tokens) and your company ID. The token stays on this computer. Without a token the extension returns mock data, so the app can be tried first.",
+  "author": { "name": "Flux Partners" },
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "RECRUITEE_TOKEN": "${user_config.api_token}",
+        "RECRUITEE_COMPANY_ID": "${user_config.company_id}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "status", "description": "Whether the extension is connected to Recruitee or returning mock data." },
+    { "name": "list_offers", "description": "Vacancies with their pipeline stages." },
+    { "name": "list_candidates", "description": "Candidates on one vacancy with their current stage." },
+    { "name": "list_interviews", "description": "Interviews booked in Recruitee's agenda in a date range." },
+    { "name": "get", "description": "Read any Recruitee API path (GET only), for checking the data." }
+  ],
+  "user_config": {
+    "api_token": {
+      "type": "string",
+      "title": "Recruitee personal API token",
+      "description": "Recruitee: Settings > Apps and plugins > Personal API tokens. Leave empty to use mock data.",
+      "sensitive": true,
+      "required": false
+    },
+    "company_id": {
+      "type": "string",
+      "title": "Recruitee company ID",
+      "description": "Shown on the Personal API tokens page.",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": { "node": ">=18.0.0" }
+  }
+}
