@@ -402,7 +402,7 @@
             rest.length ? [h('p', { class: 'then' }, 'Then'), h('div', {}, rest.slice(0, showN - 1).map(todoRow))] : null,
             rest.length > showN - 1 ? h('button', { class: 'link more', onclick: () => ((ui.showAllTodo = true), rerender()) }, `Show ${rest.length - (showN - 1)} more`) : null,
           ]
-        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : 'Add a candidate after their HR interview and the next steps appear here.'), candidates().length ? null : h('button', { class: 'p big', onclick: () => openCandidate('new') }, '+ Candidate')),
+        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : 'Add a candidate after their HR interview and the next steps appear here.'), candidates().length ? null : h('div', { class: 'row' }, h('button', { class: 'p big', onclick: () => openCandidate('new') }, '+ Candidate'), h('button', { class: 'quiet', title: 'Fills the app with mock candidates, interviews and feedback. Clear it any time from Mock.', onclick: loadFullDemo }, 'Try it with a demo campaign'))),
       later.length ? h('details', { class: 'later', open: !!ui.laterOpen, ontoggle: (e) => (ui.laterOpen = e.target.open) }, h('summary', {}, `Coming up · ${later.length}`), h('div', {}, later.map(todoRow))) : null,
     );
 
@@ -1454,7 +1454,7 @@
       h('p', { class: 'small muted' }, 'You play Natalie. Move the days forward and the colleagues and candidates answer on their own, so you can watch an interview go from request to feedback. Only demo candidates are touched, and everything is marked as mock.'),
       mockCands.length
         ? null
-        : h('div', { class: 'mock-card' }, h('p', { class: 'small' }, 'Start with demo candidates. They come with interview requests already out.'), h('button', { class: 'p', style: 'align-self:flex-start', onclick: loadDemo }, 'Load demo candidates')),
+        : h('div', { class: 'mock-card' }, h('p', { class: 'small' }, 'Start with a demo campaign: 15 candidates in every stage, three weeks of interviews, feedback and scores, and requests out for the week ahead.'), h('div', { class: 'row' }, h('button', { class: 'p', onclick: loadFullDemo }, 'Load demo campaign'), h('button', { onclick: loadDemo }, 'Load demo candidates'))),
       h(
         'section',
         { class: 'mock-sec' },
@@ -1621,7 +1621,7 @@
 
   function clearMock() {
     act(async () => {
-      for (const coll of ['invites', 'notes', 'candidates', 'members']) for (const d of S.state[coll].filter((x) => x.mock)) await S.remove(coll, d.id);
+      for (const coll of ['invites', 'notes', 'candidates', 'members', 'snapshots']) for (const d of S.state[coll].filter((x) => x.mock)) await S.remove(coll, d.id);
     }, 'Mock data cleared');
   }
 
@@ -1660,6 +1660,167 @@
       if (a1) await S.add('notes', { candidateId: ids[2], campaignId: camp.id, round: 'advisor', kind: 'feedback', text: 'Leaning pass. Structured answers, good questions about the tender process. Less sure how she handles conflict with a client.', authorPersonId: a1.id, authorLabel: a1.name, mock: true, createdAt: `${d(-6)}T12:00:00.000Z` });
       if (a2) await S.add('notes', { candidateId: ids[2], campaignId: camp.id, round: 'advisor', kind: 'feedback', text: 'Leaning pass. Calm and analytical. Probe planning when several deadlines collide.', authorPersonId: a2.id, authorLabel: a2.name, mock: true, createdAt: `${d(-6)}T12:30:00.000Z` });
     }, 'Demo candidates loaded');
+  }
+
+  // A full demo campaign: three weeks of history and the week ahead, with
+  // candidates in every stage, interviews held and booked, requests out,
+  // feedback in, and (if there's no poll yet) a mock poll. Everything is
+  // marked mock and goes with "Clear mock data". Built against today's date
+  // and the current roster, so it always fits.
+  async function buildFullDemo() {
+    const camp = campaign();
+    const T = TODAY;
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const isWd = (d) => M.weekdayOf(d) >= 1 && M.weekdayOf(d) <= 5;
+    const wd = (n) => {
+      let d = T;
+      const step = n < 0 ? -1 : 1;
+      for (let k = Math.abs(n); k > 0; ) {
+        d = M.addDays(d, step);
+        if (isWd(d)) k--;
+      }
+      if (!isWd(d)) while (!isWd(d)) d = M.addDays(d, step || 1);
+      return d;
+    };
+    const now = nowIso();
+    const active = people().filter((p) => p.active !== false);
+    const advisors = active.filter((p) => (p.roles || []).includes('advisor'));
+    const leads = active.filter((p) => (p.roles || []).some((r) => r === 'teamlead' || r === 'joker'));
+    if (advisors.length < 4 || leads.length < 2) throw new Error('Add at least 4 advisors and 2 team leads to the roster first');
+
+    // 1. A mock poll, only when the campaign has none.
+    if (!snapshots().length) {
+      const dates = [];
+      for (let d = wd(-15); d <= wd(25); d = M.addDays(d, 1)) if (isWd(d)) dates.push(d);
+      const cellFor = (d) => {
+        const x = rnd() + (M.weekdayOf(d) === 5 ? 0.25 : 0);
+        return x > 0.8 ? 'all' : x > 0.62 ? 'pm' : x > 0.45 ? 'am' : x > 0.08 ? 'no' : null;
+      };
+      const tab = (sheet, role, list) => ({ sheet, role, dates, rows: list.map((p) => ({ personId: p.id, name: p.name, team: p.team, remark: '', cells: Object.fromEntries(dates.map((d) => [d, cellFor(d)])), rules: [] })) });
+      const tabs = [tab('Beschikbaarheid competentiegesprekken', 'advisor', advisors), tab('Beschikbaarheid Deepdive', 'teamlead', leads)];
+      const r0 = tabs[0].rows[0];
+      r0.remark = 'Op woensdagen tot uiterlijk 12 uur';
+      r0.rules.push({ kind: 'window', dates: dates.filter((d) => M.weekdayOf(d) === 3), to: '12:00', summary: 'Wednesdays until 12:00', quote: r0.remark, source: 'claude', status: 'confirmed' });
+      const snap = { campaignId: camp.id, fileName: 'Demo poll (mock).xlsx', pollDate: wd(-16), from: dates[0], to: dates[dates.length - 1], importedAt: now, tabs, mock: true };
+      snap.stats = M.snapshotStats(snap);
+      await S.add('snapshots', snap);
+    }
+
+    // 2. Interviewer pairs: two people from different teams, spreading the load.
+    const load = new Map();
+    const pair = (pool) => {
+      const sorted = [...pool].sort((a, b) => (load.get(a.id) || 0) - (load.get(b.id) || 0) || rnd() - 0.5);
+      const a = sorted[0];
+      const b = sorted.find((p) => p.team !== a.team) || sorted[1];
+      for (const p of [a, b]) load.set(p.id, (load.get(p.id) || 0) + 1);
+      return [a, b];
+    };
+    const others = (pool, not, n) => [...pool].filter((p) => !not.includes(p)).sort(() => rnd() - 0.5).slice(0, n);
+    const ev = (step, at, outcome, data, note) => ({ id: S.uid('e'), step, at, outcome: outcome || null, recordedAt: now, note: note || '', ...(data ? { data } : {}), mock: true });
+    const avail = ['Tuesday all day, Thursday morning', 'Monday afternoon, Wednesday and Friday all day', 'Thursday and Friday all day', 'Any morning next week', 'Wednesday afternoon, Friday morning'];
+    const times = ['09:30', '10:00', '13:30', '14:00', '15:30'];
+    const rooms = ['Room 1', 'Room 2'];
+    const FB = {
+      pass: ['Leaning yes. Structured answers and sharp questions about how we run tenders. Test planning under pressure in the next round.', 'Leaning yes. Calm, clear communicator with a strong example of handling a difficult stakeholder.', 'Leaning yes. Good analytical thinking on the case. A bit modest about own role; probe ownership.'],
+      reject: ['Leaning no. Struggled to structure the case and asked nothing about the role.', 'Leaning no. Examples stayed general and the motivation for consulting was thin.'],
+      hire: ['Hire. Owned the case end to end and handled pushback well. Would fit TM or PM.', 'Hire. Mature, curious and clearly did homework on our clients.'],
+    };
+
+    // Each scenario: name, HR note, and how far the candidate got.
+    const S_ = [
+      ['Sanne de Vries', 'hired', -15], ['Thijs Mulder', 'hired', -14], ['Noor Hendriks', 'offer', -12],
+      ['Bram Smit', 'dd_reject', -13], ['Lotte Visser', 'dd_booked', -9], ['Jesse van Dijk', 'dd_past', -10],
+      ['Fleur de Boer', 'dd_requests', -8], ['Daan Bakker', 'adv_reject', -9], ['Emma Jansen', 'adv_call', -6],
+      ['Lucas Meijer', 'adv_booked', -4], ['Sophie Bos', 'adv_past', -5], ['Milan de Groot', 'adv_requests', -3],
+      ['Julia Peters', 'asked', -2], ['Ruben Kok', 'hr_reject', -4], ['Eva van Leeuwen', 'hr_today', 0],
+    ];
+    const hrNotes = ['Strong on tender writing. Available from January.', 'Background in civil engineering; sharp on numbers.', 'Came via a referral from a former trainee.', 'Very motivated, a little nervous at the start.', '', ''];
+    let made = 0;
+    for (const [name, kind, hrN] of S_) {
+      const hr = wd(hrN);
+      const tl = [];
+      const invites = [];
+      const notes = [];
+      const reject = kind === 'hr_reject';
+      if (kind !== 'hr_today') tl.push(ev('hr_done', hr, reject ? 'reject' : 'pass'));
+      if (reject) tl.push(ev('reject_call_hr', wd(hrN + 1), null, null, 'Told her kindly; open to a later intake.'), ev('closed', wd(hrN + 1), 'rejected'));
+      const book = (round, pool, slot, opts) => {
+        const [a, b] = pair(pool);
+        const sent = M.addDays(slot, -4) < hr ? hr : M.addDays(slot, -4);
+        const t = times[Math.floor(rnd() * times.length)];
+        const room = rooms[Math.floor(rnd() * 2)];
+        const reply = (h) => `${sent}T${String(9 + h).padStart(2, '0')}:${String(Math.floor(rnd() * 50) + 10)}:00.000Z`;
+        for (const p of [a, b]) invites.push({ round, personId: p.id, slotDate: slot, time: t, room, status: 'accepted', sentAt: `${sent}T08:30:00.000Z`, respondedAt: reply(Math.floor(rnd() * 8)), via: rnd() < 0.7 ? 'outlook' : 'app' });
+        for (const p of others(pool, [a, b], 1)) invites.push({ round, personId: p.id, slotDate: slot, time: t, room, status: rnd() < 0.5 ? 'declined' : 'released', sentAt: `${sent}T08:30:00.000Z`, respondedAt: reply(3), via: 'outlook', declineReason: 'Client meeting that day', releaseReason: 'Pair complete', releasedAt: `${sent}T15:00:00.000Z` });
+        if (!opts || !opts.unbooked) tl.push(ev(`${round}_booked`, sent, null, { slotDate: slot, time: t, room, interviewers: [a.id, b.id] }));
+        return [a, b];
+      };
+      const feedback = (round, pair_, slot, lean, both) => {
+        pair_.slice(0, both ? 2 : 1).forEach((p, i) => notes.push({ round, kind: 'feedback', authorPersonId: p.id, authorLabel: p.name, text: FB[lean][(i + made) % FB[lean].length], createdAt: `${M.addDays(slot, i && rnd() < 0.3 ? 2 : 1)}T09:${10 + i * 20}:00.000Z` }));
+      };
+      const advFlow = ['hired', 'offer', 'dd_reject', 'dd_booked', 'dd_past', 'dd_requests', 'adv_reject', 'adv_call', 'adv_booked', 'adv_past', 'adv_requests', 'asked'];
+      if (advFlow.includes(kind)) {
+        tl.push(ev('avail_asked_r2', hr));
+        if (kind !== 'asked') tl.push(ev('avail_received_r2', wd(hrN + 1), null, { availability: avail[made % avail.length] }));
+      }
+      const advSlot = { hired: hrN + 3, offer: hrN + 3, dd_reject: hrN + 3, dd_booked: hrN + 3, dd_past: hrN + 3, dd_requests: hrN + 3, adv_reject: hrN + 3, adv_call: hrN + 4, adv_booked: 1, adv_past: -1 }[kind];
+      if (advSlot !== undefined) {
+        const slot = wd(advSlot);
+        const pr = book('advisor', advisors, slot);
+        if (slot < T) {
+          const lean = kind === 'adv_reject' ? 'reject' : 'pass';
+          feedback('advisor', pr, slot, lean, true);
+          if (kind !== 'adv_past') tl.push(ev('advisor_done', M.addDays(slot, 1) > T ? T : wd(advSlot + 1), lean));
+        }
+      }
+      if (kind === 'adv_requests') {
+        const slot = wd(3);
+        const ps = others(advisors, [], 3);
+        const t = '10:00';
+        [['accepted', 2], ['declined', 4], ['pending', 0]].forEach(([st, h], i) => ps[i] && invites.push({ round: 'advisor', personId: ps[i].id, slotDate: slot, time: t, room: 'Room 1', status: st, sentAt: `${wd(-1)}T08:30:00.000Z`, ...(st !== 'pending' ? { respondedAt: `${wd(-1)}T${10 + h}:05:00.000Z` } : {}), via: 'outlook', ...(st === 'declined' ? { declineReason: 'On a client site that day' } : {}) }));
+      }
+      const pastAdv = ['hired', 'offer', 'dd_reject', 'dd_booked', 'dd_past', 'dd_requests', 'adv_reject'];
+      if (pastAdv.includes(kind)) {
+        tl.push(ev('result_call_r2', wd(hrN + 5), null, null, kind === 'adv_reject' ? 'Disappointed but appreciated the feedback.' : 'Happy, asked what the deep dive looks like.'));
+        if (kind === 'adv_reject') tl.push(ev('closed', wd(hrN + 5), 'rejected'));
+        else tl.push(ev('avail_received_final', wd(hrN + 6), null, { availability: avail[(made + 2) % avail.length] }));
+      }
+      const ddSlot = { hired: hrN + 8, offer: -1, dd_reject: hrN + 8, dd_booked: 2, dd_past: -1 }[kind];
+      if (ddSlot !== undefined) {
+        const slot = wd(ddSlot);
+        const pr = book('deepdive', leads, slot);
+        if (slot < T) {
+          const lean = kind === 'dd_reject' ? 'reject' : 'hire';
+          feedback('deepdive', pr, slot, lean, kind !== 'dd_past');
+          if (kind !== 'dd_past') tl.push(ev('deepdive_done', wd(ddSlot + (kind === 'offer' ? 0 : 1)), lean === 'hire' ? 'hire' : 'reject'));
+        }
+      }
+      if (kind === 'dd_requests') {
+        const slot = wd(4);
+        const ps = others(leads, [], 3);
+        [['accepted', 1], ['pending', 0], ['pending', 0]].forEach(([st, h], i) => ps[i] && invites.push({ round: 'deepdive', personId: ps[i].id, slotDate: slot, time: '14:00', room: 'Room 2', status: st, sentAt: `${wd(-1)}T08:30:00.000Z`, ...(st !== 'pending' ? { respondedAt: `${wd(-1)}T${10 + h}:40:00.000Z` } : {}), via: 'outlook' }));
+      }
+      if (kind === 'hired' || kind === 'dd_reject') {
+        const d = wd(hrN + 10);
+        tl.push(ev('final_call', d, null, null, kind === 'hired' ? 'Offer accepted on the phone. Starts in January.' : 'Took it well; asked for written feedback.'), ev('closed', d, kind === 'hired' ? 'hired' : 'rejected'));
+      }
+      const doc = withSummary({ name: `${name} (demo)`, campaignId: camp.id, email: '', phone: '', hrDate: hr, notes: hrNotes[made % hrNotes.length], timeline: tl, mock: true, createdAt: `${hr}T12:00:00.000Z` });
+      const id = await S.add('candidates', doc);
+      for (const i of invites) await S.add('invites', { campaignId: camp.id, candidateId: id, ...i, mock: true });
+      for (const n of notes) await S.add('notes', { candidateId: id, campaignId: camp.id, authorId: null, mock: true, ...n });
+      if (made % 3 === 0 && hrNotes[made % hrNotes.length]) await S.add('notes', { candidateId: id, campaignId: camp.id, round: 'hr', kind: 'note', text: `HR: ${hrNotes[made % hrNotes.length]}`, authorId: null, authorLabel: 'Natalie (HR)', mock: true, createdAt: `${hr}T13:00:00.000Z` });
+      made++;
+    }
+    return made;
+  }
+  function loadFullDemo() {
+    act(async () => {
+      const n = await buildFullDemo();
+      simLog(TODAY, `Loaded a demo campaign with ${n} candidates.`);
+      ui.mockOpen = false;
+      rerender();
+    }, 'Demo campaign loaded. Today shows what needs you.');
   }
 
   // ------------------------------------------------------------------
@@ -2983,7 +3144,7 @@
     return [
       ui.newCampaign
         ? h('div', { class: 'section gutter' }, h('h1', {}, 'New campaign'), campaignWizard())
-        : h('div', { class: 'section gutter' }, h('div', { class: 'head' }, h('div', {}, h('h1', {}, c.name), h('p', {}, `${(M.STRUCTURES[c.structure] || M.STRUCTURES[M.DEFAULT_STRUCTURE]).name} · name, dates and targets.`)), h('button', { onclick: () => ((ui.newCampaign = true), (ui.wiz = null), rerender()) }, '+ New campaign')), campaignForm(c)),
+        : h('div', { class: 'section gutter' }, h('div', { class: 'head' }, h('div', {}, h('h1', {}, c.name), h('p', {}, `${(M.STRUCTURES[c.structure] || M.STRUCTURES[M.DEFAULT_STRUCTURE]).name}. Switch campaigns with the picker at the top.`)), h('button', { onclick: () => ((ui.newCampaign = true), (ui.wiz = null), rerender()) }, '+ New campaign')), campaignForm(c)),
       ui.newCampaign ? null : campaignPeople(c),
       ui.newCampaign ? null : rulesSection(c, true),
       ui.newCampaign ? null : adminScoreboard(c),
@@ -2991,6 +3152,17 @@
   }
 
   function campaignForm(c) {
+    // An existing campaign shows its details read-only; changing them is a
+    // deliberate Edit, so the form can't be mistaken for "new campaign".
+    if (c && ui.editCampaign !== c.id) {
+      const fact = (label, value) => h('div', { class: 'kpi' }, h('span', { class: 'small muted' }, label), h('b', {}, value));
+      return h(
+        'div',
+        { class: 'tpanel camp-facts', style: 'padding:18px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end' },
+        h('div', { class: 'kpis', style: 'flex:1' }, fact('Runs', `${c.startDate ? M.formatDay(c.startDate) : '?'} to ${c.endDate ? M.formatDay(c.endDate) : 'open end'}`), fact('Target hires', String(c.targetHires || '–')), fact('Expected interviews', String(c.targetInterviews || '–'))),
+        h('button', { onclick: () => ((ui.editCampaign = c.id), rerender()) }, 'Edit details'),
+      );
+    }
     const f = c ? { name: c.name, startDate: c.startDate, endDate: c.endDate || '', targetHires: c.targetHires || '', targetInterviews: c.targetInterviews || '' } : { name: campaigns().length ? '' : 'Trainee hiring', startDate: TODAY, endDate: '', targetHires: campaigns().length ? '' : 10, targetInterviews: campaigns().length ? '' : 25 };
     const err = h('p', { class: 'err-line' });
     return h(
@@ -3002,7 +3174,10 @@
           e.preventDefault();
           if (!f.name.trim()) return (err.textContent = 'Give the campaign a name.');
           act(async () => {
-            if (c) await S.update('campaigns', c.id, { name: f.name.trim(), startDate: f.startDate, endDate: f.endDate, targetHires: Number(f.targetHires) || 0, targetInterviews: Number(f.targetInterviews) || 0 });
+            if (c) {
+              await S.update('campaigns', c.id, { name: f.name.trim(), startDate: f.startDate, endDate: f.endDate, targetHires: Number(f.targetHires) || 0, targetInterviews: Number(f.targetInterviews) || 0 });
+              ui.editCampaign = null;
+            }
             else {
               const id = await S.add('campaigns', M.newCampaign(f));
               ui.campaignId = id;
@@ -3023,7 +3198,8 @@
         h('label', { class: 'f' }, 'Expected interviews', h('input', { type: 'number', min: 0, id: `cf-int-${c ? c.id : 'new'}`, value: f.targetInterviews, oninput: (e) => (f.targetInterviews = e.target.value) })),
       ),
       err,
-      h('div', { class: 'row end' }, h('button', { class: 'p', type: 'submit' }, c ? 'Save campaign' : 'Create campaign')),
+      c ? h('p', { class: 'small muted' }, `You're changing ${c.name} itself. To start another campaign, use + New campaign.`) : null,
+      h('div', { class: 'row end' }, c ? h('button', { type: 'button', class: 'quiet', onclick: () => ((ui.editCampaign = null), rerender()) }, 'Cancel') : null, h('button', { class: 'p', type: 'submit' }, c ? 'Save changes' : 'Create campaign')),
     );
   }
 
