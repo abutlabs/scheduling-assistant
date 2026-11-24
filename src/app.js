@@ -2810,7 +2810,7 @@
     const err = h('p', { class: 'err-line' });
     const numIn = (id, val, onv) => h('input', { type: 'number', min: 0, max: 60, id, value: val, style: 'width:70px', oninput: (e) => onv(Number(e.target.value)) });
     const boolIn = (id, val, onv) => h('input', { type: 'checkbox', id, checked: !!val, onchange: (e) => onv(e.target.checked) });
-    const roundCols = ['Round', 'Interviewers', 'Different teams', 'Length (min)', 'Max days after previous', 'Fallbacks'];
+    const roundCols = ['Round', 'Expected interviews', 'Interviewers', 'Different teams', 'Length (min)', 'Max days after previous', 'Fallbacks'];
     return h(
       'div',
       { class: 'section gutter', 'aria-label': 'Rounds and scheduling settings' },
@@ -2835,6 +2835,7 @@
                 'tr',
                 {},
                 h('td', { class: 'name' }, r.name),
+                h('td', {}, r.role === 'hr' ? '–' : editing ? numIn(`r-exp-${r.key}`, M.expectedInterviews({ ...c, rounds: f.rounds }, r), (v) => (r.expected = v)) : `about ${M.expectedInterviews(c, r)}`),
                 h('td', {}, r.role === 'hr' ? 'Natalie (HR)' : editing ? numIn(`r-int-${r.key}`, r.interviewers, (v) => (r.interviewers = v)) : `${r.interviewers} ${r.role === 'teamlead' ? 'team leads' : 'advisors'}`),
                 h('td', {}, r.role === 'hr' ? '–' : editing ? boolIn(`r-diff-${r.key}`, r.differentTeams, (v) => (r.differentTeams = v)) : r.differentTeams ? 'Yes' : 'No'),
                 h('td', {}, editing ? numIn(`r-len-${r.key}`, r.durationMin, (v) => (r.durationMin = v)) : `${r.durationMin} min`),
@@ -3265,6 +3266,7 @@
       endDate: camp.endDate || '',
       targetHires: camp.targetHires || 0,
       targetInterviews: camp.targetInterviews || 0,
+      expectedByRound: Object.fromEntries((camp.rounds || []).filter((r) => r.role !== 'hr').map((r) => [r.key, M.expectedInterviews(camp, r)])),
       pipeline: M.pipelineCounts(cands, TODAY),
       interviewsDone: dates.filter((d) => d <= TODAY).length,
       interviewsNext7: dates.filter((d) => d > TODAY && d <= M.addDays(TODAY, 7)).length,
@@ -3749,7 +3751,7 @@
       h('div', { class: 'big-num' }, String(done), h('span', {}, ` of ${plural(s.goal, 'interview')} done`)),
       h('div', { class: 'track two' }, h('i', { style: `width:${pct}%` }), pctPlanned ? h('b', { style: `width:${pctPlanned}%` }) : null),
       h('p', {}, line),
-      h('p', { class: 'small faint' }, `${st.name} expects about ${st.targetInterviews || '?'} interviews per round, each with two interviewers. Shared evenly, that's your part. If everyone reaches theirs, we reach ${st.targetHires || 'our'} hires together.`),
+      h('p', { class: 'small faint' }, `${st.name} needs about ${(st.expectedByRound || {})[/team lead|joker/i.test(inbox.role || '') ? 'deepdive' : 'advisor'] || st.targetInterviews || '?'} ${/team lead|joker/i.test(inbox.role || '') ? 'deep dives' : 'advisor interviews'}, each with two interviewers. Shared evenly, this is your part. If everyone reaches theirs, we reach ${st.targetHires || 'our'} hires together.`),
     );
   }
 

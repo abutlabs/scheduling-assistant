@@ -1732,29 +1732,42 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
   }
 
   /**
-   * Personal interview goals. The campaign expects `targetInterviews`
+   * Personal interview goals. The campaign expects `expectedInterviews()`
    * interviews per round, and each needs `interviewers` people, so a round
-   * needs targetInterviews x interviewers seats. Those are split evenly over
+   * needs expected x interviewers seats. Those are split evenly over
    * the round's members (remainder to the first by name, at least 1 each), so
    * if everyone meets their goal the campaign gets its interviews. Someone in
    * two rounds gets both shares. `done` counts interviews held up to today,
    * `planned` the ones booked or accepted after today.
    * Returns { [personId]: { goal, done, planned, byRound: { advisor: { goal, done, planned } } } }.
    */
+  /**
+   * Interviews a campaign expects in a round. A round can set `expected`;
+   * otherwise the first interview round expects the campaign's
+   * `targetInterviews` and later rounds 60% of it (not everyone gets that far).
+   */
+  function expectedInterviews(camp, round) {
+    if (round && round.expected != null && round.expected !== '') return Number(round.expected) || 0;
+    const target = Number(camp && camp.targetInterviews) || 0;
+    const rounds = ((camp && camp.rounds) || []).filter((r) => r.role !== 'hr');
+    const idx = rounds.findIndex((r) => r.key === (round && round.key));
+    return idx <= 0 ? target : Math.round(target * 0.6);
+  }
+
   function interviewGoals({ camp, cands, invites, people, today }) {
     today = today || todayIso();
-    const target = Number(camp && camp.targetInterviews) || 0;
     const out = {};
     const ivs = interviewsOf(cands, invites);
     for (const round of (camp && camp.rounds) || []) {
       if (round.role === 'hr') continue;
       const members = roundMembers(camp, round.key, people).sort((a, b) => a.name.localeCompare(b.name));
       if (!members.length) continue;
-      const need = target * (Number(round.interviewers) || 2);
+      const expected = expectedInterviews(camp, round);
+      const need = expected * (Number(round.interviewers) || 2);
       const base = Math.floor(need / members.length);
       const rem = need % members.length;
       members.forEach((p, i) => {
-        const goal = target ? Math.max(1, base + (i < rem ? 1 : 0)) : 0;
+        const goal = expected ? Math.max(1, base + (i < rem ? 1 : 0)) : 0;
         const mine = ivs.filter((r) => r.personId === p.id && r.round === round.key);
         const done = mine.filter((r) => r.slotDate <= today).length;
         const planned = mine.length - done;
@@ -1834,6 +1847,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
     interviewsOf,
     scoreboard,
     interviewGoals,
+    expectedInterviews,
     pipelineCounts,
   };
 
@@ -4869,7 +4883,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
     const err = h('p', { class: 'err-line' });
     const numIn = (id, val, onv) => h('input', { type: 'number', min: 0, max: 60, id, value: val, style: 'width:70px', oninput: (e) => onv(Number(e.target.value)) });
     const boolIn = (id, val, onv) => h('input', { type: 'checkbox', id, checked: !!val, onchange: (e) => onv(e.target.checked) });
-    const roundCols = ['Round', 'Interviewers', 'Different teams', 'Length (min)', 'Max days after previous', 'Fallbacks'];
+    const roundCols = ['Round', 'Expected interviews', 'Interviewers', 'Different teams', 'Length (min)', 'Max days after previous', 'Fallbacks'];
     return h(
       'div',
       { class: 'section gutter', 'aria-label': 'Rounds and scheduling settings' },
@@ -4894,6 +4908,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
                 'tr',
                 {},
                 h('td', { class: 'name' }, r.name),
+                h('td', {}, r.role === 'hr' ? '–' : editing ? numIn(`r-exp-${r.key}`, M.expectedInterviews({ ...c, rounds: f.rounds }, r), (v) => (r.expected = v)) : `about ${M.expectedInterviews(c, r)}`),
                 h('td', {}, r.role === 'hr' ? 'Natalie (HR)' : editing ? numIn(`r-int-${r.key}`, r.interviewers, (v) => (r.interviewers = v)) : `${r.interviewers} ${r.role === 'teamlead' ? 'team leads' : 'advisors'}`),
                 h('td', {}, r.role === 'hr' ? '–' : editing ? boolIn(`r-diff-${r.key}`, r.differentTeams, (v) => (r.differentTeams = v)) : r.differentTeams ? 'Yes' : 'No'),
                 h('td', {}, editing ? numIn(`r-len-${r.key}`, r.durationMin, (v) => (r.durationMin = v)) : `${r.durationMin} min`),
@@ -5324,6 +5339,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
       endDate: camp.endDate || '',
       targetHires: camp.targetHires || 0,
       targetInterviews: camp.targetInterviews || 0,
+      expectedByRound: Object.fromEntries((camp.rounds || []).filter((r) => r.role !== 'hr').map((r) => [r.key, M.expectedInterviews(camp, r)])),
       pipeline: M.pipelineCounts(cands, TODAY),
       interviewsDone: dates.filter((d) => d <= TODAY).length,
       interviewsNext7: dates.filter((d) => d > TODAY && d <= M.addDays(TODAY, 7)).length,
@@ -5808,7 +5824,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
       h('div', { class: 'big-num' }, String(done), h('span', {}, ` of ${plural(s.goal, 'interview')} done`)),
       h('div', { class: 'track two' }, h('i', { style: `width:${pct}%` }), pctPlanned ? h('b', { style: `width:${pctPlanned}%` }) : null),
       h('p', {}, line),
-      h('p', { class: 'small faint' }, `${st.name} expects about ${st.targetInterviews || '?'} interviews per round, each with two interviewers. Shared evenly, that's your part. If everyone reaches theirs, we reach ${st.targetHires || 'our'} hires together.`),
+      h('p', { class: 'small faint' }, `${st.name} needs about ${(st.expectedByRound || {})[/team lead|joker/i.test(inbox.role || '') ? 'deepdive' : 'advisor'] || st.targetInterviews || '?'} ${/team lead|joker/i.test(inbox.role || '') ? 'deep dives' : 'advisor interviews'}, each with two interviewers. Shared evenly, this is your part. If everyone reaches theirs, we reach ${st.targetHires || 'our'} hires together.`),
     );
   }
 
@@ -5923,7 +5939,7 @@ details.fold .fold-body > .section > .head p { font-size: 15px; margin-top: 4px;
   // Feedback reports: everyone can send a screenshot and a note to the
   // developer. Stored in reports/{id}; editors read them in the Developer view.
   // ------------------------------------------------------------------
-  const BUILD = '2026-11-24 01:08 63a6b82';
+  const BUILD = '2026-11-24 01:16 2967f4c';
   const recentErrors = [];
   window.addEventListener('error', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${e.message}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());
   window.addEventListener('unhandledrejection', (e) => recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${(e.reason && (e.reason.message || e.reason.code)) || e.reason}`.slice(0, 300)) && recentErrors.length > 8 && recentErrors.shift());

@@ -982,29 +982,42 @@
   }
 
   /**
-   * Personal interview goals. The campaign expects `targetInterviews`
+   * Personal interview goals. The campaign expects `expectedInterviews()`
    * interviews per round, and each needs `interviewers` people, so a round
-   * needs targetInterviews x interviewers seats. Those are split evenly over
+   * needs expected x interviewers seats. Those are split evenly over
    * the round's members (remainder to the first by name, at least 1 each), so
    * if everyone meets their goal the campaign gets its interviews. Someone in
    * two rounds gets both shares. `done` counts interviews held up to today,
    * `planned` the ones booked or accepted after today.
    * Returns { [personId]: { goal, done, planned, byRound: { advisor: { goal, done, planned } } } }.
    */
+  /**
+   * Interviews a campaign expects in a round. A round can set `expected`;
+   * otherwise the first interview round expects the campaign's
+   * `targetInterviews` and later rounds 60% of it (not everyone gets that far).
+   */
+  function expectedInterviews(camp, round) {
+    if (round && round.expected != null && round.expected !== '') return Number(round.expected) || 0;
+    const target = Number(camp && camp.targetInterviews) || 0;
+    const rounds = ((camp && camp.rounds) || []).filter((r) => r.role !== 'hr');
+    const idx = rounds.findIndex((r) => r.key === (round && round.key));
+    return idx <= 0 ? target : Math.round(target * 0.6);
+  }
+
   function interviewGoals({ camp, cands, invites, people, today }) {
     today = today || todayIso();
-    const target = Number(camp && camp.targetInterviews) || 0;
     const out = {};
     const ivs = interviewsOf(cands, invites);
     for (const round of (camp && camp.rounds) || []) {
       if (round.role === 'hr') continue;
       const members = roundMembers(camp, round.key, people).sort((a, b) => a.name.localeCompare(b.name));
       if (!members.length) continue;
-      const need = target * (Number(round.interviewers) || 2);
+      const expected = expectedInterviews(camp, round);
+      const need = expected * (Number(round.interviewers) || 2);
       const base = Math.floor(need / members.length);
       const rem = need % members.length;
       members.forEach((p, i) => {
-        const goal = target ? Math.max(1, base + (i < rem ? 1 : 0)) : 0;
+        const goal = expected ? Math.max(1, base + (i < rem ? 1 : 0)) : 0;
         const mine = ivs.filter((r) => r.personId === p.id && r.round === round.key);
         const done = mine.filter((r) => r.slotDate <= today).length;
         const planned = mine.length - done;
@@ -1084,6 +1097,7 @@
     interviewsOf,
     scoreboard,
     interviewGoals,
+    expectedInterviews,
     pipelineCounts,
   };
 

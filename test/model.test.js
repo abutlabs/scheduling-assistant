@@ -230,7 +230,12 @@ test('interview goals split the expected interviews per round and count what is 
   const g = M.interviewGoals({ camp, cands, invites: [], people, today: '2026-11-10' });
   // Advisors: 4 interviews x 2 seats = 8 over 3 people -> 3, 3, 2 (adds up to the need).
   assert.deepEqual([g.a1.goal, g.a2.goal, g.a3.goal], [3, 3, 2]);
-  assert.deepEqual([g.t1.goal, g.t2.goal], [4, 4]);
+  // Deep dives: 60% of 4 = 2 interviews x 2 seats = 4 over 2 people -> 2 each.
+  assert.deepEqual([g.t1.goal, g.t2.goal], [2, 2]);
+  // A round can set its own expected count.
+  const camp2 = { ...camp, rounds: camp.rounds.map((r) => (r.key === 'deepdive' ? { ...r, expected: 4 } : r)) };
+  assert.equal(M.expectedInterviews(camp2, camp2.rounds.find((r) => r.key === 'deepdive')), 4);
+  assert.deepEqual([M.interviewGoals({ camp: camp2, cands, invites: [], people, today: '2026-11-10' }).t1.goal], [4]);
   // Held by 10 Nov: a1 and a2 once, t1 once. a1 and a3 have one planned.
   assert.deepEqual([g.a1.done, g.a2.done, g.a3.done, g.t1.done], [1, 1, 0, 1]);
   assert.deepEqual([g.a1.planned, g.a3.planned], [1, 1]);
