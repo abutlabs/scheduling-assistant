@@ -94,6 +94,9 @@
 
   const people = () => [...S.state.people].sort((a, b) => a.name.localeCompare(b.name));
   const campaigns = () => S.state.campaigns.filter((c) => !c.archived).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  // Natalie decides which campaigns advisors and team leads see. Older docs without the flag count as open.
+  const isOpen = (c) => c.open !== false;
+  const openCampaigns = () => campaigns().filter(isOpen);
   function campaign() {
     const all = campaigns();
     return all.find((c) => c.id === ui.campaignId) || all[0] || null;
@@ -3059,7 +3062,7 @@
               const members = {};
               for (const r of w.draft.rounds) if (people().some((p) => M.eligibleFor(r, p))) members[r.key] = (w.members || {})[r.key] || [];
               act(async () => {
-                const id = await S.add('campaigns', M.newCampaign({ ...w, name: w.name.trim(), rounds: w.draft.rounds, settings: w.draft.settings, members: Object.keys(members).length ? members : null }));
+                const id = await S.add('campaigns', M.newCampaign({ ...w, open: !campaigns().length, name: w.name.trim(), rounds: w.draft.rounds, settings: w.draft.settings, members: Object.keys(members).length ? members : null }));
                 ui.campaignId = id;
                 store('flux.campaign', id);
                 ui.newCampaign = false;
@@ -3161,6 +3164,12 @@
         { class: 'tpanel camp-facts', style: 'padding:18px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end' },
         h('div', { class: 'kpis', style: 'flex:1' }, fact('Runs', `${c.startDate ? M.formatDay(c.startDate) : '?'} to ${c.endDate ? M.formatDay(c.endDate) : 'open end'}`), fact('Target hires', String(c.targetHires || '–')), fact('Expected interviews', String(c.targetInterviews || '–'))),
         h('button', { onclick: () => ((ui.editCampaign = c.id), rerender()) }, 'Edit details'),
+        h(
+          'div',
+          { class: `camp-open ${isOpen(c) ? 'on' : ''}`, style: 'flex-basis:100%' },
+          h('span', {}, isOpen(c) ? 'Open: advisors and team leads in this campaign see it on their home.' : 'Not open: only you see this campaign. Open it when you’re ready to invite people.'),
+          h('button', { class: isOpen(c) ? 'quiet' : 'p', onclick: () => act(() => S.update('campaigns', c.id, { open: !isOpen(c) }), isOpen(c) ? `${c.name} is closed to interviewers` : `${c.name} is open to interviewers`) }, isOpen(c) ? 'Close to interviewers' : 'Open to interviewers'),
+        ),
       );
     }
     const f = c ? { name: c.name, startDate: c.startDate, endDate: c.endDate || '', targetHires: c.targetHires || '', targetInterviews: c.targetInterviews || '' } : { name: campaigns().length ? '' : 'Trainee hiring', startDate: TODAY, endDate: '', targetHires: campaigns().length ? '' : 10, targetInterviews: campaigns().length ? '' : 25 };
@@ -3179,7 +3188,7 @@
               ui.editCampaign = null;
             }
             else {
-              const id = await S.add('campaigns', M.newCampaign(f));
+              const id = await S.add('campaigns', M.newCampaign({ ...f, open: !campaigns().length }));
               ui.campaignId = id;
               store('flux.campaign', id);
               ui.newCampaign = false;
@@ -3314,7 +3323,7 @@
       n++;
     }
     const scores = {};
-    for (const camp of campaigns()) {
+    for (const camp of openCampaigns()) {
       const sb = scoresFor(camp);
       const row = sb.people.find((x) => x.personId === p.id);
       if (row) scores[camp.id] = { ...row, nudge: nudgeFor(row, sb.people) };
@@ -3340,7 +3349,9 @@
   async function syncShared() {
     if (!window.FluxStore.COLLECTIONS.every((c) => S.state.loaded[c])) return;
     await applyReplies();
-    for (const camp of campaigns()) await writeIfChanged('stats', camp.id, statsFor(camp));
+    for (const camp of openCampaigns()) await writeIfChanged('stats', camp.id, statsFor(camp));
+    const openIds = new Set(openCampaigns().map((c) => c.id));
+    for (const d of S.state.stats) if (!openIds.has(d.id)) await S.remove('stats', d.id);
     const linked = S.state.people.filter((p) => p.accountId && !p.accountId.startsWith('mock:') && p.active !== false);
     for (const p of linked) await writeIfChanged('inbox', p.accountId, inboxFor(p));
     const keep = new Set(linked.map((p) => p.accountId));
@@ -3383,7 +3394,7 @@
     }
     const p = ui.viewAs && personById(ui.viewAs);
     if (!p || !campaign()) return null;
-    return { mode: 'preview', person: p, inbox: inboxFor(p), replies: null, stats: campaigns().map(statsFor), loading: false };
+    return { mode: 'preview', person: p, inbox: inboxFor(p), replies: null, stats: openCampaigns().map(statsFor), loading: false };
   }
 
   // Top-bar switch: Admin (Natalie) / Advisor / Team lead. Picking a role
@@ -3473,7 +3484,10 @@
   function interviewerView(ctx) {
     if (ctx.loading) return h('div', { class: 'home' }, h('div', { class: 'calm-head' }, h('p', { class: 'date' }, 'Loading…')));
     const inbox = ctx.inbox;
-    const stats = ctx.stats || [];
+    // Only open campaigns reach this page; of those, show the ones this person is part of.
+    const allStats = ctx.stats || [];
+    const scored = ctx.inbox && ctx.inbox.scores ? allStats.filter((x) => ctx.inbox.scores[x.campaignId]) : [];
+    const stats = scored.length ? scored : allStats;
     const st = stats.find((x) => x.campaignId === ui.ivCampaign) || stats[0] || null;
     if (!inbox)
       return h(
