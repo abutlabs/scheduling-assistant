@@ -399,3 +399,13 @@ test('pairGrid lists pairs from different teams per half-day', () => {
   assert.deepEqual(am.pairs.map((p) => p.map((x) => x.id).join('+')), ['a+c', 'b+c']);
   assert.equal(pm.pairs.length, 0);
 });
+
+test('feedbackGaps waits until 10 minutes after the end, then lists who owes feedback', () => {
+  const interviews = [{ candidateId: 'c1', round: 'deepdive', slotDate: '2026-11-23', time: '15:30', durationMin: 60, interviewers: ['a', 'b'] }];
+  const notes = [{ kind: 'feedback', authorPersonId: 'a', candidateId: 'c1', round: 'deepdive' }];
+  const at = (t) => new Date(`2026-11-23T${t}:00`);
+  assert.equal(M.feedbackGaps({ interviews, notes, now: at('16:35') }).length, 0);
+  const gaps = M.feedbackGaps({ interviews, notes, now: at('16:45') });
+  assert.deepEqual(gaps.map((g) => [g.personId, g.lateMin]), [['b', 15]]);
+  assert.equal(M.feedbackGaps({ interviews, notes, pending: [{ personId: 'b', candidateId: 'c1', round: 'deepdive' }], now: at('18:00') }).length, 0);
+});

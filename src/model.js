@@ -803,6 +803,33 @@
     return cells;
   }
 
+  /**
+   * Interviewers who still owe feedback. An interview counts once it ended
+   * more than graceMin minutes ago (start + duration). Feedback counts as
+   * given when a feedback note by that person exists for the candidate and
+   * round, or a reply with feedback is waiting to be applied.
+   * interviews: [{ candidateId, round, slotDate, time, durationMin, interviewers }]
+   * now: a Date. Returns [{ candidateId, round, personId, endAt, lateMin }].
+   */
+  function feedbackGaps({ interviews, notes, pending, now, graceMin }) {
+    const grace = graceMin == null ? 10 : graceMin;
+    const given = new Set((notes || []).filter((n) => n.kind === 'feedback' && n.authorPersonId).map((n) => `${n.authorPersonId}|${n.candidateId}|${n.round}`));
+    for (const f of pending || []) given.add(`${f.personId}|${f.candidateId}|${f.round}`);
+    const out = [];
+    for (const iv of interviews || []) {
+      if (!iv.slotDate) continue;
+      const start = new Date(`${iv.slotDate}T${iv.time || '09:00'}:00`);
+      const end = new Date(start.getTime() + (iv.durationMin || 60) * 60000);
+      const lateMin = Math.floor((now.getTime() - end.getTime()) / 60000);
+      if (lateMin < grace) continue;
+      for (const pid of iv.interviewers || []) {
+        if (!pid || given.has(`${pid}|${iv.candidateId}|${iv.round}`)) continue;
+        out.push({ candidateId: iv.candidateId, round: iv.round, personId: pid, endAt: end, lateMin });
+      }
+    }
+    return out.sort((a, b) => b.lateMin - a.lateMin);
+  }
+
   /** Who is available on a date, by half-day, according to the latest snapshot covering that date for a role. */
   function availabilityOn(snapshots, personId, role, date) {
     const sorted = [...snapshots].sort((a, b) => (b.pollDate || '').localeCompare(a.pollDate || '') || (b.importedAt || '').localeCompare(a.importedAt || ''));
@@ -1559,6 +1586,7 @@
     pairProblems,
     availabilityOn,
     pairGrid,
+    feedbackGaps,
     normTime,
     INVITE_STATUS,
     RELEASE_REASONS,

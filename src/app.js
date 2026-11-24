@@ -336,6 +336,8 @@
       items.push({ group, kind: k, tone: t, who: c.name, text: `${s.prompt}. ${reason}`.trim(), title: `${s.prompt}.`, sub: `${c.name} · ${reason}`.trim(), due, btn: k === 'Overdue' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
     }
     items.push(...inviteTodoItems());
+    // Interviews that ended (plus 10 minutes) without feedback from someone.
+    items.push(...feedbackTodoItems());
     // Interviewers asking to cancel a booked interview: Natalie talks to them first.
     const inCamp = new Set(candidates().map((c) => c.id));
     for (const n of S.state.notes.filter((x) => x.kind === 'cancel_request' && !x.resolved && inCamp.has(x.candidateId))) {
@@ -367,9 +369,65 @@
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const longDay = (iso) => `${DAYNAME[M.weekdayOf(iso)]} ${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
 
+  // "Now" for deadlines inside a day. With a mock date, the end of that working day.
+  const nowRef = () => (TODAY === REAL_TODAY ? new Date() : new Date(`${TODAY}T18:00:00`));
+  const ivEnded = (x) => M.feedbackGaps({ interviews: [{ candidateId: 'x', round: x.round, slotDate: x.slotDate, time: x.time, durationMin: draftLen(x.round), interviewers: ['me'] }], notes: [], now: nowRef() }).length > 0;
+  function bookedInterviews() {
+    const camp = campaign();
+    const out = [];
+    for (const c of candidates()) {
+      const s = cstate(c);
+      for (const round of ['advisor', 'deepdive']) {
+        const b = s.done[`${round}_booked`];
+        const d = b && b.data;
+        if (!d || !d.slotDate) continue;
+        out.push({ candidateId: c.id, round, slotDate: d.slotDate, time: d.time, durationMin: (roundByKey(camp, round) || {}).durationMin || 60, interviewers: d.interviewers || [] });
+      }
+    }
+    return out;
+  }
+  function feedbackTodoItems() {
+    const gaps = M.feedbackGaps({ interviews: bookedInterviews(), notes: S.state.notes, now: nowRef() }).filter((g) => g.lateMin < 14 * 24 * 60);
+    const byIv = new Map();
+    for (const g of gaps) byIv.set(`${g.candidateId}|${g.round}`, [...(byIv.get(`${g.candidateId}|${g.round}`) || []), g]);
+    const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return [...byIv.values()].map((list) => {
+      const g = list[0];
+      const c = S.state.candidates.find((x) => x.id === g.candidateId);
+      const names = list.map((x) => pname(x.personId));
+      const who = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+      const late = g.lateMin >= 24 * 60;
+      const ended = `${M.formatDay(isoOf(g.endAt))} ${hhmm(g.endAt)}`;
+      const what = `${first(c)}’s ${(ROUND_LABEL[g.round] || 'interview').toLowerCase()}`;
+      return {
+        group: late ? 'overdue' : 'today',
+        kind: 'Feedback',
+        tone: late ? 'bad' : 'warn',
+        who,
+        text: `No feedback yet on ${what}, which ended ${ended}. Ask ${names.length > 1 ? 'them' : names[0]} for it.`,
+        title: `Get ${who}’s feedback on ${what}.`,
+        sub: `Ended ${ended}${late ? `, ${plural(Math.floor(g.lateMin / (24 * 60)), 'day')} ago` : ''}`,
+        btn: 'Remind',
+        remind: { candidateId: c.id, round: g.round, personIds: list.map((x) => x.personId), ended },
+        cand: c.id,
+        sortKey: late ? 0 : 2,
+      };
+    });
+  }
+  function remindFeedback(r) {
+    const c = S.state.candidates.find((x) => x.id === r.candidateId);
+    const names = r.personIds.map((id) => (personById(id) || {}).name || 'there');
+    const subject = `Your feedback on ${first(c)} (${(ROUND_LABEL[r.round] || 'interview').toLowerCase()})`;
+    const body = `Hi ${names.map((n) => n.split(' ')[0]).join(' and ')},\n\nThanks for interviewing ${first(c)} (${r.ended}). Could you add your feedback and verdict in the Flux interviews app today? It's the next thing we need to move ${first(c)} forward.\n\nThanks,\nNatalie`;
+    ui.outlookDraft = { candId: c.id, title: `Remind ${names.join(' and ')}`, hint: 'A short reminder, ready in Outlook. Check it and press Send.', subject, body, missing: noEmail(r.personIds), link: M.outlookMailLink({ to: emailsOf(r.personIds), subject, body }) };
+    openCandidate(c.id);
+  }
+
   function todoAction(i) {
     return () => {
       if (i.go) location.hash = i.go;
+      else if (i.remind) remindFeedback(i.remind);
       else if (i.resolveNote) {
         act(() => S.update('notes', i.resolveNote, { resolved: true, resolvedAt: nowIso() }), 'Marked as talked through');
         openCandidate(i.cand);
@@ -4808,8 +4866,10 @@
 
   function ivInterviews(ctx) {
     const list = ctx.inbox.interviews || [];
-    const upcoming = list.filter((x) => x.slotDate >= TODAY);
-    const past = list.filter((x) => x.slotDate < TODAY || (x.slotDate === TODAY && !x.feedbackSent)).filter((x) => x.slotDate <= TODAY);
+    // An interview is over 10 minutes after its planned end; then feedback is due.
+    const over = (x) => ivEnded(x);
+    const upcoming = list.filter((x) => !over(x));
+    const past = list.filter(over);
     const pendingFb = (iv) => Object.values((ctx.replies && ctx.replies.feedback) || {}).filter((f) => f.candidateId === iv.candidateId && f.round === iv.round).length;
     const card = (iv, isPast) => {
       const sent = iv.feedbackSent + (ctx.mode === 'viewer' ? pendingFb(iv) : 0);
@@ -4863,7 +4923,7 @@
       h('h2', {}, 'Your interviews'),
       upcoming.length || past.length ? null : h('p', { class: 'muted', style: 'padding:20px 0' }, 'No interviews planned for you yet.'),
       past.filter((x) => !x.feedbackSent).map((x) => card(x, true)),
-      upcoming.filter((x) => x.slotDate > TODAY || x.feedbackSent).map((x) => card(x, false)),
+      upcoming.map((x) => card(x, false)),
       past.filter((x) => x.feedbackSent).length ? h('p', { class: 'iv-row earlier' }, `Earlier: ${past.filter((x) => x.feedbackSent).map((x) => `${x.name.split(' ')[0]} (${M.formatDay(x.slotDate)})`).join(', ')}`) : null,
     );
   }
