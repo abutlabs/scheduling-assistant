@@ -343,3 +343,26 @@ test('reply writes: answers, feedback and reports apply once', () => {
   const again = M.planReplyWrites({ replies, people, invites: [{ ...invites[0], status: 'accepted' }, invites[1], invites[2]], candidates, notes: [{ id: 'no_u_a:f1', replyKey: 'u_a:f1' }], reports: [{ id: 'rp_1' }] });
   assert.equal(again.length, 0);
 });
+
+test('pasted emails match the roster by name or address', () => {
+  const people = [{ id: 'k', name: 'Koen' }, { id: 'kb', name: 'Koen B' }, { id: 'm', name: 'Marnix', aliases: ['Marnix de Wit'] }, { id: 'e', name: 'Eveline' }];
+  const r = M.matchEmails('Marnix de Wit <m.dewit@flux.nl>\nkoen.bakker@flux.nl\nEveline@Flux.nl; koen@flux.nl\nno email here\nunknown.person@flux.nl', people);
+  assert.deepEqual(r.map((x) => [x.email, x.personId]), [['m.dewit@flux.nl', 'm'], ['koen.bakker@flux.nl', 'kb'], ['eveline@flux.nl', 'e'], ['koen@flux.nl', 'k'], ['unknown.person@flux.nl', null]]);
+});
+
+test('campaign metrics: where time goes per step, and who is stuck', () => {
+  const e = (step, at, outcome, data) => ({ id: step + at, step, at, outcome: outcome || null, data });
+  const cands = [
+    { id: 'a', name: 'A', timeline: [e('hr_done', '2026-11-02', 'pass'), e('avail_asked_r2', '2026-11-02'), e('avail_received_r2', '2026-11-05'), e('advisor_booked', '2026-11-06', null, { slotDate: '2026-11-10', interviewers: [] }), e('advisor_done', '2026-11-11', 'pass')] },
+    { id: 'b', name: 'B', timeline: [e('hr_done', '2026-11-02', 'pass'), e('avail_asked_r2', '2026-11-03'), e('avail_received_r2', '2026-11-04'), e('advisor_booked', '2026-11-09', null, { slotDate: '2026-11-12', interviewers: [] })] },
+    { id: 'c', name: 'C', timeline: [e('hr_done', '2026-11-16', 'pass'), e('avail_asked_r2', '2026-11-16')] },
+  ];
+  const m = M.campaignMetrics({ camp: {}, cands, invites: [], notes: [], people: [], today: '2026-11-20' });
+  const d = Object.fromEntries(m.delays.map((x) => [x.key, x]));
+  assert.equal(d.cand_r2.median, 2);
+  assert.deepEqual(d.cand_r2.stuck.map((x) => [x.candidateId, x.days]), [['c', 4]]);
+  assert.equal(d.book_r2.median, 3);
+  assert.equal(d.verdict_r2.n, 1);
+  assert.deepEqual(d.verdict_r2.stuck.map((x) => x.candidateId), ['b']);
+  assert.equal(m.slowest, 'book_r2');
+});

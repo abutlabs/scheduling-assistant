@@ -1852,7 +1852,8 @@
   async function buildFullDemo() {
     const camp = campaign();
     const T = TODAY;
-    let seed = 7;
+    // A new mix every time the demo loads.
+    let seed = (Date.now() % 2147483646) + 1;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const isWd = (d) => M.weekdayOf(d) >= 1 && M.weekdayOf(d) <= 5;
     const wd = (n) => {
@@ -1906,8 +1907,12 @@
     const FB = {
       pass: ['Leaning yes. Structured answers and sharp questions about how we run tenders. Test planning under pressure in the next round.', 'Leaning yes. Calm, clear communicator with a strong example of handling a difficult stakeholder.', 'Leaning yes. Good analytical thinking on the case. A bit modest about own role; probe ownership.'],
       reject: ['Leaning no. Struggled to structure the case and asked nothing about the role.', 'Leaning no. Examples stayed general and the motivation for consulting was thin.'],
-      hire: ['Hire. Owned the case end to end and handled pushback well. Would fit TM or PM.', 'Hire. Mature, curious and clearly did homework on our clients.'],
+      hire: ['Hire. Owned the case end to end and handled pushback well. Would fit TM or PM.', 'Hire. Mature, curious and clearly did homework on our clients.', 'Hire. Asked the best questions of the week. Strong on stakeholder thinking.'],
+      unsure: ['Unsure. Strong CV but answers stayed on the surface; the deep dive should push on depth.', 'Unsure. Good energy, but I could not get a clear example of leading something.', 'Unsure. Technically fine, quiet in the room. Would like a second opinion.'],
     };
+    FB.pass.push('Leaning yes. Quick learner, connected the case to a real client situation without prompting.', 'Leaning yes. Not the most polished, but honest and very coachable.');
+    FB.reject.push('Leaning no. Arrived late and was underprepared on what Flux does.', 'Leaning no. Good CV, but the case showed little structure under time pressure.');
+    const DECLINES = ['Client meeting that day', 'On a client site that day', 'Project deadline', 'On holiday', 'Workshop with a client', 'Already two interviews that week'];
 
     // Each scenario: name, HR note, and how far the candidate got.
     const S_ = [
@@ -1917,6 +1922,11 @@
       ['Lucas Meijer', 'adv_booked', -4], ['Sophie Bos', 'adv_past', -5], ['Milan de Groot', 'adv_requests', -3],
       ['Julia Peters', 'asked', -2], ['Tim Vos', 'avail_in', -2], ['Ruben Kok', 'hr_reject', -4], ['Eva van Leeuwen', 'hr_today', 0],
     ];
+    // Older history, different every load, so the weekly chart and funnel have some shape.
+    const older = ['Anouk Dekker', 'Stijn de Wit', 'Iris Willems', 'Koen Vermeulen', 'Maud Brouwer', 'Sem Hoekstra', 'Lieke Postma', 'Jasper Kuipers', 'Roos van den Berg', 'Niels Prins'];
+    const fates = ['hired', 'adv_reject', 'adv_reject', 'dd_reject', 'hr_reject', 'hired', 'adv_reject'];
+    const nOld = 5 + Math.floor(rnd() * 5);
+    for (let i = 0; i < nOld; i++) S_.push([older[i], fates[Math.floor(rnd() * fates.length)], -16 - Math.floor(rnd() * 14)]);
     const hrNotes = ['Strong on tender writing. Available from January.', 'Background in civil engineering; sharp on numbers.', 'Came via a referral from a former trainee.', 'Very motivated, a little nervous at the start.', '', ''];
     let made = 0;
     for (const [name, kind, hrN] of S_) {
@@ -1934,19 +1944,26 @@
         const room = rooms[Math.floor(rnd() * 2)];
         const reply = (h) => `${sent}T${String(9 + h).padStart(2, '0')}:${String(Math.floor(rnd() * 50) + 10)}:00.000Z`;
         for (const p of [a, b]) invites.push({ round, personId: p.id, slotDate: slot, time: t, room, status: 'accepted', sentAt: `${sent}T08:30:00.000Z`, respondedAt: reply(Math.floor(rnd() * 8)), via: rnd() < 0.7 ? 'outlook' : 'app' });
-        for (const p of others(pool, [a, b], 1)) invites.push({ round, personId: p.id, slotDate: slot, time: t, room, status: rnd() < 0.5 ? 'declined' : 'released', sentAt: `${sent}T08:30:00.000Z`, respondedAt: reply(3), via: 'outlook', declineReason: 'Client meeting that day', releaseReason: 'Pair complete', releasedAt: `${sent}T15:00:00.000Z` });
+        for (const p of others(pool, [a, b], 1)) invites.push({ round, personId: p.id, slotDate: slot, time: t, room, status: rnd() < 0.5 ? 'declined' : 'released', sentAt: `${sent}T08:30:00.000Z`, respondedAt: reply(Math.floor(rnd() * 30)), via: 'outlook', declineReason: DECLINES[Math.floor(rnd() * DECLINES.length)], releaseReason: 'Pair complete', releasedAt: `${sent}T15:00:00.000Z` });
         if (!opts || !opts.unbooked) tl.push(ev(`${round}_booked`, sent, null, { slotDate: slot, time: t, room, interviewers: [a.id, b.id] }));
         return [a, b];
       };
       const feedback = (round, pair_, slot, lean, both) => {
-        pair_.slice(0, both ? 2 : 1).forEach((p, i) => notes.push({ round, kind: 'feedback', authorPersonId: p.id, authorLabel: p.name, text: FB[lean][(i + made) % FB[lean].length], createdAt: `${M.addDays(slot, i && rnd() < 0.3 ? 2 : 1)}T09:${10 + i * 20}:00.000Z` }));
+        pair_.slice(0, both ? 2 : 1).forEach((p, i) => {
+          // The second interviewer doesn't always agree.
+          const x = rnd();
+          const l = i === 0 ? lean : x < 0.22 ? 'unsure' : x < 0.3 && lean !== 'reject' ? 'reject' : lean;
+          const list = FB[l];
+          notes.push({ round, kind: 'feedback', authorPersonId: p.id, authorLabel: p.name, text: list[Math.floor(rnd() * list.length)], createdAt: `${[M.addDays(slot, rnd() < 0.6 ? 0 : rnd() < 0.7 ? 1 : 3), T].sort()[0]}T${String(12 + Math.floor(rnd() * 6)).padStart(2, '0')}:${10 + i * 20}:00.000Z` });
+        });
       };
       const advFlow = ['hired', 'offer', 'dd_reject', 'dd_booked', 'dd_past', 'dd_requests', 'adv_reject', 'adv_call', 'adv_booked', 'adv_past', 'adv_requests', 'asked', 'avail_in'];
       if (advFlow.includes(kind)) {
         tl.push(ev('avail_asked_r2', hr));
         if (kind !== 'asked') tl.push(ev('avail_received_r2', wd(hrN + 1), null, { availability: avail[made % avail.length] }));
       }
-      const advSlot = { hired: hrN + 3, offer: hrN + 3, dd_reject: hrN + 3, dd_booked: hrN + 3, dd_past: hrN + 3, dd_requests: hrN + 3, adv_reject: hrN + 3, adv_call: hrN + 4, adv_booked: 1, adv_past: -1 }[kind];
+      const j = Math.floor(rnd() * 3) - 1;
+      const advSlot = { hired: hrN + 3 + j, offer: hrN + 3, dd_reject: hrN + 3 + j, dd_booked: hrN + 3, dd_past: hrN + 3, dd_requests: hrN + 3, adv_reject: hrN + 3 + j, adv_call: hrN + 4, adv_booked: 1, adv_past: -1 }[kind];
       if (advSlot !== undefined) {
         const slot = wd(advSlot);
         const pr = book('advisor', advisors, slot);
@@ -1968,7 +1985,7 @@
         if (kind === 'adv_reject') tl.push(ev('closed', wd(hrN + 5), 'rejected'));
         else tl.push(ev('avail_received_final', wd(hrN + 6), null, { availability: avail[(made + 2) % avail.length] }));
       }
-      const ddSlot = { hired: hrN + 8, offer: -1, dd_reject: hrN + 8, dd_booked: 2, dd_past: -1 }[kind];
+      const ddSlot = { hired: hrN + 8 + j + Math.floor(rnd() * 3), offer: -1, dd_reject: hrN + 8 + j, dd_booked: 2, dd_past: -1 }[kind];
       if (ddSlot !== undefined) {
         const slot = wd(ddSlot);
         const pr = book('deepdive', leads, slot);
@@ -1984,7 +2001,7 @@
         [['accepted', 1], ['pending', 0], ['pending', 0]].forEach(([st, h], i) => ps[i] && invites.push({ round: 'deepdive', personId: ps[i].id, slotDate: slot, time: '14:00', room: 'Room 2', status: st, sentAt: `${wd(-1)}T08:30:00.000Z`, ...(st !== 'pending' ? { respondedAt: `${wd(-1)}T${10 + h}:40:00.000Z` } : {}), via: 'outlook' }));
       }
       if (kind === 'hired' || kind === 'dd_reject') {
-        const d = wd(hrN + 10);
+        const d = wd(Math.min(ddSlot + 2, -1));
         tl.push(ev('final_call', d, null, null, kind === 'hired' ? 'Offer accepted on the phone. Starts in January.' : 'Took it well; asked for written feedback.'), ev('closed', d, kind === 'hired' ? 'hired' : 'rejected'));
       }
       const doc = withSummary({ name: `${name} (demo)`, campaignId: camp.id, email: '', phone: '', hrDate: hr, notes: hrNotes[made % hrNotes.length], timeline: tl, mock: true, createdAt: `${hr}T12:00:00.000Z` });
@@ -3506,6 +3523,138 @@
   // ------------------------------------------------------------------
   // Metrics: how the campaign is doing, for Natalie and for management
   // ------------------------------------------------------------------
+  // Plain-language reading of the numbers: what's going well and what needs a nudge.
+  function metricsTakeaways(camp, m, pace) {
+    const out = [];
+    const pctN = (x) => Math.round(x * 100);
+    const slow = m.delays.find((d) => d.key === m.slowest);
+    if (slow) out.push(['warn', `The slowest wait is “${slow.label.toLowerCase()}”: ${dayWord(slow.median)} on average (median), waiting on ${({ Candidate: 'the candidate', Advisors: 'the advisors', 'Team leads': 'the team leads' })[slow.who] || slow.who}.${slow.stuck.length ? ` ${plural(slow.stuck.length, 'candidate is', 'candidates are')} there now.` : ''}`]);
+    const f = m.funnel;
+    // Where candidates drop out most.
+    const drops = f.slice(1, 4).filter((r) => r.ofPrev != null && f[f.indexOf(r) - 1].n >= 3).sort((a, b) => a.ofPrev - b.ofPrev);
+    if (drops[0] && drops[0].ofPrev < 0.7) out.push(['warn', `Most candidates drop at the ${drops[0].label.toLowerCase()}: ${pctN(drops[0].ofPrev)}% get through. Worth checking whether HR is sending the right people on, or whether the bar there is higher than elsewhere.`]);
+    if (m.onTime.advisor.all >= 3) out.push(m.onTime.advisor.share >= 0.9 ? ['ok', `Advisor interviews land on time: ${m.onTime.advisor.met} of ${m.onTime.advisor.all} within the week.`] : ['warn', `${m.onTime.advisor.all - m.onTime.advisor.met} of ${m.onTime.advisor.all} advisor interviews went past the one-week limit. Asking earlier, or asking more people per slot, helps.`]);
+    if (m.requests.replyHours != null && m.requests.sent >= 5) out.push(m.requests.replyHours <= 8 ? ['ok', `Colleagues answer requests fast: half reply within ${Math.max(1, Math.round(m.requests.replyHours))} hours.`] : ['warn', `Replies are slow: half take longer than ${Math.round(m.requests.replyHours / 24 * 10) / 10} days. A reminder after a day may help.`]);
+    const top = m.requests.declineReasons[0];
+    if (top && top[1] >= 3) out.push(['info', `The most common reason to decline is “${top[0].toLowerCase()}” (${top[1]} times). Fridays, when most people are in the office, may work better.`]);
+    if (m.voices.agreeShare != null && m.voices.pairs >= 3) out.push(m.voices.agreeShare >= 0.75 ? ['ok', `Interviewer pairs agree ${pctN(m.voices.agreeShare)}% of the time, so the bar feels shared.`] : ['warn', `Interviewer pairs disagree on ${100 - pctN(m.voices.agreeShare)}% of candidates. A short calibration chat on what “good” looks like could help.`]);
+    if (m.feedback.share != null && m.feedback.expected >= 4) out.push(m.feedback.share >= 0.9 ? ['ok', `Feedback comes in: ${pctN(m.feedback.share)}% of interviewers wrote it${m.feedback.days != null ? `, usually within ${m.feedback.days <= 0.5 ? 'the same day' : `${Math.round(m.feedback.days)} day${Math.round(m.feedback.days) === 1 ? '' : 's'}`}` : ''}.`] : ['warn', `${m.feedback.expected - m.feedback.given} interviewers haven’t written feedback yet. The candidate call waits on it.`]);
+    if (m.load.byTeam.length >= 2) {
+      const [hiT, hiN] = m.load.byTeam[0];
+      const [loT, loN] = m.load.byTeam[m.load.byTeam.length - 1];
+      if (hiN >= 2 * Math.max(1, loN)) out.push(['info', `Team ${hiT} has done ${hiN} interviews and team ${loT} ${loN}. Asking ${loT} first for the next few spreads the load.`]);
+    }
+    if (pace) out.push(['info', `To reach ${m.targetInterviews} interviews by ${M.formatDay(camp.endDate)}, plan about ${pace} a week.`]);
+    if (m.targetHires && m.hires >= m.targetHires) out.push(['ok', `The hiring goal is reached: ${m.hires} of ${m.targetHires}. Time to celebrate with the interviewers.`]);
+    if (!out.length) return null;
+    return h(
+      'section',
+      { class: 'tpanel takeaways', 'aria-label': 'What the numbers say' },
+      h('div', { class: 'ph' }, 'What the numbers say'),
+      h('ul', {}, out.slice(0, 6).map(([tone, text]) => h('li', { class: tone }, h('span', { class: 'dot', 'aria-hidden': 'true' }), text))),
+    );
+  }
+  const dayWord = (x) => (x == null ? '–' : x === 0 ? 'same day' : `${Math.round(x * 10) / 10} ${Math.round(x * 10) / 10 === 1 ? 'day' : 'days'}`);
+  // Where time goes: each wait between steps, its median length, who it waits on, and who sits there now.
+  function delaysPanel(m) {
+    const rows = m.delays.filter((d) => d.n || d.stuck.length);
+    if (!rows.length) return null;
+    const max = Math.max(1, ...rows.filter((d) => d.who !== 'Calendar').map((d) => d.median || 0), ...rows.map((d) => (d.stuck[0] ? d.stuck[0].days : 0)));
+    const total = rows.reduce((a, d) => a + (d.median || 0), 0);
+    return h(
+      'section',
+      { class: 'tpanel delays', 'aria-label': 'Where time goes' },
+      h('div', { class: 'ph' }, 'Where time goes', h('span', { class: 'faint' }, `median days per wait · about ${Math.round(total)} days from HR to final call`)),
+      h(
+        'div',
+        { class: 'd-rows' },
+        rows.map((d) => {
+          const slow = d.key === m.slowest;
+          const stuckTxt = d.stuck.length ? `${d.stuck.length} waiting now: ${d.stuck.slice(0, 3).map((x) => `${first(x)} ${x.days}d`).join(', ')}${d.stuck.length > 3 ? '…' : ''}` : '';
+          return h(
+            'div',
+            { class: `d-row ${slow ? 'slow' : ''} ${d.who === 'Calendar' ? 'cal' : ''}`, title: `${d.label}: median ${dayWord(d.median)} over ${plural(d.n, 'candidate')}${d.max != null ? `, longest ${d.max} days` : ''}. Waits on ${d.who.toLowerCase()}.` },
+            h('span', { class: 'd-label' }, d.label, h('span', { class: 'small muted' }, ` · ${d.who}`), slow ? h('span', { class: 'chip warn' }, 'Slowest') : null),
+            h('span', { class: 'f-track' }, d.median != null ? h('span', { class: 'f-bar', style: `width:${Math.min(100, Math.max(2, (d.median / max) * 100))}%` }) : null, d.stuck[0] ? h('span', { class: 'd-stuck', style: `left:${Math.min(100, (d.stuck[0].days / max) * 100)}%`, title: `Longest waiting now: ${d.stuck[0].days} days` }) : null),
+            h('span', { class: 'd-num' }, d.median != null ? dayWord(d.median) : '–'),
+            h('span', { class: 'd-now small muted' }, stuckTxt),
+          );
+        }),
+      ),
+      h('p', { class: 'small faint', style: 'padding:0 14px 12px;margin:0' }, 'Bars show the median wait for candidates who got past the step. The dot marks the longest wait of someone still there. Calendar waits are the days until a booked interview, not delays.'),
+    );
+  }
+  const LEAN_TXT = { yes: 'Leaning yes', unsure: 'Unsure', no: 'Leaning no' };
+  function voicesPanel(m) {
+    const v = m.voices;
+    const rounds = Object.entries(v.rounds).filter(([, r]) => r.yes + r.unsure + r.no);
+    if (!rounds.length) return null;
+    const pct = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
+    return h(
+      'section',
+      { class: 'tpanel', 'aria-label': 'What interviewers say' },
+      h('div', { class: 'ph' }, 'What interviewers say', h('span', { class: 'faint' }, 'from their feedback')),
+      h(
+        'div',
+        { class: 'leans' },
+        h('div', { class: 'lean-legend small muted' }, ['yes', 'unsure', 'no'].map((k) => h('span', {}, h('i', { class: `sw ${k}` }), LEAN_TXT[k]))),
+        rounds.map(([round, r]) => {
+          const n = r.yes + r.unsure + r.no;
+          return h(
+            'div',
+            { class: 'lean-row' },
+            h('span', { class: 'f-label' }, ROUND_LABEL[round] || round),
+            h('span', { class: 'lean-bar', role: 'img', 'aria-label': `${r.yes} leaning yes, ${r.unsure} unsure, ${r.no} leaning no` }, ['yes', 'unsure', 'no'].map((k) => (r[k] ? h('i', { class: k, style: `flex:${r[k]}`, title: `${LEAN_TXT[k]}: ${r[k]} of ${n}` }) : null))),
+            h('span', { class: 'f-pct small muted' }, `${Math.round((r.yes / n) * 100)}% yes`),
+          );
+        }),
+      ),
+      h('table', { class: 'x metrics-t' }, h('tbody', {}, [
+        ['Pairs that agree', pct(v.agreeShare), `${v.agree} of ${v.pairs} interviews with two opinions`],
+        ['Lean matched the decision', pct(v.matchShare), `${v.matched} of ${v.decided} where the pair leaned one way`],
+      ].map(([k, val, note]) => h('tr', {}, h('td', {}, k), h('td', { class: 'num' }, val), h('td', { class: 'small muted wide-only' }, note))))),
+    );
+  }
+  function loadPanel(m) {
+    const rows = Object.entries(m.perPerson || {}).map(([id, n]) => ({ p: personById(id), n })).filter((x) => x.p).sort((a, b) => b.n - a.n);
+    if (!rows.length) return null;
+    const max = rows[0].n;
+    const idle = interviewerPeople().filter((p) => !(m.perPerson || {})[p.id]);
+    const shown = rows.slice(0, 8);
+    return h(
+      'section',
+      { class: 'tpanel', 'aria-label': 'Who interviews most' },
+      h('div', { class: 'ph' }, 'Who interviews most', h('span', { class: 'faint' }, 'only you see names')),
+      h('div', { class: 'funnel' }, shown.map((x) => h('div', { class: 'f-row', title: `${x.p.name} (${x.p.team}): ${plural(x.n, 'interview')}` }, h('span', { class: 'f-label' }, `${x.p.name} `, h('span', { class: 'faint small' }, x.p.team)), h('span', { class: 'f-track' }, h('span', { class: 'f-bar', style: `width:${(x.n / max) * 100}%` })), h('span', { class: 'f-num' }, String(x.n)), h('span', {})))),
+      idle.length ? h('p', { class: 'small muted', style: 'padding:0 14px 12px;margin:0' }, `Not interviewed yet: ${idle.slice(0, 8).map((p) => p.name).join(', ')}${idle.length > 8 ? ` and ${idle.length - 8} more` : ''}.`) : null,
+    );
+  }
+  function quotesPanel(m) {
+    const q = m.voices.quotes;
+    if (!q.length) return null;
+    return h(
+      'section',
+      { class: 'quotes', 'aria-label': 'Latest feedback' },
+      h('h2', {}, 'Latest feedback'),
+      h(
+        'div',
+        { class: 'quote-grid' },
+        q.map((x) => {
+          const p = x.personId && personById(x.personId);
+          const c = S.state.candidates.find((k) => k.id === x.candidateId);
+          const body = x.text.replace(/^(leaning yes|leaning no|unsure|hire)[.:]?\s*/i, '');
+          return h(
+            'figure',
+            { class: 'quote' },
+            h('span', { class: `lean-chip ${x.lean}` }, LEAN_TXT[x.lean]),
+            h('blockquote', {}, `“${body}”`),
+            h('figcaption', { class: 'small muted' }, [p ? `${p.name} (${p.team})` : 'An interviewer', ROUND_LABEL[x.round] ? ROUND_LABEL[x.round].toLowerCase() : '', c ? `on ${first(c)}` : '', x.at ? M.formatDay(x.at) : ''].filter(Boolean).join(' · ')),
+          );
+        }),
+      ),
+    );
+  }
+
   function metricsView() {
     const camp = campaign();
     const m = M.campaignMetrics({ camp, cands: campCands(camp.id), invites: campInvites(camp.id), notes: notesWithPerson().map((n) => ({ ...n, authorPersonId: n.personId })), people: S.state.people, today: TODAY });
@@ -3534,13 +3683,15 @@
       m.candidates
         ? [
             h('div', { class: 'kpis' }, tile('Hires', `${m.hires}${m.targetHires ? ` of ${m.targetHires}` : ''}`, `${plural(m.offers, 'offer')} made`), tile('Interviews held', `${m.interviewsHeld}${m.targetInterviews ? ` of ${m.targetInterviews}` : ''}`, pace ? `${pace} a week needed to ${M.formatDay(camp.endDate)}` : 'advisor rounds and deep dives'), tile('Candidates', String(m.candidates), `${m.open} open${m.withdrew ? `, ${m.withdrew} withdrew` : ''}`), tile('HR to offer', days(m.speed.toOffer), 'median')),
+            metricsTakeaways(camp, m, pace),
+            delaysPanel(m),
             h(
               'div',
               { class: 'metrics-grid' },
               h(
                 'section',
-                { class: 'tpanel', 'aria-label': 'Funnel' },
-                h('div', { class: 'ph' }, 'Funnel', h('span', { class: 'faint' }, 'share is of the step before')),
+                { class: 'tpanel', 'aria-label': 'How far candidates get' },
+                h('div', { class: 'ph' }, 'How far candidates get', h('span', { class: 'faint' }, 'share is of the step before')),
                 h(
                   'div',
                   { class: 'funnel' },
@@ -3583,7 +3734,10 @@
                   ...m.load.byTeam.map(([t, n]) => [`Team ${t}`, plural(n, 'interview'), '']),
                 ]),
               ),
+              voicesPanel(m),
+              loadPanel(m),
             ),
+            quotesPanel(m),
           ]
         : h('p', { class: 'muted' }, 'No candidates in this campaign yet. Metrics fill in as candidates move through the rounds.'),
     );
