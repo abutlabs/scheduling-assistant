@@ -6,7 +6,7 @@ All collections live in the artifact database at the root.
 `name`, `startDate`, `endDate`, `targetHires`, `targetInterviews`, `archived`, `createdAt`,
 `open` (false: only Natalie sees it; advisors and team leads see open campaigns they're part of. Missing counts as open; new campaigns after the first start closed),
 `rounds[]` (`key`, `name`, `role`, `interviewers`, `differentTeams`, `durationMin`, `maxDaysAfterPrevious`, `fallbacks`),
-`settings` (invites per slot, reply window, holds per week and so on; used from phase 2).
+`settings` (invites per slot, reply window, holds per week and so on; used from phase 2). `settings.rooms` is `[{ name, email }]`: the rooms to book, with the room's Outlook address so a meeting draft books the room too.
 
 ## people/{id}
 The roster, shared by all campaigns. `name`, `team` (TM, PM, CP, OM, P&C), `roles[]` (`advisor`, `teamlead`, `joker`),
@@ -125,3 +125,21 @@ everyone meets theirs the campaign gets its interviews. `done` counts interviews
 held up to today and `planned` the ones after. Each person's `goal`, `goalDone`
 and `goalPlanned` travel in their `inbox` scores; Natalie sees everyone's in the
 scoreboard.
+
+## Outlook
+
+Until the Flux Microsoft 365 connection exists, the app does not send mail. Asking
+people, releasing someone and confirming a booking each open a filled-in draft in
+Outlook on the web (`outlookMeetingLink`, `outlookMailLink` in `src/model.js`):
+attendees from the roster emails, the room's address, the slot and the text.
+Natalie checks it and presses Send.
+
+Replies come in through a provider in `src/app.js` (`outlookProviders`). Each
+returns `[{ invite, status, reason, respondedAt, via }]` for the requests it is
+given, and `applyOutlookReplies` writes them to `invites`. `manual` reads nothing
+(Natalie presses Accepted or Declined), `mock` answers for colleagues following the
+poll. An `m365` provider reading meeting responses slots in here later, and
+`icsEvent` is ready for sending REQUEST/CANCEL calendar files through it.
+
+`roomsInUse` lists rooms taken around a slot (booked interviews, accepted holds and
+waiting requests within the hour), for the clash warning and room suggestions.
