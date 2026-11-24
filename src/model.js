@@ -1278,6 +1278,97 @@
     if (daysBetween(first, lastWeek) > 7 * 11) first = addDays(lastWeek, -7 * 11);
     for (let w = first; w <= lastWeek; w = addDays(w, 7)) weeks.push({ week: w, n: [...sessions.values()].filter((d) => weekStart(d) === w).length });
 
+    // What interviewers say: their lean per round, whether pairs agree, and
+    // whether the lean matched the decision that followed.
+    const leanOf = (t) => {
+      const x = String(t || '').trim().toLowerCase();
+      if (/^(leaning yes|hire\b|yes\b)/.test(x)) return 'yes';
+      if (/^(unsure|maybe|doubt)/.test(x)) return 'unsure';
+      if (/^(leaning no|no hire|no\b|reject)/.test(x)) return 'no';
+      return null;
+    };
+    const leanRounds = {};
+    const byInterview = new Map();
+    for (const n of fb) {
+      const l = leanOf(n.text);
+      if (!l || !n.round) continue;
+      const r = (leanRounds[n.round] = leanRounds[n.round] || { yes: 0, unsure: 0, no: 0 });
+      r[l]++;
+      const k = `${n.candidateId}|${n.round}`;
+      if (!byInterview.has(k)) byInterview.set(k, []);
+      byInterview.get(k).push(l);
+    }
+    let pairs = 0;
+    let agree = 0;
+    let decided = 0;
+    let matched = 0;
+    const byCand = new Map(states.map((x) => [x.c.id, x.s]));
+    for (const [k, ls] of byInterview) {
+      if (ls.length >= 2) {
+        pairs++;
+        if (ls.every((l) => l === ls[0])) agree++;
+      }
+      const [cid, round] = k.split('|');
+      const s = byCand.get(cid);
+      const done = s && s.done[round === 'deepdive' ? 'deepdive_done' : 'advisor_done'];
+      if (!done || !done.outcome) continue;
+      const yes = ls.filter((l) => l === 'yes').length;
+      const no = ls.filter((l) => l === 'no').length;
+      if (yes === no) continue;
+      decided++;
+      if ((yes > no) === (done.outcome === 'pass' || done.outcome === 'hire')) matched++;
+    }
+    // Latest feedback, one of each lean first so the picture isn't one-sided, no repeats.
+    const recent = fb.filter((n) => leanOf(n.text) && String(n.text).length > 30).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    const picked = [];
+    const texts = new Set();
+    for (const want of ['yes', 'unsure', 'no', null, null, null, null]) {
+      const n = recent.find((x) => !picked.includes(x) && !texts.has(x.text) && (!want || leanOf(x.text) === want));
+      if (n && picked.length < 4) {
+        picked.push(n);
+        texts.add(n.text);
+      }
+    }
+    const quotes = picked
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .map((n) => ({ text: String(n.text), lean: leanOf(n.text), round: n.round, personId: n.authorPersonId || null, candidateId: n.candidateId, at: (n.createdAt || '').slice(0, 10) }));
+    const voices = { rounds: leanRounds, pairs, agree, agreeShare: pairs ? agree / pairs : null, decided, matched, matchShare: decided ? matched / decided : null, quotes };
+
+    // Where time goes: the waits between steps, in days, and who each waits on.
+    // For every candidate, each segment's start and end date; median over the
+    // finished ones, plus the open candidates sitting in that segment now.
+    const slot = (e) => (e && e.data && e.data.slotDate) || null;
+    const SEG = [
+      { key: 'ask_r2', label: 'Availability asked after HR', who: 'Natalie', from: (d) => day(d.hr_done), to: (d) => day(d.avail_asked_r2), ok: (d) => d.hr_done && d.hr_done.outcome === 'pass' },
+      { key: 'cand_r2', label: 'Candidate sends availability', who: 'Candidate', from: (d) => day(d.avail_asked_r2), to: (d) => day(d.avail_received_r2) },
+      { key: 'book_r2', label: 'Advisor interview booked', who: 'Natalie and advisors', from: (d) => day(d.avail_received_r2), to: (d) => day(d.advisor_booked) },
+      { key: 'wait_r2', label: 'Waiting for the interview date', who: 'Calendar', from: (d) => day(d.advisor_booked), to: (d) => slot(d.advisor_booked) },
+      { key: 'verdict_r2', label: 'Advisors’ verdict', who: 'Advisors', from: (d) => slot(d.advisor_booked), to: (d) => day(d.advisor_done) },
+      { key: 'call_r2', label: 'Result call to candidate', who: 'Natalie', from: (d) => day(d.advisor_done), to: (d) => day(d.result_call_r2) },
+      { key: 'cand_dd', label: 'Candidate sends deep dive times', who: 'Candidate', from: (d) => day(d.result_call_r2), to: (d) => day(d.avail_received_final), ok: (d) => d.advisor_done && d.advisor_done.outcome === 'pass' },
+      { key: 'book_dd', label: 'Deep dive booked', who: 'Natalie and team leads', from: (d) => day(d.avail_received_final), to: (d) => day(d.deepdive_booked) },
+      { key: 'wait_dd', label: 'Waiting for the deep dive date', who: 'Calendar', from: (d) => day(d.deepdive_booked), to: (d) => slot(d.deepdive_booked) },
+      { key: 'verdict_dd', label: 'Team leads’ verdict', who: 'Team leads', from: (d) => slot(d.deepdive_booked), to: (d) => day(d.deepdive_done) },
+      { key: 'call_dd', label: 'Final call', who: 'Natalie', from: (d) => day(d.deepdive_done), to: (d) => day(d.final_call) },
+    ];
+    const delays = SEG.map((g) => {
+      const doneDays = [];
+      const stuck = [];
+      for (const { c, s } of states) {
+        const d = s.done;
+        if (g.ok && !g.ok(d)) continue;
+        const a = g.from(d);
+        if (!a) continue;
+        const b = g.to(d);
+        if (b) doneDays.push(Math.max(0, daysBetween(a, b)));
+        else if (s.status === 'open' && a <= today && !s.rejectedAt) stuck.push({ candidateId: c.id, name: c.name, days: daysBetween(a, today) });
+      }
+      stuck.sort((x, y) => y.days - x.days);
+      return { key: g.key, label: g.label, who: g.who, median: median(doneDays), n: doneDays.length, max: doneDays.length ? Math.max(...doneDays) : null, stuck };
+    });
+    const measured = delays.filter((x) => x.median != null && x.n >= 2 && x.who !== 'Calendar');
+    const slowest = measured.length ? measured.reduce((a, b) => (b.median > a.median ? b : a)) : null;
+
     const hires = funnelRows[4].n;
     const offers = funnelRows[3].n;
     return {
@@ -1296,6 +1387,10 @@
       feedback,
       load,
       weeks,
+      voices,
+      perPerson: per,
+      delays,
+      slowest: slowest ? slowest.key : null,
     };
   }
 
@@ -1337,6 +1432,43 @@
         if (!iv || !String(fb.text || '').trim()) continue;
         out.push({ op: 'set', collection: 'notes', doc_id: id, data: { candidateId: iv.candidateId, campaignId: iv.campaignId, round: iv.round, kind: 'feedback', text: String(fb.text).slice(0, 4000), authorId: r.id, authorPersonId: p.id, replyKey: key, createdAt: fb.at || now } });
       }
+    }
+    return out;
+  }
+
+  /**
+   * Pasted emails -> roster people. Each line (or "Name <email>", or a column
+   * copied from Outlook or Excel) yields { email, name, personId | null }.
+   * A person is matched by name or alias in the text, else by the part of
+   * the address before @ (first name, or first.last).
+   */
+  function matchEmails(text, people) {
+    const out = [];
+    const seen = new Set();
+    const re = /[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+    for (const raw of String(text || '').split(/[\n;,]+/)) {
+      const m = raw.match(re);
+      if (!m) continue;
+      const email = m[0].toLowerCase();
+      if (seen.has(email)) continue;
+      seen.add(email);
+      const name = raw.replace(re, ' ').replace(/[<>"()\t]/g, ' ').replace(/\s+/g, ' ').trim();
+      const local = email.split('@')[0].replace(/[._-]+/g, ' ');
+      // Try the typed name, then the address: full name, "first + initial", then first name alone.
+      const tryKey = (key) => {
+        const k = normName(key);
+        if (!k) return [];
+        const parts = k.split(' ');
+        for (const form of [k, parts.length > 1 ? `${parts[0]} ${parts[1][0]}` : null, parts[0]]) {
+          if (!form) continue;
+          const hit = (people || []).filter((p) => personNames(p).includes(form));
+          if (hit.length) return hit;
+        }
+        return (people || []).filter((p) => personNames(p).some((x) => x.split(' ')[0] === parts[0]));
+      };
+      let cands = tryKey(name);
+      if (!cands.length) cands = tryKey(local);
+      out.push({ email, name, personId: cands.length === 1 ? cands[0].id : null, ambiguous: cands.length > 1 });
     }
     return out;
   }
@@ -1405,6 +1537,7 @@
     pipelineCounts,
     campaignMetrics,
     planReplyWrites,
+    matchEmails,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
