@@ -51,6 +51,11 @@ const fakeClaude = () => {
   global.__errors = errors;
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  // The view switch and Mock live in the name menu at top right.
+  const menu = async () => {
+    if (!(await page.locator('.menu[open]').count())) await page.locator('.menu > summary').click();
+    return page.locator('.menu-panel');
+  };
   await page.goto(page_url);
   // Welcome card on first open: English, then Dutch, then "I'm in".
   await page.waitForSelector('text=Welcome to Flux Interviews');
@@ -130,7 +135,7 @@ const fakeClaude = () => {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.screenshot({ path: path.join(outDir, '5-run.png'), fullPage: true });
   // Mock: fast-forward. Load demo candidates, then let days pass.
-  await page.getByRole('button', { name: 'Mock', exact: true }).click();
+  await (await menu()).getByRole('button', { name: 'Mock', exact: true }).click();
   await page.getByRole('button', { name: 'Load demo candidates' }).click();
   await page.waitForSelector('text=Demo candidates loaded');
   await page.screenshot({ path: path.join(outDir, '9-mock-demo.png'), fullPage: false });
@@ -147,7 +152,7 @@ const fakeClaude = () => {
   if (await book.count()) { await book.click(); await page.getByRole('button', { name: 'Save step' }).click(); }
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   // Skip a week: interviews happen and feedback comes in.
-  await page.getByRole('button', { name: /^Mock/ }).click();
+  await (await menu()).getByRole('button', { name: /^Mock/ }).click();
   await page.getByRole('button', { name: 'Skip a week ▸▸' }).click();
   await page.waitForFunction(() => !document.querySelector('.sidecar button[disabled]'));
   const simFb = await page.evaluate(() => window.FluxApp.state().state.notes.filter((n) => n.mock && n.kind === 'feedback').length);
@@ -174,19 +179,21 @@ const fakeClaude = () => {
     const d = new Date(Date.now() + 9 * 864e5).toISOString().slice(0, 10);
     return S.add('invites', { campaignId: daan.campaignId, candidateId: daan.id, round: 'advisor', personId: pid, slotDate: d, time: '14:00', room: 'Room 2', status: 'pending', sentAt: new Date().toISOString(), via: 'outlook', mock: true });
   }, who);
-  await page.getByRole('button', { name: 'Advisor', exact: true }).click();
-  await page.waitForSelector('text=Requests for you');
+  await (await menu()).getByRole('button', { name: 'Advisor', exact: true }).click();
+  await page.waitForSelector('css=.iv-home');
+  await menu();
   await page.selectOption('#view-as', who);
+  await page.waitForSelector('text=Interview request');
   await page.waitForSelector('text=Team board');
   await page.screenshot({ path: path.join(outDir, '14-interviewer-preview.png'), fullPage: true });
   if (await page.getByText('Add candidate').count()) errors.push('admin controls visible in interviewer view');
-  await page.getByRole('button', { name: 'How interviews are planned (rounds and rules)' }).click();
+  await page.locator('summary', { hasText: 'How interviews are planned' }).click();
   await page.waitForSelector('text=Natalie sets these');
   if (await page.getByRole('button', { name: 'Edit', exact: true }).count()) errors.push('interviewer can edit rules');
-  await page.getByRole('button', { name: 'Team lead', exact: true }).click();
+  await (await menu()).getByRole('button', { name: 'Team lead', exact: true }).click();
   await page.waitForSelector('text=/Team lead ·/');
   await page.screenshot({ path: path.join(outDir, '14b-teamlead-preview.png'), fullPage: false });
-  await page.getByRole('button', { name: 'Admin', exact: true }).click();
+  await (await menu()).getByRole('button', { name: 'Admin', exact: true }).click();
   await page.waitForSelector('css=.calm-head');
   await page.goto(page_url + '#campaign');
   await page.waitForSelector('text=Scoreboard');
@@ -203,7 +210,7 @@ const fakeClaude = () => {
   await page.waitForSelector('text=Welcome to Flux Interviews');
   console.log('viewer state', await page.evaluate(() => { const S = window.FluxApp.state(); return JSON.stringify({ admin: S.admin, myId: S.myId, inbox: !!S.state.mine.inbox, camps: S.state.campaigns.length, url: location.href, flag: localStorage.getItem('e2e.viewer') }); }));
   await page.getByRole('button', { name: 'I’m in' }).click();
-  await page.waitForSelector('text=Requests for you');
+  await page.waitForSelector('text=Interview request');
   if (await page.locator('#view-as').count()) errors.push('viewer sees the view switch');
   if (await page.getByRole('link', { name: 'Roster' }).count()) errors.push('viewer sees admin navigation');
   await page.getByRole('button', { name: 'Accept' }).first().click();
@@ -258,11 +265,11 @@ const fakeClaude = () => {
   await page.screenshot({ path: path.join(outDir, '19-report.png'), fullPage: false });
   await page.getByRole('button', { name: 'Send report' }).click();
   await page.waitForSelector('text=Your report is with the developer');
-  await page.getByRole('button', { name: /^Developer/ }).click();
+  await (await menu()).getByRole('button', { name: /^Developer/ }).click();
   await page.waitForSelector('text=Copy for Claude Code');
   if (!(await page.locator('.report-card img').count())) errors.push('report has no screenshot');
   await page.screenshot({ path: path.join(outDir, '20-developer.png'), fullPage: false });
-  await page.getByRole('button', { name: 'Admin', exact: true }).click();
+  await (await menu()).getByRole('button', { name: 'Admin', exact: true }).click();
 
   // A second campaign through the wizard, with people per round.
   await page.goto(page_url + '#campaign');

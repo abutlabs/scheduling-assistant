@@ -153,7 +153,7 @@
     const scroll = { x: window.scrollX, y: window.scrollY };
     const drawerScroll = document.querySelector('.drawer') ? document.querySelector('.drawer').scrollTop : 0;
     const iv = ivContext();
-    root.replaceChildren(...[iv ? ivTopBar(iv) : topBar(), iv ? ivBanner(iv) : null, banner(), h('main', {}, iv ? interviewerView(iv) : ui.dev ? devView() : view()), iv || ui.dev ? null : drawer(), sidecar(), welcomeCard(), reportDialog(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
+    root.replaceChildren(...[iv ? ivTopBar(iv) : topBar(), h('main', {}, iv ? interviewerView(iv) : ui.dev ? devView() : view()), iv || ui.dev ? null : drawer(), sidecar(), welcomeCard(), reportDialog(), ui.toast ? h('div', { class: 'toast', role: 'status' }, ui.toast) : null].flat().filter(Boolean));
     window.scrollTo(scroll.x, scroll.y);
     const d = document.querySelector('.drawer');
     if (d) d.scrollTop = drawerScroll;
@@ -166,26 +166,26 @@
 
   function topBar() {
     const c = campaign();
-    const cands = candidates();
     const nav = [
-      ['run', 'Run view', cands.filter((x) => cstate(x).status === 'open').length],
-      ['availability', 'Availability', null],
-      ['roster', 'Roster', S.state.people.filter((p) => p.active !== false).length],
-      ['campaign', 'Campaign', null],
+      ['run', 'Today'],
+      ['availability', 'Availability'],
+      ['roster', 'Roster'],
+      ['campaign', 'Campaign'],
     ];
-    const f = M.funnel(cands);
     return h(
       'header',
       { class: 'bar gutter' },
-      h('div', { class: 'brand' }, h('i'), 'Flux interviews'),
-      h('nav', {}, nav.map(([k, label, n]) => h('a', { href: `#${k}`, onclick: () => ui.dev && setViewAs(null), 'aria-current': ui.view === k && !ui.dev ? 'page' : null }, label, n ? h('span', { class: 'n' }, n) : null))),
-      c
-        ? h(
-            'div',
-            { class: 'camp' },
-            h(
+      h('div', { class: 'brand' }, h('span', {}, 'Flux interviews')),
+      h('nav', {}, nav.map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ui.dev && setViewAs(null), 'aria-current': ui.view === k && !ui.dev ? 'page' : null }, label))),
+      h(
+        'div',
+        { class: 'end' },
+        testPill(),
+        c
+          ? h(
               'select',
               {
+                class: 'camp-pick',
                 'aria-label': 'Campaign',
                 id: 'campaign-pick',
                 onchange: (e) => {
@@ -195,19 +195,45 @@
                 },
               },
               campaigns().map((x) => h('option', { value: x.id, selected: x.id === c.id }, x.name)),
-            ),
-            h('span', {}, `${f.hired} of ${c.targetHires || '?'} hired`),
-            viewSwitch(),
-            reportFab(),
-            h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, title: 'Test tool: act as colleagues, fake replies, change the date', onclick: () => ((ui.mockOpen = !ui.mockOpen), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock'),
-          )
-        : null,
+            )
+          : null,
+        nameMenu(),
+        reportFab(),
+      ),
     );
   }
 
-  function banner() {
-    if (S.mode === 'db') return null;
-    return h('div', { class: 'banner gutter' }, 'Test mode: data is kept in this browser only. Open the published page on claude.ai, signed in, to share it with the team.');
+  // Test mode and the mock date show as a small pill in the bar instead of a banner.
+  function testPill() {
+    const bits = [];
+    if (S.mode !== 'db') bits.push(h('span', { class: 'test-pill', title: 'Data is kept in this browser only. Open the published page on claude.ai, signed in, to share it with the team.' }, 'Test mode'));
+    if (S.admin && TODAY !== REAL_TODAY) bits.push(h('button', { class: 'test-pill', title: 'Open the mock tool', onclick: () => ((ui.mockOpen = true), rerender()) }, `Mock date · ${M.formatDay(TODAY)}`));
+    return bits;
+  }
+
+  // The name menu at top right holds the view switch and the Mock tool, so the bar stays quiet.
+  function nameMenu() {
+    if (!S.admin || !campaign()) return null;
+    const cur = ui.viewAs && personById(ui.viewAs);
+    const label = ui.dev ? 'Developer' : cur ? cur.name.split(' ')[0] : 'Admin';
+    return h(
+      'details',
+      { class: 'menu', open: !!ui.menuOpen, ontoggle: (e) => (ui.menuOpen = e.target.open) },
+      h('summary', { 'aria-label': 'View and test tools' }, label),
+      h(
+        'div',
+        { class: 'menu-panel' },
+        h(
+          'nav',
+          { class: 'phone-only', 'aria-label': 'Pages' },
+          [['run', 'Today'], ['availability', 'Availability'], ['roster', 'Roster'], ['campaign', 'Campaign']].map(([k, label]) => h('a', { href: `#${k}`, onclick: () => ((ui.menuOpen = false), ui.dev && setViewAs(null)), 'aria-current': ui.view === k && !ui.dev && !ui.viewAs ? 'page' : null }, label)),
+        ),
+        viewSwitch(),
+        h('hr'),
+        h('span', { class: 'label' }, 'Test tool: fast-forward replies, feedback and the date.'),
+        h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, title: 'Test tool: fast-forward colleagues’ replies, change the date', onclick: () => ((ui.mockOpen = !ui.mockOpen), (ui.menuOpen = false), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock'),
+      ),
+    );
   }
 
   function view() {
@@ -293,7 +319,8 @@
         reason = `${inv.state.accepted.length} of 2 accepted, ${inv.state.pending.length} waiting. ${reason}`;
       }
       if (s.skipped.length) reason += ` ${plural(s.skipped.length, 'earlier step')} not recorded.`;
-      items.push({ group, kind: k, tone: t, who: c.name, text: `${s.prompt}. ${reason}`.trim(), btn: k === 'Overdue' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
+      const due = s.clock && s.clock.deadline && s.clock.state !== 'booked' ? (s.clock.state === 'overdue' ? 'past the deadline' : `due ${longDay(s.clock.deadline).split(' ')[0]}`) : '';
+      items.push({ group, kind: k, tone: t, who: c.name, text: `${s.prompt}. ${reason}`.trim(), title: `${s.prompt}.`, sub: `${c.name} · ${reason}`.trim(), due, btn: k === 'Overdue' ? 'Open' : kind, cand: c.id, step: s.next, sortKey: s.clock ? s.clock.daysLeft ?? 99 : 50 });
     }
     items.push(...inviteTodoItems());
     // Availability housekeeping
@@ -319,28 +346,37 @@
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const longDay = (iso) => `${DAYNAME[M.weekdayOf(iso)]} ${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
 
+  function todoAction(i) {
+    return () => {
+      if (i.go) location.hash = i.go;
+      else if (i.invite) releaseInvite(i.invite, i.why);
+      else if (i.prefill) {
+        const c = S.state.candidates.find((x) => x.id === i.cand);
+        const r = roundInvites(c);
+        ui.candId = c.id;
+        prefillBooking(c, i.step, r.list, r.state);
+      } else openCandidate(i.cand, i.step);
+    };
+  }
+
   function todoRow(i) {
+    return h('div', { class: `act tone-${i.tone || 'plain'}` }, h('i', { class: 'dot', title: i.kind }), h('div', {}, h('b', {}, i.who), h('p', {}, i.text)), h('button', { onclick: todoAction(i) }, i.btn));
+  }
+
+  // The one next step, large, at the top of Natalie's home.
+  function todoHero(i) {
+    const cand = i.cand && S.state.candidates.find((x) => x.id === i.cand);
     return h(
-      'div',
-      { class: `act tone-${i.tone || 'plain'}` },
-      h('i', { class: 'dot', title: i.kind }),
-      h('div', {}, h('b', {}, i.who), h('p', {}, i.text)),
+      'section',
+      { class: `act-hero tone-${i.tone || 'plain'}`, 'aria-label': 'Start here' },
+      h('span', { class: 'kicker' }, ['Start here', i.due].filter(Boolean).join(' · ')),
+      h('h2', {}, i.title || i.who),
+      h('p', {}, i.title ? i.sub : i.text),
       h(
-        'button',
-        {
-          class: i.tone === 'accent' || i.tone === 'bad' ? 'p' : '',
-          onclick: () => {
-            if (i.go) location.hash = i.go;
-            else if (i.invite) releaseInvite(i.invite, i.why);
-            else if (i.prefill) {
-              const c = S.state.candidates.find((x) => x.id === i.cand);
-              const r = roundInvites(c);
-              ui.candId = c.id;
-              prefillBooking(c, i.step, r.list, r.state);
-            } else openCandidate(i.cand, i.step);
-          },
-        },
-        i.btn,
+        'div',
+        { class: 'row' },
+        h('button', { class: 'p', onclick: todoAction(i) }, i.btn),
+        cand && i.btn !== 'Open' ? h('button', { class: 'link', onclick: () => openCandidate(cand.id) }, `Open ${cand.name.split(' ')[0]}`) : null,
       ),
     );
   }
@@ -354,49 +390,45 @@
     const f = M.funnel(candidates());
     const target = c.targetHires || 0;
     const pct = target ? Math.min(100, Math.round((f.hired / target) * 100)) : 0;
-    const summary = now.length ? `${plural(now.length, 'thing needs', 'things need')} you today.` : 'Nothing needs you right now.';
+    const summary = now.length ? `${now.length === 1 ? 'One thing needs' : `${now.length} things need`} you today.` : 'Nothing needs you right now.';
+    const [hero, ...rest] = now;
 
     const todo = h(
-      'section',
-      { class: 'calm-card', 'aria-label': 'To do' },
-      now.length
-        ? [now.slice(0, showN).map(todoRow), now.length > showN ? h('button', { class: 'link more', onclick: () => ((ui.showAllTodo = true), rerender()) }, `Show ${now.length - showN} more`) : null]
-        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : 'Add a candidate after their HR interview and the next steps appear here.'), candidates().length ? null : h('button', { class: 'p', onclick: () => openCandidate('new') }, '+ Candidate')),
-      later.length
-        ? h(
-            'details',
-            { class: 'later', open: !!ui.laterOpen, ontoggle: (e) => (ui.laterOpen = e.target.open) },
-            h('summary', {}, `Coming up (${later.length})`),
-            later.map(todoRow),
-          )
-        : null,
+      'div',
+      { 'aria-label': 'To do' },
+      hero
+        ? [
+            todoHero(hero),
+            rest.length ? [h('p', { class: 'then' }, 'Then'), h('div', {}, rest.slice(0, showN - 1).map(todoRow))] : null,
+            rest.length > showN - 1 ? h('button', { class: 'link more', onclick: () => ((ui.showAllTodo = true), rerender()) }, `Show ${rest.length - (showN - 1)} more`) : null,
+          ]
+        : h('div', { class: 'calm-empty' }, h('p', {}, candidates().length ? 'All caught up. Enjoy the quiet.' : 'Add a candidate after their HR interview and the next steps appear here.'), candidates().length ? null : h('button', { class: 'p big', onclick: () => openCandidate('new') }, '+ Candidate')),
+      later.length ? h('details', { class: 'later', open: !!ui.laterOpen, ontoggle: (e) => (ui.laterOpen = e.target.open) }, h('summary', {}, `Coming up · ${later.length}`), h('div', {}, later.map(todoRow))) : null,
     );
 
     const side = h(
-      'section',
-      { class: 'calm-card progress', 'aria-label': 'Campaign progress' },
-      h('span', { class: 'muted' }, c.name),
+      'aside',
+      { class: 'progress', 'aria-label': 'Campaign progress' },
+      h('span', { class: 'label' }, c.name),
       h('div', { class: 'big-num' }, `${f.hired}`, h('span', {}, ` of ${target || '?'} hired`)),
-      h('div', { class: 'meter' }, h('i', { style: `width:${pct}%` })),
-      h('p', { class: 'muted' }, `${plural(f.total, 'candidate')} · ${f.passedHr} passed HR · ${f.passedAdvisor} through the advisor round`),
+      h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
+      h('div', { class: 'stat-list' }, h('div', {}, 'Candidates', h('b', {}, f.total)), h('div', {}, 'Passed HR', h('b', {}, f.passedHr)), h('div', {}, 'Through advisor round', h('b', {}, f.passedAdvisor))),
     );
 
     const showTable = store('flux.stepTable') === '1';
-    return [
-      h('div', { class: 'section gutter calm-head' }, h('p', { class: 'muted' }, longDay(TODAY)), h('h1', {}, summary)),
-      h('div', { class: 'section gutter' }, h('div', { class: 'cols' }, todo, side)),
+    return h(
+      'div',
+      { class: 'home' },
+      h('div', { class: 'calm-head' }, h('p', { class: 'date' }, longDay(TODAY)), h('h1', {}, summary)),
+      h('div', { class: 'cols' }, todo, side),
       h(
-        'div',
-        { class: 'section' },
-        h(
-          'div',
-          { class: 'head gutter' },
-          h('div', { class: 'row' }, h('h2', {}, 'Candidates'), h('button', { class: 'p', onclick: () => openCandidate('new') }, '+ Candidate'), filterButtons()),
-          h('button', { class: 'link', onclick: () => (store('flux.stepTable', showTable ? '0' : '1'), rerender()) }, showTable ? 'Simple list' : 'Show every step'),
-        ),
+        'section',
+        { class: 'cand-sec', 'aria-label': 'Candidates' },
+        h('div', { class: 'cand-head' }, h('h2', {}, 'Candidates'), h('div', { class: 'filters' }, filterButtons()), h('button', { class: 'link add', onclick: () => openCandidate('new') }, '+ Candidate')),
         showTable ? matrix() : candidateList(),
+        h('div', { class: 'cand-foot' }, h('button', { class: 'quiet', onclick: () => (store('flux.stepTable', showTable ? '0' : '1'), rerender()) }, showTable ? 'Simple list' : 'Show every step ▸')),
       ),
-    ];
+    );
   }
 
   // The calm default: one line per candidate with where they are and what's next.
@@ -405,38 +437,45 @@
       const st = cstate(c).status;
       return ui.candFilter === 'all' ? true : ui.candFilter === 'closed' ? st !== 'open' : st === 'open';
     });
-    if (!list.length) return h('div', { class: 'gutter' }, h('p', { class: 'muted' }, 'No candidates here.'));
+    if (!list.length) return h('p', { class: 'muted', style: 'padding:18px 0' }, 'No candidates here.');
     const stageName = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Hired' };
     return h(
       'div',
-      { class: 'gutter cand-list' },
+      { class: 'cand-list' },
       list.map((c) => {
         const s = cstate(c);
         return h(
           'button',
           { class: 'cand-row', onclick: () => openCandidate(c.id) },
           h('b', {}, c.name),
-          h('span', { class: `chip ${s.status === 'open' ? 'accent' : s.status === 'hired' ? 'good' : ''}` }, s.status === 'open' ? stageName[s.stage] : M.OUTCOME_LABELS[s.status] || s.status),
-          h('span', { class: 'muted next' }, s.prompt || ''),
-          s.clock && s.clock.state !== 'met' ? h('span', { class: `small ${s.clock.state === 'overdue' ? 'bad-t' : s.clock.daysLeft <= 2 ? 'warn-t' : 'faint'}` }, s.clock.state === 'overdue' ? 'past deadline' : `day ${Math.max(0, s.clock.day)} of ${s.clock.max}`) : h('span', {}),
+          h('span', { class: `round${s.status === 'open' ? '' : ' closed'}` }, s.status === 'open' ? stageName[s.stage] : M.OUTCOME_LABELS[s.status] || s.status),
+          h('span', { class: 'next' }, s.prompt || ''),
+          dayTag(s, c),
         );
       }),
     );
+  }
+
+  // Where the candidate is on the clock, in mono: "day 5 of 7", "today", "past deadline".
+  function dayTag(s, c) {
+    const clk = s.clock && s.clock.state !== 'met' ? s.clock : null;
+    if (clk) return h('span', { class: `day ${clk.state === 'overdue' ? 'bad' : clk.daysLeft <= 2 ? 'late' : ''}` }, clk.state === 'overdue' ? 'past deadline' : clk.state === 'booked' || clk.state === 'booked_late' ? M.formatDay(clk.interviewDate) : `day ${Math.max(0, clk.day)} of ${clk.max}`);
+    if (s.next === 'hr_done' && c.hrDate === TODAY) return h('span', { class: 'day' }, 'today');
+    return h('span', {});
   }
 
   function filterButtons() {
     const all = candidates().map((c) => cstate(c).status === 'open');
     const open = all.filter(Boolean).length;
     return [
-      ['open', `Open (${open})`],
-      ['closed', `Closed (${all.length - open})`],
-      ['all', `All (${all.length})`],
+      ['open', `Open ${open}`],
+      ['closed', `Closed ${all.length - open}`],
+      ['all', `All ${all.length}`],
     ].map(([k, label]) =>
       h(
         'button',
         {
           'aria-pressed': ui.candFilter === k,
-          class: ui.candFilter === k ? 'p' : '',
           onclick: () => {
             ui.candFilter = k;
             rerender();
@@ -590,68 +629,107 @@
     return act(() => S.set('candidates', c.id, withSummary(next)), msg);
   }
 
+  const STAGE_NAME = { hr: 'HR round', advisor: 'Advisor round', deepdive: 'Deep dive', hired: 'Hired' };
+
+  // Candidate drawer: who, the one next step, progress (done steps folded), brief, notes.
   function candidateDetail(c) {
     if (!c) return h('p', { class: 'muted' }, 'This candidate was removed.');
     const s = cstate(c);
     const clk = s.clock && s.clock.state !== 'met' ? s.clock : null;
-    const header = h(
-      'div',
-      { style: 'display:flex;flex-direction:column;gap:4px;padding-right:30px' },
-      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', {}, c.name), clk ? h('span', { class: `chip ${clk.state === 'overdue' ? 'bad' : clk.daysLeft <= 2 ? 'warn' : 'accent'}` }, clk.state === 'booked' ? `booked ${M.formatDay(clk.interviewDate)}` : `day ${Math.max(0, clk.day)} of ${clk.max}`) : h('span', { class: `chip ${s.status === 'hired' ? 'good' : s.status === 'open' ? 'accent' : ''}` }, s.status === 'open' ? 'Open' : M.OUTCOME_LABELS[s.status] || s.status)),
-      h('div', { class: 'contact' }, c.email ? h('span', {}, c.email) : null, c.phone ? h('span', {}, c.phone) : null, c.hrDate ? h('em', {}, `HR interview ${M.formatDay(c.hrDate)}`) : null),
-      c.notes ? h('p', { class: 'small muted', style: 'white-space:pre-wrap' }, c.notes) : null,
-    );
+    const camp = campaigns().find((x) => x.id === c.campaignId) || campaign();
+    const clockText = clk ? (clk.state === 'overdue' ? h('span', { class: 'bad' }, `day ${clk.day} of ${clk.max}, past the deadline`) : clk.state === 'booked' || clk.state === 'booked_late' ? `booked for ${M.formatDay(clk.interviewDate)}` : h('span', { class: clk.daysLeft <= 2 ? 'late' : '' }, `day ${Math.max(0, clk.day)} of ${clk.max}`)) : null;
+    const header = [
+      h('p', { class: 'eyebrow' }, `Candidate · ${camp ? camp.name : ''}`),
+      h('h1', {}, c.name),
+      h('p', { class: 'sub' }, s.status === 'open' ? STAGE_NAME[s.stage] : M.OUTCOME_LABELS[s.status] || s.status, clockText ? ' · ' : '', clockText),
+      c.email || c.phone || c.hrDate ? h('div', { class: 'contact' }, c.email ? h('span', {}, c.email) : null, c.phone ? h('span', {}, c.phone) : null, c.hrDate ? h('em', {}, `HR interview ${M.formatDay(c.hrDate)}`) : null) : null,
+      c.notes ? h('p', { class: 'cnotes' }, c.notes) : null,
+    ];
+
+    const why = clk && clk.deadline && clk.state !== 'booked' ? `Day ${Math.max(0, clk.day)} of ${clk.max}, deadline ${M.formatDay(clk.deadline)}.` : '';
+    const next = s.next
+      ? h(
+          'section',
+          { class: 'next', 'aria-label': 'Next step' },
+          h('span', { class: 'kicker' }, 'Next step'),
+          h('h2', {}, `${s.prompt}.`),
+          why || s.skipped.length ? h('p', {}, [why, s.skipped.length ? `${plural(s.skipped.length, 'earlier step')} not recorded yet.` : ''].filter(Boolean).join(' ')) : null,
+          ui.openStep === s.next ? stepForm(c, s.next, s.done[s.next]) : h('div', { class: 'row go' }, h('button', { class: 'p', onclick: () => ((ui.openStep = s.next), rerender()) }, `Record: ${M.STEP_BY_KEY[s.next].label.toLowerCase()}`)),
+        )
+      : null;
+
     const keys = s.rejectedAt === 'hr' ? ['hr_done', 'reject_call_hr', ...M.STEPS.slice(1).map((x) => x.key)] : M.STEPS.map((x) => x.key);
-    const steps = h(
-      'div',
-      { class: 'steps' },
-      keys.map((key) => {
-        const step = M.STEP_BY_KEY[key];
-        const e = s.done[key];
-        const onPath = s.path.includes(key);
-        let cls = 'up';
-        if (e) cls = e.outcome === 'reject' ? 'done rej' : 'done';
-        else if (s.next === key) cls = 'next';
-        else if (s.skipped.includes(key)) cls = 'skip';
-        else if (!onPath) cls = 'na';
-        const isOpen = ui.openStep === key;
-        let when = '';
-        if (e) when = M.formatDay(e.at.slice(0, 10));
-        else if (s.next === key) when = 'next';
-        else if (s.skipped.includes(key)) when = 'not recorded';
-        else if (!onPath) when = 'n/a';
-        return h(
-          'div',
-          { class: `${cls}${isOpen ? ' open' : ''}` },
-          h(
-            'button',
-            {
-              class: 'st',
-              'aria-expanded': isOpen,
-              onclick: () => {
-                ui.openStep = isOpen ? null : key;
-                rerender();
-              },
-            },
-            h('i', {}, e ? (e.outcome === 'reject' ? '✗' : '✓') : step.n),
-            h('span', {}, step.label, e && e.outcome ? ` · ${M.OUTCOME_LABELS[e.outcome]}` : ''),
-            h('span', { class: 'when' }, when),
-          ),
-          e && !isOpen ? entryDetail(e) : null,
-          isOpen ? stepForm(c, key, e) : null,
-        );
-      }),
+    const row = (key) => {
+      const step = M.STEP_BY_KEY[key];
+      const e = s.done[key];
+      const onPath = s.path.includes(key);
+      let cls = 'later';
+      if (e) cls = e.outcome === 'reject' ? 'done rej' : 'done';
+      else if (s.next === key) cls = 'now';
+      else if (s.skipped.includes(key)) cls = 'skip';
+      else if (!onPath) cls = 'na';
+      const isOpen = ui.openStep === key;
+      let when = '';
+      if (e) when = M.formatDay(e.at.slice(0, 10));
+      else if (s.next === key) when = clk && clk.deadline ? M.formatDay(clk.deadline) : 'next';
+      else if (s.skipped.includes(key)) when = 'not recorded';
+      else if (!onPath) when = 'n/a';
+      return h(
+        'div',
+        { class: `step ${cls}` },
+        h(
+          'button',
+          { class: 'st', 'aria-expanded': isOpen, onclick: () => ((ui.openStep = isOpen && key !== s.next ? null : key), rerender()) },
+          h('span', { class: 'mark' }, e ? (e.outcome === 'reject' ? '✗' : '✓') : cls === 'skip' ? '!' : ''),
+          h('span', { class: 'lbl' }, step.label, e && e.outcome ? ` · ${M.OUTCOME_LABELS[e.outcome]}` : ''),
+          h('span', { class: 'when' }, when),
+        ),
+        e && !isOpen ? entryDetail(e) : null,
+        isOpen && key !== s.next ? stepForm(c, key, e) : null,
+      );
+    };
+    const doneKeys = keys.filter((k) => s.done[k]);
+    const lastDone = doneKeys.map((k) => s.done[k].at.slice(0, 10)).sort().pop();
+    const rest = keys.filter((k) => !s.done[k] && k !== s.next && !s.skipped.includes(k));
+    const soon = rest.filter((k) => s.path.includes(k)).slice(0, 2);
+    const more = rest.filter((k) => !soon.includes(k));
+    const progress = h(
+      'section',
+      { class: 'dsec', 'aria-label': 'Progress' },
+      h('span', { class: 'label' }, 'Progress'),
+      h(
+        'div',
+        { class: 'step-list' },
+        doneKeys.length
+          ? h(
+              'details',
+              { class: 'fold-steps done-sum', open: doneKeys.includes(ui.openStep) || !!ui.doneOpen, ontoggle: (e) => (ui.doneOpen = e.target.open) },
+              h('summary', {}, `${plural(doneKeys.length, 'step')} done${lastDone ? ` · last on ${M.formatDay(lastDone)}` : ''}`),
+              doneKeys.map(row),
+            )
+          : null,
+        s.skipped.map(row),
+        s.next ? row(s.next) : null,
+        soon.map(row),
+        more.length ? h('details', { class: 'fold-steps more-sum', open: more.includes(ui.openStep) }, h('summary', {}, `${plural(more.length, 'more step')}`), more.map(row)) : null,
+      ),
     );
+    return h('div', { style: 'display:flex;flex-direction:column' }, header, next, requestsSection(c, s) ? h('div', { class: 'dsec' }, requestsSection(c, s)) : null, progress, fromInterviewers(c, s), briefPanel(c, s), notesSection(c), h('div', { class: 'dsec' }, candidateAdmin(c, s)));
+  }
+
+  // Interview feedback for the current round, one line per interviewer with their lean.
+  function fromInterviewers(c, s) {
+    const round = s.stage === 'deepdive' || s.stage === 'hired' ? 'deepdive' : 'advisor';
+    const list = notesFor(c).filter((n) => n.kind === 'feedback' && n.round === round);
+    if (!list.length) return null;
     return h(
-      'div',
-      { style: 'display:flex;flex-direction:column;gap:14px' },
-      header,
-      s.prompt ? h('p', { class: 'small' }, h('b', {}, 'Next: '), s.prompt) : null,
-      requestsSection(c, s),
-      steps,
-      briefPanel(c, s),
-      notesSection(c),
-      candidateAdmin(c, s),
+      'section',
+      { class: 'dsec from-iv', 'aria-label': 'Interview feedback' },
+      h('span', { class: 'label' }, round === 'deepdive' ? 'From the team leads' : 'From the advisors'),
+      list.map((n) => {
+        const lean = LEANS.find((l) => n.text.startsWith(l[1]));
+        return h('div', { class: 'fb' }, h('span', {}, authorName(n)), h('span', { class: `lean ${lean ? (lean[0] === 'reject' ? 'no' : lean[0]) : ''}` }, lean ? lean[1] : 'Feedback'), h('p', {}, lean ? n.text.slice(lean[1].length).replace(/^[.\s]+/, '') : n.text));
+      }),
     );
   }
 
@@ -1623,11 +1701,11 @@
     const err = h('p', { class: 'err-line' });
     return h(
       'section',
-      { style: 'display:flex;flex-direction:column;gap:8px', 'aria-label': 'Notes and feedback' },
-      h('h3', {}, 'Notes and feedback'),
+      { class: 'dsec', 'aria-label': 'Notes and feedback' },
+      h('h2', {}, 'Notes and feedback'),
       h(
         'div',
-        { class: 'step-form', style: 'margin:0' },
+        { class: 'note-form' },
         h('textarea', { id: `note-text-${c.id}`, placeholder: 'What stood out, what to probe next round, your verdict and why…', oninput: (e) => (f.text = e.target.value) }),
         h(
           'div',
@@ -1651,20 +1729,21 @@
         err,
       ),
       list.length
-        ? list.map((n) =>
-            h(
-              'div',
-              { class: 'tpanel', style: 'padding:8px 10px;display:flex;flex-direction:column;gap:3px' },
+        ? h(
+            'div',
+            { class: 'note-list' },
+            list.map((n) =>
               h(
                 'div',
-                { class: 'row small' },
-                h('b', {}, authorName(n)),
-                h('span', { class: `chip ${n.kind === 'feedback' ? 'accent' : ''}` }, n.kind === 'feedback' ? 'Feedback' : 'Note'),
-                h('span', { class: 'chip' }, (NOTE_ROUNDS.find((r) => r[0] === n.round) || ['', 'General'])[1]),
-                h('span', { class: 'faint mono' }, M.formatDay((n.createdAt || '').slice(0, 10))),
-                n.authorId === me || !n.authorId ? h('button', { class: 'link', style: 'margin-left:auto;font-size:12px', onclick: () => act(() => S.remove('notes', n.id), 'Note deleted') }, 'Delete') : null,
+                { class: 'note-item' },
+                h(
+                  'div',
+                  { class: 'meta' },
+                  h('span', {}, [authorName(n), M.formatDay((n.createdAt || '').slice(0, 10)), (NOTE_ROUNDS.find((r) => r[0] === n.round) || ['', 'General'])[1], n.kind === 'feedback' ? 'feedback' : ''].filter(Boolean).join(' · ')),
+                  n.authorId === me || !n.authorId ? h('button', { class: 'quiet', style: 'margin-left:auto;font-size:13px', onclick: () => act(() => S.remove('notes', n.id), 'Note deleted') }, 'Delete') : null,
+                ),
+                h('p', {}, n.text),
               ),
-              h('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere' }, n.text),
             ),
           )
         : h('p', { class: 'small muted' }, 'No notes yet. Natalie, advisors and team leads can all add them; they feed the interview brief.'),
@@ -1675,7 +1754,7 @@
   function briefPanel(c, s) {
     if (!sample) return null;
     const b = (briefs[c.id] = briefs[c.id] || { text: '', busy: false, error: '', focus: '', round: s.stage === 'deepdive' ? 'deepdive' : 'advisor' });
-    const out = h('div', { class: 'small', style: 'white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5' }, b.text);
+    const out = h('div', { class: 'brief-out' }, b.text);
     const status = h('p', { class: b.error ? 'err-line' : 'small muted' }, b.error || (b.busy ? 'Claude is writing the brief…' : ''));
     async function run() {
       b.busy = true;
@@ -1709,14 +1788,14 @@
     }
     return h(
       'section',
-      { class: 'tpanel', style: 'padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:var(--s1)', 'aria-label': 'Interview brief' },
-      h('div', { class: 'row', style: 'justify-content:space-between' }, h('h3', {}, 'Interview brief'), h('span', { class: 'small muted' }, 'by Claude, from the notes and timeline')),
+      { class: 'brief dsec', 'aria-label': 'Interview brief' },
+      h('div', { class: 'bh' }, h('h3', {}, 'Interview brief'), h('span', {}, 'by Claude, from notes and timeline')),
       h(
         'div',
         { class: 'row' },
         h('select', { id: `brief-round-${c.id}`, 'aria-label': 'For which interview', onchange: (e) => (b.round = e.target.value) }, h('option', { value: 'advisor', selected: b.round === 'advisor' }, 'For the advisor interview'), h('option', { value: 'deepdive', selected: b.round === 'deepdive' }, 'For the deep dive')),
         h('input', { id: `brief-focus-${c.id}`, style: 'flex:1;min-width:160px', placeholder: 'What do you want to dig into? (optional)', value: b.focus, oninput: (e) => (b.focus = e.target.value) }),
-        h('button', { class: 'p', onclick: run }, b.text ? 'Brief me again' : 'Brief me'),
+        h('button', { class: b.text ? '' : 'p', onclick: run }, b.text ? 'Brief me again' : 'Brief me'),
       ),
       status,
       out,
@@ -3130,6 +3209,7 @@
   }
   function setViewAs(id, dev) {
     ui.dev = !!dev;
+    ui.menuOpen = false;
     ui.viewAs = id || null;
     store('flux.viewAs', ui.viewAs || '');
     ui.forms = {};
@@ -3151,7 +3231,7 @@
     return h(
       'div',
       { class: 'viewas', role: 'group', 'aria-label': 'View the app as' },
-      h('span', {}, 'View'),
+      h('span', { class: 'label' }, 'See the app as'),
       h(
         'div',
         { class: 'seg' },
@@ -3190,62 +3270,59 @@
     return h(
       'header',
       { class: 'bar gutter' },
-      h('div', { class: 'brand' }, h('i'), 'Flux interviews'),
-      h('nav', {}, h('a', { href: '#run', 'aria-current': 'page' }, me2 ? `${me2.name.split(' ')[0]}’s interviews` : 'My interviews')),
+      h('div', { class: 'brand' }, h('span', {}, 'Flux interviews')),
+      h('nav', {}, h('a', { href: '#run', 'aria-current': 'page' }, 'My interviews')),
       h(
         'div',
-        { class: 'camp' },
-        viewSwitch(),
+        { class: 'end' },
+        testPill(),
+        ctx.mode === 'preview' ? h('button', { class: 'view-pill', title: `This is what ${ctx.person.name} (${roleLabel(ctx.person)}, ${ctx.person.team}) sees. Anything you answer here is saved as mock.`, onclick: () => setViewAs(null) }, `Viewing as ${ctx.person.name.split(' ')[0]} · back to admin`) : null,
+        S.admin ? nameMenu() : me2 ? h('span', {}, me2.name.split(' ')[0]) : null,
         reportFab(),
-        S.admin ? h('button', { class: ui.mockOpen ? 'p' : '', 'aria-pressed': !!ui.mockOpen, onclick: () => ((ui.mockOpen = !ui.mockOpen), rerender()) }, TODAY !== REAL_TODAY ? `Mock · ${M.formatDay(TODAY)}` : 'Mock') : null,
       ),
-    );
-  }
-
-  function ivBanner(ctx) {
-    if (ctx.mode !== 'preview') return null;
-    return h(
-      'div',
-      { class: 'banner gutter preview' },
-      `This is what ${ctx.person.name} (${roleLabel(ctx.person)}, ${ctx.person.team}) sees. Anything you answer here is saved as mock. `,
-      h('button', { class: 'link', onclick: () => setViewAs(null) }, 'Back to the admin view'),
     );
   }
 
   // ---- The page itself ----
   function interviewerView(ctx) {
-    if (ctx.loading) return h('div', { class: 'section gutter' }, h('p', { class: 'muted' }, 'Loading…'));
+    if (ctx.loading) return h('div', { class: 'home' }, h('div', { class: 'calm-head' }, h('p', { class: 'date' }, 'Loading…')));
     const inbox = ctx.inbox;
     const stats = ctx.stats || [];
     const st = stats.find((x) => x.campaignId === ui.ivCampaign) || stats[0] || null;
     if (!inbox)
       return h(
         'div',
-        { class: 'section gutter iv' },
-        h('h1', {}, 'Welcome'),
-        h('p', { class: 'muted' }, 'Natalie hasn’t linked your Claude account to the interview roster yet, so there’s nothing for you here yet. Ask her to add you, then reopen this page.'),
-        st ? campaignOverview(st) : null,
+        { class: 'home iv-home' },
+        h('div', { class: 'calm-head' }, h('h1', {}, 'Welcome.'), h('p', { class: 'lead' }, 'Natalie hasn’t linked your Claude account to the interview roster yet, so there’s nothing for you here yet. Ask her to add you, then reopen this page.')),
+        st ? h('div', { class: 'cols iv-cols' }, h('div', {}), h('aside', { class: 'iv-aside' }, campaignBlock(st))) : null,
       );
+    const open = (inbox.requests || []).filter((r) => !replyFor(ctx, r.id));
+    const role = `${inbox.role[0].toUpperCase()}${inbox.role.slice(1)}`;
+    const lead = open.length ? (open.length === 1 ? 'One request is waiting for your answer.' : `${open.length} requests are waiting for your answer.`) : 'Nothing is waiting for you right now.';
     return h(
       'div',
-      { class: 'section gutter iv' },
-      h('div', { class: 'head' }, h('div', {}, h('h1', {}, `Hi ${inbox.name.split(' ')[0]}`), h('p', {}, `${inbox.role[0].toUpperCase()}${inbox.role.slice(1)} · ${inbox.team}. Your interview requests, your interviews and how you and your team are doing.`))),
-      stats.length > 1 ? h('div', { class: 'row' }, stats.map((x) => h('button', { class: x === st ? 'p' : '', onclick: () => ((ui.ivCampaign = x.campaignId), rerender()) }, x.name))) : null,
+      { class: 'home iv-home' },
       h(
         'div',
-        { class: 'iv-grid' },
-        h('div', { class: 'iv-col' }, ivRequests(ctx), ivInterviews(ctx), ivAvailability(inbox)),
-        h('div', { class: 'iv-col' }, st ? myScore(inbox, st) : null, st ? teamBoard(st, inbox.team, true) : null, st ? campaignOverview(st) : null),
+        { class: 'cols iv-cols' },
+        h(
+          'div',
+          {},
+          h('div', { class: 'calm-head' }, h('p', { class: 'kicker' }, [role, inbox.team, st ? st.name : ''].filter(Boolean).join(' · ')), h('h1', {}, `Hi ${inbox.name.split(' ')[0]}.`), h('p', { class: 'lead' }, lead)),
+          stats.length > 1 ? h('div', { class: 'row', style: 'margin-top:24px' }, stats.map((x) => h('button', { class: x === st ? 'p' : '', onclick: () => ((ui.ivCampaign = x.campaignId), rerender()) }, x.name))) : null,
+          h('div', { style: 'margin-top:48px' }, ivRequests(ctx)),
+          ivInterviews(ctx),
+          h('div', { style: 'margin-top:8px' }, ivAvailability(inbox), ivRules(st)),
+        ),
+        h('aside', { class: 'iv-aside' }, st ? myScore(inbox, st) : null, st ? campaignBlock(st) : null),
       ),
-      ivRules(st),
     );
   }
 
   function ivRules(st) {
     const camp = st && S.state.campaigns.find((x) => x.id === st.campaignId);
     if (!camp) return null;
-    if (!ui.ivRulesOpen) return h('button', { class: 'link', style: 'align-self:flex-start', onclick: () => ((ui.ivRulesOpen = true), rerender()) }, 'How interviews are planned (rounds and rules)');
-    return h('div', { class: 'tpanel', style: 'padding:0' }, rulesSection(camp, false), h('div', { class: 'gutter', style: 'padding-bottom:12px' }, h('button', { class: 'link', onclick: () => ((ui.ivRulesOpen = false), rerender()) }, 'Hide rules')));
+    return h('details', { class: 'fold', open: !!ui.ivRulesOpen, ontoggle: (e) => (ui.ivRulesOpen = e.target.open) }, h('summary', {}, 'How interviews are planned'), ui.ivRulesOpen ? h('div', { class: 'fold-body' }, rulesSection(camp, false)) : null);
   }
   function replyFor(ctx, id) {
     return ctx.replies && ctx.replies.invites && ctx.replies.invites[id];
@@ -3278,27 +3355,33 @@
   function ivRequests(ctx) {
     const reqs = ctx.inbox.requests || [];
     const reasons = (ui.ivReasons = ui.ivReasons || {});
+    const open = reqs.filter((r) => !replyFor(ctx, r.id));
+    const answered = reqs.filter((r) => replyFor(ctx, r.id));
     return h(
-      'section',
-      { class: 'tpanel iv-card', 'aria-label': 'Requests for you' },
-      h('h2', {}, 'Requests for you', reqs.length ? h('span', { class: 'chip accent' }, reqs.length) : null),
-      reqs.length
-        ? reqs.map((r) => {
-            const done = replyFor(ctx, r.id);
-            return h(
-              'div',
-              { class: 'iv-item' },
-              h('div', {}, h('b', {}, `${M.formatDay(r.slotDate)} ${r.time}`), h('span', { class: 'muted' }, ` · ${r.room || 'room tbc'}`)),
-              h('div', { class: 'small' }, `${ROUND_LABEL[r.round]} with ${r.candidate}. One hour, with a colleague from another team.`),
-              done
-                ? h('span', { class: `chip ${done.status === 'accepted' ? 'good' : ''}`, style: 'align-self:flex-start' }, done.status === 'accepted' ? '✓ You accepted. Natalie confirms the pair.' : 'You declined')
-                : [
-                    h('input', { id: `iv-reason-${r.id}`, placeholder: 'Reason if you decline (optional)', value: reasons[r.id] || '', oninput: (e) => (reasons[r.id] = e.target.value) }),
-                    h('div', { class: 'row' }, h('button', { class: 'p', onclick: () => ivAnswer(ctx, r, 'accepted') }, 'Accept'), h('button', { onclick: () => ivAnswer(ctx, r, 'declined', reasons[r.id]) }, 'Decline'), h('span', { class: 'small faint' }, 'or answer the Outlook invite')),
-                  ],
-            );
-          })
-        : h('p', { class: 'small muted' }, 'Nothing waiting for you. When Natalie asks you to interview, it shows up here and in Outlook.'),
+      'div',
+      { 'aria-label': 'Requests for you' },
+      open.map((r) =>
+        h(
+          'section',
+          { class: 'iv-request', 'aria-label': 'Interview request' },
+          h('span', { class: 'kick' }, 'Interview request'),
+          h('div', { class: 'when' }, `${M.formatDay(r.slotDate)}, ${r.time}`),
+          h('p', {}, `${ROUND_LABEL[r.round]} with ${r.candidate.split(' ')[0]} · ${r.room || 'room tbc'} · one hour, together with a colleague from another team.`),
+          h('div', { class: 'row' }, h('button', { class: 'p', onclick: () => ivAnswer(ctx, r, 'accepted') }, 'Accept'), h('button', { onclick: () => ivAnswer(ctx, r, 'declined', reasons[r.id]) }, 'Decline'), h('span', { class: 'small faint' }, 'or answer the Outlook invite')),
+          h('details', { class: 'plus' }, h('summary', {}, '+ Add a reason if you decline'), h('input', { id: `iv-reason-${r.id}`, placeholder: 'Reason (optional)', value: reasons[r.id] || '', oninput: (e) => (reasons[r.id] = e.target.value) })),
+        ),
+      ),
+      answered.length
+        ? h(
+            'div',
+            { class: 'answered' },
+            answered.map((r) => {
+              const done = replyFor(ctx, r.id);
+              return h('div', { class: 'a' }, h('span', {}, `${M.formatDay(r.slotDate)} ${r.time} · ${r.candidate}`), done.status === 'accepted' ? h('span', { class: 'pill-ok' }, '✓ You accepted. Natalie confirms the pair.') : h('span', { class: 'chip' }, 'You declined'));
+            }),
+          )
+        : null,
+      !reqs.length ? h('p', { class: 'muted' }, 'When Natalie asks you to interview, it shows up here and in Outlook.') : null,
     );
   }
 
@@ -3313,14 +3396,14 @@
       const f = (ui.forms = ui.forms || {})[fk] || (ui.forms[fk] = { text: '', lean: 'pass', open: false });
       return h(
         'div',
-        { class: 'iv-item' },
-        h('div', { class: 'row', style: 'justify-content:space-between' }, h('div', {}, h('b', {}, iv.name), h('span', { class: 'muted' }, ` · ${ROUND_LABEL[iv.round]}`)), sent ? h('span', { class: 'chip good' }, '✓ Feedback sent') : isPast ? h('span', { class: 'chip warn' }, 'Feedback due') : null),
-        h('div', { class: 'small' }, `${M.formatDay(iv.slotDate)} ${iv.time} · ${iv.room || 'room tbc'}${iv.partners.length ? ` · with ${iv.partners.join(', ')}` : ''}${iv.booked ? '' : ' · pair not confirmed yet'}`),
+        { class: 'iv-row' },
+        h('div', { class: 'top' }, h('b', {}, iv.name), sent ? h('span', { class: 'pill-ok' }, '✓ Feedback sent') : isPast ? h('span', { class: 'chip warn' }, 'Feedback due') : null),
+        h('div', { class: 'meta' }, `${ROUND_LABEL[iv.round]} · ${M.formatDay(iv.slotDate)} ${iv.time} · ${iv.room || 'room tbc'}${iv.partners.length ? ` · with ${iv.partners.join(', ')}` : ''}${iv.booked ? '' : ' · pair not confirmed yet'}`),
         ivBrief(iv),
         isPast && !sent
           ? h(
               'div',
-              { class: 'step-form', style: 'margin:0' },
+              { class: 'step-form' },
               h('textarea', { id: `iv-fb-${iv.key}`, placeholder: 'How did it go? What stood out, what should the next round dig into?', value: f.text, oninput: (e) => (f.text = e.target.value) }),
               h(
                 'div',
@@ -3349,12 +3432,12 @@
     };
     return h(
       'section',
-      { class: 'tpanel iv-card', 'aria-label': 'Your interviews' },
+      { class: 'iv-sec', 'aria-label': 'Your interviews' },
       h('h2', {}, 'Your interviews'),
-      upcoming.length || past.length ? null : h('p', { class: 'small muted' }, 'No interviews planned for you yet.'),
+      upcoming.length || past.length ? null : h('p', { class: 'muted', style: 'padding:20px 0' }, 'No interviews planned for you yet.'),
       past.filter((x) => !x.feedbackSent).map((x) => card(x, true)),
       upcoming.filter((x) => x.slotDate > TODAY || x.feedbackSent).map((x) => card(x, false)),
-      past.filter((x) => x.feedbackSent).length ? h('p', { class: 'small muted' }, `Earlier: ${past.filter((x) => x.feedbackSent).map((x) => `${x.name.split(' ')[0]} (${M.formatDay(x.slotDate)})`).join(', ')}`) : null,
+      past.filter((x) => x.feedbackSent).length ? h('p', { class: 'iv-row earlier' }, `Earlier: ${past.filter((x) => x.feedbackSent).map((x) => `${x.name.split(' ')[0]} (${M.formatDay(x.slotDate)})`).join(', ')}`) : null,
     );
   }
 
@@ -3400,11 +3483,14 @@
     const days = Object.keys(inbox.availability || {}).sort();
     if (!days.length) return null;
     return h(
-      'section',
-      { class: 'tpanel iv-card', 'aria-label': 'Your availability' },
-      h('h2', {}, 'Your availability'),
-      h('p', { class: 'small muted' }, 'What Natalie has for you, from the poll or what you told her. Something changed? Update the poll sheet or tell Natalie.'),
+      'details',
+      { class: 'fold', 'aria-label': 'Your availability', open: !!ui.ivAvailOpen, ontoggle: (e) => (ui.ivAvailOpen = e.target.open) },
+      h('summary', {}, 'Your availability · what Natalie has for you'),
       h(
+        'div',
+        { class: 'fold-body' },
+        h('p', { class: 'small muted' }, 'From the poll or what you told her. Something changed? Update the poll sheet or tell Natalie.'),
+        h(
         'div',
         { class: 'sheet-wrap' },
         h(
@@ -3414,25 +3500,51 @@
           h('tbody', {}, h('tr', {}, days.map((d) => h('td', { class: `v ${inbox.availability[d] || 'null'}`, title: NL[inbox.availability[d]] || 'No answer' }, inbox.availability[d] ? NL[inbox.availability[d]].split(' ')[0] : '')))),
         ),
       ),
+      ),
     );
   }
 
   const hrs = (x) => (x === null || x === undefined ? '–' : x < 1 ? '<1 h' : x < 48 ? `${Math.round(x)} h` : `${Math.round(x / 24)} d`);
 
+  const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
+
   function myScore(inbox, st) {
     const s = inbox.scores && inbox.scores[st.campaignId];
     if (!s) return null;
+    const mine = (st.teams || []).find((t) => t.team === inbox.team);
     return h(
       'section',
-      { class: 'tpanel iv-card score', 'aria-label': 'Your score' },
-      h('h2', {}, 'Your score'),
-      h('div', { class: 'row', style: 'align-items:baseline;gap:14px' }, h('span', { class: 'big' }, s.points), h('span', {}, 'points'), h('span', { class: 'chip accent' }, `#${s.rank} of ${s.of} overall`), h('span', { class: 'chip' }, `#${s.teamRank} of ${s.teamOf} in ${s.team}`)),
-      s.nudge ? h('p', { class: 'small' }, s.nudge) : null,
-      h('div', { class: 'kpis' }, kpi('Interviews done', s.done, s.upcoming ? `${s.upcoming} coming up` : `fair share ${st.fairEach}`), kpi('Avg reply time', hrs(s.avgReplyHours), `${s.quickReplies} within a day`), kpi('Feedback on time', s.feedbackDue ? `${s.feedbackOnTime}/${s.feedbackDue}` : '–', 'within a day')),
-      s.badges.length ? h('div', { class: 'row' }, s.badges.map((b) => h('span', { class: 'chip good' }, `★ ${b}`))) : null,
-      h('p', { class: 'small faint' }, `${M.POINTS.interview} points per interview, ${M.POINTS.quickReply} for answering a request within a day, ${M.POINTS.quickFeedback} for feedback within a day. Only you and Natalie see your own numbers.`),
+      { class: 'blk score', 'aria-label': 'Your score' },
+      h('span', { class: 'label' }, 'Your score'),
+      h('div', { class: 'rank' }, `#${s.rank} of ${s.of} overall,`, h('br'), `#${s.teamRank} of ${s.teamOf} in ${s.team}.`),
+      h('p', {}, `${plural(s.points, 'point')}. ${s.nudge || ''}`.trim()),
+      h(
+        'details',
+        { open: !!ui.ivNumbersOpen, ontoggle: (e) => (ui.ivNumbersOpen = e.target.open) },
+        h('summary', {}, 'Your numbers'),
+        h('div', { class: 'kpis' }, kpi('Interviews done', s.done, s.upcoming ? `${s.upcoming} coming up` : `fair share ${st.fairEach}`), kpi('Avg reply time', hrs(s.avgReplyHours), `${s.quickReplies} within a day`), kpi('Feedback on time', s.feedbackDue ? `${s.feedbackOnTime}/${s.feedbackDue}` : '–', 'within a day')),
+        s.badges.length ? h('div', { class: 'row', style: 'margin-top:10px' }, s.badges.map((b) => h('span', { class: 'chip good' }, `★ ${b}`))) : null,
+        h('p', { class: 'small faint', style: 'margin-top:10px' }, `${M.POINTS.interview} points per interview, ${M.POINTS.quickReply} for answering a request within a day, ${M.POINTS.quickFeedback} for feedback within a day. Only you and Natalie see your own numbers.`),
+      ),
+      h('details', { open: !!ui.ivBoardOpen, ontoggle: (e) => (ui.ivBoardOpen = e.target.open) }, h('summary', {}, mine ? `Team board · ${inbox.team} is ${ordinal(mine.rank)}` : 'Team board'), teamBoard(st, inbox.team, true)),
     );
   }
+
+  // The campaign at a glance for interviewers: hires, the week ahead, where candidates are.
+  function campaignBlock(st) {
+    const p = st.pipeline || {};
+    const pct = st.targetHires ? Math.min(100, Math.round(((p.hired || 0) / st.targetHires) * 100)) : 0;
+    return h(
+      'section',
+      { class: 'blk', 'aria-label': 'Campaign overview' },
+      h('span', { class: 'label' }, st.name),
+      h('div', { class: 'big-num' }, `${p.hired || 0}`, h('span', {}, ` of ${st.targetHires || '?'} hired`)),
+      h('div', { class: 'track' }, h('i', { style: `width:${pct}%` })),
+      h('p', {}, `${plural(st.interviewsNext7 || 0, 'interview')} in the next 7 days`),
+      h('details', { open: !!ui.ivPipeOpen, ontoggle: (e) => (ui.ivPipeOpen = e.target.open) }, h('summary', {}, 'Where candidates are'), campaignOverview(st)),
+    );
+  }
+
   function kpi(label, value, sub) {
     return h('div', { class: 'kpi' }, h('span', { class: 'small muted' }, label), h('b', {}, String(value)), sub ? h('span', { class: 'small faint' }, sub) : null);
   }
@@ -3557,7 +3669,8 @@
       height: window.innerHeight,
       windowWidth: window.innerWidth,
       windowHeight: window.innerHeight,
-      ignoreElements: (el) => el.classList && (el.classList.contains('report-btn') || el.classList.contains('toast')),
+      // html2canvas draws the inside of closed <details> too, so skip those (and the report button and toasts).
+      ignoreElements: (el) => (el.classList && (el.classList.contains('report-btn') || el.classList.contains('toast'))) || (el.parentElement && el.parentElement.tagName === 'DETAILS' && !el.parentElement.open && el.tagName !== 'SUMMARY'),
     });
     const max = 1100;
     const k = Math.min(1, max / canvas.width);
@@ -3613,24 +3726,25 @@
     const err = h('p', { class: 'err-line' }, r.error && !r.shot ? r.error : '');
     return h(
       'div',
-      { class: 'welcome-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'report-title' },
+      { class: 'dialog-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'report-title' },
       h(
         'div',
-        { class: 'welcome report' },
-        h('div', { class: 'row', style: 'justify-content:space-between' }, h('h2', { id: 'report-title' }, 'Report to the developer'), h('button', { class: 'x', 'aria-label': 'Close', onclick: close }, '×')),
-        h('div', { class: 'seg' }, REPORT_KINDS.map(([k, l]) => h('button', { 'aria-pressed': r.kind === k, onclick: () => ((r.kind = k), rerender()) }, l))),
+        { class: 'dialog report' },
+        h('div', { class: 'top' }, h('h1', { id: 'report-title' }, 'Send a report'), h('button', { class: 'x', 'aria-label': 'Close', onclick: close }, '×')),
+        h('p', { class: 'sub' }, 'It goes straight to the person building the app.'),
+        h('div', { class: 'choices' }, REPORT_KINDS.map(([k, l]) => h('button', { class: 'choice', 'aria-pressed': r.kind === k, onclick: () => ((r.kind = k), rerender()) }, l))),
         h('label', { class: 'f' }, 'What happened?', h('textarea', { id: 'report-what', rows: 3, value: r.what, placeholder: 'What were you doing, and what went wrong or felt odd?', oninput: (e) => (r.what = e.target.value) })),
-        h('label', { class: 'f' }, 'What did you expect? (optional)', h('textarea', { id: 'report-expected', rows: 2, value: r.expected, oninput: (e) => (r.expected = e.target.value) })),
+        h('details', { class: 'plus', open: !!r.expected || !!r.expectOpen, ontoggle: (e) => (r.expectOpen = e.target.open) }, h('summary', {}, '+ What did you expect? (optional)'), h('textarea', { id: 'report-expected', rows: 2, 'aria-label': 'What did you expect?', value: r.expected, oninput: (e) => (r.expected = e.target.value), style: 'width:100%' })),
         r.busy
           ? h('p', { class: 'muted' }, 'Taking a screenshot…')
           : r.shot
-          ? h('div', { class: 'shot' }, h('img', { src: r.shot, alt: 'Screenshot of the app' }), h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'report-include', checked: r.include, onchange: (e) => (r.include = e.target.checked) }), 'Include this screenshot (it may show candidate names; only Natalie and the developer see reports)'))
+          ? h('div', { class: 'shot' }, h('img', { src: r.shot, alt: 'Screenshot of the app' }), h('label', { class: 'check' }, h('input', { type: 'checkbox', id: 'report-include', checked: r.include, onchange: (e) => (r.include = e.target.checked) }), h('span', {}, 'Include this screenshot', h('span', { class: 'muted' }, ' · it may show candidate names; only Natalie and the developer see reports.'))))
           : null,
         err,
         h(
           'div',
-          { class: 'row end' },
-          h('button', { onclick: close }, 'Cancel'),
+          { class: 'foot plain' },
+          h('button', { class: 'quiet', onclick: close }, 'Cancel'),
           h(
             'button',
             {
@@ -3717,10 +3831,11 @@
   const WELCOME = {
     en: {
       title: 'Welcome to Flux Interviews',
+      more: 'What’s a Claude app, and how do I give feedback?',
       body: [
         'Flux Partners is small, and our people are everything, including the people we hire next. We want to find them ourselves instead of leaning on expensive agencies, and that only works if interviewing runs smoothly for you.',
         'This app is our first step. It spreads interviews fairly across teams, gives you notice when plans change, and gives you a short brief on each candidate before you walk in. You can keep answering in Outlook if you prefer.',
-        'This is a Claude app: a small tool built for us that runs inside Claude. Working this way is new for all of us, so your feedback matters. Whenever something is broken, confusing or could be better, press Report (bottom right). It sends a screenshot and your note straight to the person building the app, and we improve it for everyone.',
+        'This is a Claude app: a small tool built for us that runs inside Claude. Working this way is new for all of us, so your feedback matters. Whenever something is broken, confusing or could be better, press Report (top right). It sends a screenshot and your note straight to the person building the app, and we improve it for everyone.',
       ],
       privacy: 'Candidate details are only visible to the people interviewing them and to HR.',
       ok: 'I’m in',
@@ -3729,10 +3844,11 @@
     },
     nl: {
       title: 'Welkom bij Flux Interviews',
+      more: 'Wat is een Claude-app, en hoe geef ik feedback?',
       body: [
         'Flux Partners is klein, en onze mensen zijn alles, ook de mensen die we hierna aannemen. We willen ze zelf vinden in plaats van te leunen op dure bureaus, en dat lukt alleen als interviewen voor jou soepel loopt.',
         'Deze app is onze eerste stap. Hij verdeelt interviews eerlijk over de teams, laat het je op tijd weten als plannen veranderen, en geeft je voor elk gesprek een korte brief over de kandidaat. Je kunt ook gewoon in Outlook blijven reageren.',
-        'Dit is een Claude-app: een kleine tool, voor ons gebouwd, die in Claude draait. Op deze manier werken is voor ons allemaal nieuw, dus jouw feedback telt. Is er iets kapot, onduidelijk of kan het beter? Druk op Report (rechtsonder). Dan gaan een screenshot en jouw toelichting direct naar degene die de app bouwt, en verbeteren we hem voor iedereen.',
+        'Dit is een Claude-app: een kleine tool, voor ons gebouwd, die in Claude draait. Op deze manier werken is voor ons allemaal nieuw, dus jouw feedback telt. Is er iets kapot, onduidelijk of kan het beter? Druk op Report (rechtsboven). Dan gaan een screenshot en jouw toelichting direct naar degene die de app bouwt, en verbeteren we hem voor iedereen.',
       ],
       privacy: 'Kandidaatgegevens zijn alleen zichtbaar voor de mensen die hen interviewen en voor HR.',
       ok: 'Ik doe mee',
@@ -3771,20 +3887,17 @@
       }, w.mock ? `${w.name} joined (mock)` : 'Welcome aboard');
     return h(
       'div',
-      { class: 'welcome-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'welcome-title' },
+      { class: 'dialog-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'welcome-title' },
       h(
         'div',
-        { class: 'welcome' },
-        h(
-          'div',
-          { class: 'row', style: 'justify-content:space-between;align-items:flex-start' },
-          h('h2', { id: 'welcome-title' }, t.title),
-          h('button', { class: 'link small', onclick: () => ((ui.welcomeLang = lang === 'en' ? 'nl' : 'en'), rerender()) }, t.other),
-        ),
-        w.mock ? h('p', { class: 'warn-line small' }, `Mock: this is what ${w.name} sees the first time they open the app.`) : null,
-        t.body.map((para) => h('p', {}, para)),
-        h('p', { class: 'small muted' }, t.privacy),
-        h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { onclick: close }, t.later), h('button', { class: 'p', onclick: accept }, t.ok)),
+        { class: 'dialog welcome' },
+        h('div', { class: 'top' }, h('span', {}, 'Flux Partners'), h('button', { class: 'link', onclick: () => ((ui.welcomeLang = lang === 'en' ? 'nl' : 'en'), rerender()) }, t.other)),
+        h('h1', { id: 'welcome-title' }, `${t.title}.`),
+        w.mock ? h('p', { class: 'warn-line' }, `Mock: this is what ${w.name} sees the first time they open the app.`) : null,
+        h('p', { class: 'lead' }, t.body[0]),
+        h('p', { class: 'lead soft' }, t.body[1]),
+        h('details', { class: 'plus' }, h('summary', {}, `${t.more} ▸`), h('p', { class: 'lead soft' }, t.body[2])),
+        h('div', { class: 'foot' }, h('span', { class: 'note' }, t.privacy), h('button', { class: 'quiet', onclick: close }, t.later), h('button', { class: 'p', onclick: accept }, t.ok)),
       ),
     );
   }
